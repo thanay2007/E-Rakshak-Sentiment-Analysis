@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+backend/.env
+backend/sentinel.db
+backend/reports/*.pdf
+backend/app/ml/models/
+backend/app/ml/eval_report.json
+backend/app/data/train.jsonl
+backend/app/data/test.jsonl
+node_modules/
+frontend/dist/
+frontend/.env.local
+.DS_Store

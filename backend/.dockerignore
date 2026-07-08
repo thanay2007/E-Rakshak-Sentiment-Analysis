@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+sentinel.db
+reports/
+.env
+app/ml/models/
+app/data/train.jsonl
+app/data/test.jsonl

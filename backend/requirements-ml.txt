@@ -1,0 +1,10 @@
+# SENTINEL backend — heavy NLP stack for the default NLP_MODE=full
+# (training/eval with transformers). pip install -r requirements-ml.txt
+torch>=2.2
+transformers>=4.40
+sentencepiece>=0.2
+protobuf>=4.0      # transformers 5.x needs it to read SentencePiece tokenizers
+tiktoken>=0.7
+datasets>=2.19
+scikit-learn>=1.4
+accelerate>=0.29
