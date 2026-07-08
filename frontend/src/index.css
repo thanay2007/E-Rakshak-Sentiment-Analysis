@@ -1,0 +1,103 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-base-900 text-slate-200 font-sans antialiased;
+  overflow-x: hidden;
+}
+
+/* ── glassmorphism surfaces ─────────────────────────────────────────── */
+.glass {
+  @apply rounded-2xl border border-white/[0.07] bg-white/[0.03] backdrop-blur-xl;
+}
+.glass-hover {
+  @apply transition-all duration-300 hover:border-accent/30 hover:bg-white/[0.05];
+}
+
+/* ── glows ──────────────────────────────────────────────────────────── */
+.glow-accent { box-shadow: 0 0 24px -6px rgba(20, 184, 196, 0.45); }
+.glow-critical { box-shadow: 0 0 26px -6px rgba(239, 68, 68, 0.5); }
+.text-glow { text-shadow: 0 0 22px rgba(20, 184, 196, 0.55); }
+
+.pulse-dot {
+  position: relative;
+}
+.pulse-dot::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 9999px;
+  border: 1.5px solid currentColor;
+  opacity: 0.7;
+  animation: pulse-ring 2s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
+}
+@keyframes pulse-ring {
+  0% { transform: scale(0.6); opacity: 0.8; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+
+/* ── ambient background ─────────────────────────────────────────────── */
+.bg-grid {
+  background-image:
+    linear-gradient(rgba(20, 184, 196, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(20, 184, 196, 0.045) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse 90% 70% at 50% 30%, black 30%, transparent 100%);
+}
+.gradient-mesh {
+  background:
+    radial-gradient(720px circle at 12% 8%, rgba(20, 184, 196, 0.07), transparent 45%),
+    radial-gradient(820px circle at 88% 18%, rgba(168, 85, 247, 0.055), transparent 45%),
+    radial-gradient(900px circle at 55% 95%, rgba(239, 68, 68, 0.04), transparent 50%);
+}
+.scanline {
+  position: fixed;
+  left: 0;
+  right: 0;
+  height: 90px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, rgba(20, 184, 196, 0.025), transparent);
+  animation: scan 10s linear infinite;
+  z-index: 1;
+}
+
+/* ── scrollbars ─────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { @apply rounded-full bg-white/10; }
+::-webkit-scrollbar-thumb:hover { @apply bg-accent/40; }
+
+/* ── skeleton shimmer ───────────────────────────────────────────────── */
+.shimmer {
+  position: relative;
+  overflow: hidden;
+  @apply rounded-xl bg-white/[0.04];
+}
+.shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
+  animation: shimmer 1.6s infinite;
+}
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+
+/* ── recharts theming ───────────────────────────────────────────────── */
+.recharts-cartesian-grid line { stroke: rgba(255, 255, 255, 0.05); }
+.recharts-text { fill: #64748b; font-size: 11px; font-family: "JetBrains Mono", monospace; }
+.recharts-default-tooltip { border-radius: 12px !important; }
+
+/* ── focus ring for keyboard nav ────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid rgba(20, 184, 196, 0.7);
+  outline-offset: 2px;
+  border-radius: 6px;
+}

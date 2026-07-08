@@ -1,0 +1,10 @@
+# SENTINEL backend — core dependencies (zero-key lite demo runs on these alone)
+fastapi>=0.110
+uvicorn[standard]>=0.29
+sqlmodel>=0.0.21
+apscheduler>=3.10
+python-dotenv>=1.0
+httpx>=0.27
+networkx>=3.2
+reportlab>=4.1
+feedparser>=6.0
