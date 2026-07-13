@@ -1,0 +1,23 @@
+sequenceDiagram
+    autonumber
+    participant SCH as APScheduler (crawl_tick)
+    participant CR as Platform crawler
+    participant NLP as NLP pipeline
+    participant GROQ as Groq verifier (optional)
+    participant DB as SQLite / Postgres
+    participant WS as WebSocket hub (/ws/live)
+    participant UI as React dashboard
+
+    SCH->>CR: tick (respects per-API politeness gap)
+    CR->>CR: fetch posts from seed sources + watchlist
+    CR->>NLP: raw posts (any language / script)
+    NLP->>NLP: normalize → language ID → classify threat,\nsentiment, toxicity → composite score
+    alt risky post and GROQ_API_KEY set
+        NLP->>GROQ: batched JSON-mode second opinion
+        GROQ-->>NLP: agree (boost confidence) or\noverride label + rescore
+    end
+    NLP->>DB: persist post + NLP breakdown
+    DB->>DB: alert bands: score ≥74 critical (auto-escalate),\n≥65 high, ≥50 active threat
+    DB->>WS: new post + fired alerts
+    WS-->>UI: live push (reconnecting socket)
+    UI->>UI: update feed, KPIs, map, network graph

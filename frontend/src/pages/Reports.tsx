@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Download, FilePlus2, FileText, X } from "lucide-react";
+import { ArrowUpRight, Download, FilePlus2, FileText, ShieldAlert, X } from "lucide-react";
 import { useState } from "react";
 import { ThreatBadge } from "../components/Badges";
 import GlassCard, { SectionTitle } from "../components/GlassCard";
@@ -214,29 +214,58 @@ export default function Reports() {
         <SkeletonRow n={5} />
       ) : (
         <div ref={revealRef} className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {data?.map((r) => (
-            <GlassCard key={r.id} hover className="reveal-item cursor-pointer p-4" onClick={() => openFull(r)}>
-              <div className="flex items-center gap-2">
-                <span className={`rounded-md border px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider ${
-                  r.kind === "escalation"
-                    ? "border-threat-inflammatory/50 bg-threat-inflammatory/10 text-threat-inflammatory"
-                    : "border-accent/50 bg-accent/10 text-accent"
-                }`}>
-                  {r.kind}
-                </span>
-                {r.has_pdf && <Download size={12} className="text-slate-600" />}
-                <span className="ml-auto font-mono text-[10px] text-slate-600">{r.id}</span>
-              </div>
-              <h3 className="mt-2 line-clamp-2 text-[13px] font-semibold text-slate-200">{r.title}</h3>
-              <div className="mt-1.5 font-mono text-[10.5px] text-slate-500">
-                {new Date(r.created_at).toLocaleString("en-IN")}
-                {r.period_hours > 0 && ` · ${r.period_hours}h window`}
-              </div>
-            </GlassCard>
-          ))}
+          {data?.map((r) => {
+            const escalation = r.kind === "escalation";
+            return (
+              <GlassCard key={r.id} hover className="reveal-item group cursor-pointer p-4" onClick={() => openFull(r)}>
+                <div className="flex items-start gap-3">
+                  <span
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${
+                      escalation
+                        ? "border-threat-inflammatory/30 bg-threat-inflammatory/10 text-threat-inflammatory"
+                        : "border-accent/30 bg-accent/10 text-accent"
+                    }`}
+                  >
+                    {escalation ? <ShieldAlert size={16} /> : <FileText size={16} />}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className={`rounded-md border px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider ${
+                        escalation
+                          ? "border-threat-inflammatory/50 bg-threat-inflammatory/10 text-threat-inflammatory"
+                          : "border-accent/50 bg-accent/10 text-accent"
+                      }`}>
+                        {r.kind}
+                      </span>
+                      {r.has_pdf && (
+                        <span className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                          <Download size={9} /> PDF
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="mt-1.5 line-clamp-2 text-[13px] font-semibold text-slate-200 transition-colors group-hover:text-slate-100">
+                      {r.title}
+                    </h3>
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center justify-between border-t border-white/[0.05] pt-2.5">
+                  <span className="font-mono text-[10.5px] text-slate-500">
+                    {new Date(r.created_at).toLocaleString("en-IN")}
+                    {r.period_hours > 0 && ` · ${r.period_hours}h window`}
+                  </span>
+                  <span className="inline-flex items-center gap-1 font-mono text-[10px] font-bold uppercase tracking-wider text-slate-600 transition-colors group-hover:text-accent">
+                    Open <ArrowUpRight size={11} className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                  </span>
+                </div>
+              </GlassCard>
+            );
+          })}
           {data?.length === 0 && (
-            <GlassCard className="col-span-full p-10 text-center text-sm text-slate-500">
-              No reports yet — generate one above.
+            <GlassCard className="col-span-full flex flex-col items-center gap-3 p-12 text-center">
+              <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-slate-500">
+                <FileText size={20} />
+              </span>
+              <p className="text-sm text-slate-500">No reports yet — generate one above.</p>
             </GlassCard>
           )}
         </div>

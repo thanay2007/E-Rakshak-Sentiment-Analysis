@@ -34,7 +34,9 @@ export default function Landing() {
     <div ref={rootRef} className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4">
       <BackgroundFX />
 
-      <div className="hero-logo mb-8">
+      <div className="hero-logo relative mb-8">
+        <div className="absolute -inset-12 rounded-full bg-accent/20 blur-3xl" aria-hidden />
+        <div className="absolute -inset-6 animate-pulse-slow rounded-full border border-accent/15" aria-hidden />
         <Logo size={92} />
       </div>
 

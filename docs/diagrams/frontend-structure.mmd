@@ -1,0 +1,35 @@
+flowchart LR
+    subgraph SERVICES["services/"]
+        APITS["api.ts\ntyped REST client for every endpoint"]
+        WSTS["ws.ts\nreconnecting /ws/live socket"]
+    end
+
+    subgraph HOOKS["hooks/"]
+        POLL["usePolling"]
+        LIVE["useLive / useLiveAlerts / useLiveStatus"]
+        GSAPH["useGsapReveal · useCountUp"]
+    end
+
+    subgraph PAGES["pages/ (React Router)"]
+        LAND["/ Landing"]
+        DASH["/app Dashboard"]
+        FEED["/app/feed Threat Feed"]
+        NETP["/app/network Network"]
+        TRND["/app/trends Trends"]
+        ALRT["/app/alerts Alerts"]
+        REPT["/app/reports Reports"]
+        WTCH["/app/watchlist Watchlist"]
+        SETT["/app/settings Settings"]
+    end
+
+    subgraph COMPONENTS["components/"]
+        LAY["Layout · Sidebar · TopBar"]
+        CARDS["GlassCard · StatTile · FeedItemCard\nBadges · Skeletons · Sparkline"]
+        VIZ["GujaratMap (SVG geo)\nNetworkGraph (d3-force canvas)"]
+        FX["BackgroundFX · AlertToasts · DetailDrawer"]
+    end
+
+    APITS --> POLL --> PAGES
+    WSTS --> LIVE --> PAGES
+    PAGES --> COMPONENTS
+    GSAPH --> COMPONENTS

@@ -1,0 +1,40 @@
+flowchart LR
+    subgraph COLLECT["Collectors — APScheduler loop, per-API politeness gaps"]
+        SIM["Simulated stream (default, zero-key)"]
+        FB["Facebook Graph API"]
+        IG["Instagram Graph API"]
+        RD["Reddit OAuth API"]
+        XA["X API v2"]
+        YT["YouTube Data API v3"]
+        RSS["Generic Web / RSS"]
+    end
+
+    subgraph NLP["NLP Pipeline — full (MuRIL) / lite (lexicon) engines"]
+        NORM["Normalize: slang, transliteration,\nURL/mention stripping"]
+        LID["Language ID\nen / hi / gu / hinglish / gujlish"]
+        THREAT["Threat classifier (4-way)\nfine-tuned MuRIL"]
+        SENT["Sentiment + intent\nfine-tuned MuRIL"]
+        TOX["Toxicity + hate flags"]
+        SCORE["Composite threat score 0–100"]
+        VERIFY["Groq LLM verification\n(optional second opinion)"]
+    end
+
+    subgraph INTEL["Intelligence"]
+        TREND["Trend + z-score spike detection"]
+        NET["Network centrality (networkx)"]
+        BOT["Bot-cluster / coordinated\namplification detection"]
+        ALERT["Alerting + escalation packets"]
+        REPORT["PDF report generation"]
+        GEO["Per-city geo-tagging\nSurat · Ahmedabad · Vadodara · Rajkot"]
+    end
+
+    COLLECT --> NORM --> LID --> THREAT --> SENT --> TOX --> SCORE --> VERIFY
+    VERIFY --> INTEL
+
+    DB[("SQLite / Postgres\n(SQLModel)")]
+    API["FastAPI\nREST + WebSocket /ws/live"]
+    FE["React + Vite + TypeScript\nTailwind · GSAP · Recharts · d3-force"]
+
+    INTEL --> DB
+    NLP --> DB
+    DB --> API --> FE
