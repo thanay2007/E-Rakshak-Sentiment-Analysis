@@ -6,7 +6,7 @@ import BackgroundFX from "../components/BackgroundFX";
 import { Logo } from "../components/Sidebar";
 
 const FEATURES = [
-  { icon: Globe2, label: "Gujarati · Hindi · Hinglish · English NLP" },
+  { icon: Globe2, label: "Gujarati · Hindi · Hinglish · Gujlish · English NLP" },
   { icon: Radar, label: "Real-time multi-platform OSINT ingestion" },
   { icon: Zap, label: "Coordinated-campaign & bot detection" },
   { icon: ShieldCheck, label: "Automated threat scoring & escalation" },

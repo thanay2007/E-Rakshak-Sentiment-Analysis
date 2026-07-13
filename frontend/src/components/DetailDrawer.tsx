@@ -193,6 +193,56 @@ export default function DetailDrawer({
               )}
             </div>
 
+            {/* LLM second opinion (Groq verification layer) */}
+            {post.llm_verification?.verdict && (
+              <div
+                className={`glass mt-4 border p-4 ${
+                  post.llm_verification.overridden
+                    ? "border-threat-high/40"
+                    : "border-threat-neutral/30"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    LLM verification
+                  </span>
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-mono text-[10px] font-bold ${
+                      post.llm_verification.verdict === "agrees"
+                        ? "bg-threat-neutral/15 text-threat-neutral"
+                        : "bg-threat-high/15 text-threat-high"
+                    }`}
+                  >
+                    <ShieldCheck size={10} />
+                    {post.llm_verification.overridden
+                      ? "OVERRIDDEN BY LLM"
+                      : post.llm_verification.verdict.toUpperCase()}
+                  </span>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
+                  <div className="rounded-lg bg-white/[0.03] p-2">
+                    <div className="text-slate-500">LLM threat label</div>
+                    <div className="font-mono text-slate-300">
+                      {post.llm_verification.llm_threat_label}{" "}
+                      ({((post.llm_verification.llm_confidence ?? 0) * 100).toFixed(0)}%)
+                    </div>
+                  </div>
+                  <div className="rounded-lg bg-white/[0.03] p-2">
+                    <div className="text-slate-500">LLM sentiment</div>
+                    <div className="font-mono text-slate-300">{post.llm_verification.llm_sentiment}</div>
+                  </div>
+                </div>
+                {post.llm_verification.reason && (
+                  <p className="mt-2 text-[11px] italic leading-relaxed text-slate-400">
+                    "{post.llm_verification.reason}"
+                  </p>
+                )}
+                <p className="mt-1 text-right font-mono text-[9.5px] text-slate-600">
+                  {post.llm_verification.model}
+                </p>
+              </div>
+            )}
+
             {/* actions */}
             <div className="mt-4 flex items-center gap-2">
               {post.url && (

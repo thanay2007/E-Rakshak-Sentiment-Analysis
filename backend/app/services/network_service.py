@@ -68,6 +68,29 @@ def _detect_clusters(posts: list[Post]) -> list[list[Post]]:
     return [g for g in groups.values() if len({p.author_handle for p in g}) >= 3]
 
 
+def _handle_randomness(handle: str) -> float:
+    """0..1 score for how machine-generated a handle looks — string-analysis
+    heuristic in the spirit of qeeqbox/social-analyzer's username detections:
+    long trailing digit runs, high digit share, and vowel-free consonant
+    runs are the signatures of bulk-registered accounts."""
+    h = handle.lower().lstrip("@")
+    if not h:
+        return 0.0
+    score = 0.0
+    digits = sum(c.isdigit() for c in h)
+    trailing = len(h) - len(h.rstrip("0123456789"))
+    if trailing >= 4:
+        score += 0.5
+    elif trailing >= 2:
+        score += 0.25
+    if digits / len(h) > 0.35:
+        score += 0.3
+    letters = [c for c in h if c.isalpha()]
+    if letters and sum(c in "aeiou" for c in letters) / len(letters) < 0.15:
+        score += 0.2  # unpronounceable consonant soup ("xkrztq_92841")
+    return min(score, 1.0)
+
+
 def _common_prefix_ratio(handles: list[str]) -> float:
     """Share of handles matching the most common 6+ char prefix (templated names)."""
     if len(handles) < 3:
@@ -104,6 +127,10 @@ def _score_cluster(group: list[Post]) -> tuple[float, list[str]]:
     if prefix_r >= 0.5:
         confidence += 0.12
         why.append(f"handles share a templated prefix pattern ({handles[0][:8]}…)")
+    randomness = mean(_handle_randomness(h) for h in handles)
+    if randomness >= 0.4:
+        confidence += 0.10
+        why.append("handles look machine-generated (digit runs / random strings)")
     return round(min(confidence, 0.98), 2), why
 
 

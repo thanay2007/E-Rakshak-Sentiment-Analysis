@@ -1,4 +1,4 @@
-# SENTINEL — one-command local startup (Windows, no Docker needed)
+# SENTINEL — one-command local startup (Windows)
 # Usage:  .\run.ps1
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
@@ -15,10 +15,11 @@ Write-Host "[2/4] installing backend deps (ML stack is ~2.5 GB on first run)..."
 & "$root\backend\.venv\Scripts\python.exe" -m pip install -q -r "$root\backend\requirements.txt"
 & "$root\backend\.venv\Scripts\python.exe" -m pip install -q -r "$root\backend\requirements-ml.txt"
 
-if (-not (Test-Path "$root\backend\app\ml\models\threat-classifier")) {
-    Write-Host "NOTE: no fine-tuned threat classifier yet. Train it once with:" -ForegroundColor Yellow
-    Write-Host "      cd backend; .venv\Scripts\python.exe -m app.ml.train" -ForegroundColor Yellow
-    Write-Host "      (until then, full mode uses the slower zero-shot model)" -ForegroundColor Yellow
+if (-not (Test-Path "$root\backend\app\ml\models\threat-classifier") -or
+    -not (Test-Path "$root\backend\app\ml\models\sentiment-classifier")) {
+    Write-Host "NOTE: no fine-tuned models yet. Rebuild datasets + train both with ONE command:" -ForegroundColor Yellow
+    Write-Host "      cd backend; .venv\Scripts\python.exe -m app.ml.bootstrap" -ForegroundColor Yellow
+    Write-Host "      (until then, full mode uses slower generic models)" -ForegroundColor Yellow
 }
 
 Write-Host "[3/4] starting backend on http://localhost:8000 ..."

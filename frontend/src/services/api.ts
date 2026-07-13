@@ -37,6 +37,15 @@ export interface Post {
   engagement: Engagement;
   is_amplified: boolean;
   cluster_id: string;
+  llm_verification?: {
+    model?: string;
+    llm_threat_label?: string;
+    llm_sentiment?: string;
+    llm_confidence?: number;
+    reason?: string;
+    verdict?: "agrees" | "disagrees";
+    overridden?: boolean;
+  };
   created_at: string;
   // full detail
   author_account_age_days?: number;

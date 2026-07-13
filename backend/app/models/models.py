@@ -49,6 +49,10 @@ class Post(SQLModel, table=True):
     cluster_id: str = Field(default="", index=True)   # coordinated-burst id ("" = organic)
     is_amplified: bool = False
 
+    # Groq LLM second-opinion verdict (services/groq_verifier.py): model,
+    # llm labels, confidence, reason, agrees/disagrees, overridden flag.
+    llm_verification: dict = Field(default_factory=dict, sa_column=Column(JSON))
+
     true_label: str = ""                              # ground truth for simulated posts (accuracy metrics)
     created_at: datetime = Field(default_factory=utcnow, index=True)   # when posted on the platform
     ingested_at: datetime = Field(default_factory=utcnow)

@@ -58,6 +58,14 @@ class Settings:
     X_BEARER_TOKEN: str = os.getenv("X_BEARER_TOKEN", "").strip()
     YOUTUBE_API_KEY: str = os.getenv("YOUTUBE_API_KEY", "").strip()
 
+    # Groq LLM second-opinion layer (services/groq_verifier.py). Free key from
+    # console.groq.com — without it the layer simply stays off.
+    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "").strip()
+    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip()
+    GROQ_VERIFY_MIN_SCORE: int = _int("GROQ_VERIFY_MIN_SCORE", 55)
+    GROQ_MAX_PER_TICK: int = _int("GROQ_MAX_PER_TICK", 8)
+    GROQ_TIMEOUT_SECONDS: int = _int("GROQ_TIMEOUT_SECONDS", 20)
+
     # Reddit official OAuth API (script app: client id + secret)
     REDDIT_CLIENT_ID: str = os.getenv("REDDIT_CLIENT_ID", "").strip()
     REDDIT_CLIENT_SECRET: str = os.getenv("REDDIT_CLIENT_SECRET", "").strip()

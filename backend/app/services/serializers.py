@@ -30,6 +30,7 @@ def post_to_dict(p: Post, full: bool = False) -> dict:
         "engagement": p.engagement or {},
         "is_amplified": p.is_amplified,
         "cluster_id": p.cluster_id,
+        "llm_verification": p.llm_verification or {},
         "created_at": iso(p.created_at),
     }
     if full:
