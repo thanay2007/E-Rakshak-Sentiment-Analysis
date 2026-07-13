@@ -25,6 +25,7 @@ ZERO_SHOT_MODEL = "joeddav/xlm-roberta-large-xnli"
 SENTIMENT_MODEL = "cardiffnlp/twitter-xlm-roberta-base-sentiment"
 TOXICITY_MODEL = "unitary/multilingual-toxic-xlm-roberta"
 FINE_TUNED_DIR = settings.MODELS_DIR / "threat-classifier"
+FINE_TUNED_SENT_DIR = settings.MODELS_DIR / "sentiment-classifier"
 
 CANDIDATE_LABELS = ["Incitement to Violence", "Inflammatory", "Fake News", "Neutral"]
 # Hypothesis phrasing helps XNLI zero-shot a lot for this domain:
@@ -46,7 +47,15 @@ class TransformerEngine:
             log.info("Loading zero-shot classifier %s", ZERO_SHOT_MODEL)
             self.clf = hf_pipeline("zero-shot-classification", model=ZERO_SHOT_MODEL, truncation=True)
 
-        self.sent = hf_pipeline("text-classification", model=SENTIMENT_MODEL, top_k=None, truncation=True)
+        # Prefer the MuRIL sentiment head fine-tuned by ml/train_sentiment.py on
+        # real en/hi/gu/Hinglish/Gujlish corpora; fall back to the generic
+        # cardiffnlp multilingual model when no fine-tune has been run yet.
+        if FINE_TUNED_SENT_DIR.exists():
+            log.info("Loading fine-tuned sentiment model from %s", FINE_TUNED_SENT_DIR)
+            self.sent = hf_pipeline("text-classification", model=str(FINE_TUNED_SENT_DIR),
+                                    tokenizer=str(FINE_TUNED_SENT_DIR), top_k=None, truncation=True)
+        else:
+            self.sent = hf_pipeline("text-classification", model=SENTIMENT_MODEL, top_k=None, truncation=True)
         try:
             self.tox = hf_pipeline("text-classification", model=TOXICITY_MODEL, top_k=None, truncation=True)
         except Exception:  # model optional

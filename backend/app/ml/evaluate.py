@@ -6,9 +6,8 @@ and a confusion matrix; writes ml/eval_report.json for the record.
 Usage:  python -m app.ml.evaluate  (from backend/)
 
 Honest caveat (also in the README): the built-in test set is generated from
-the same template families as training data, so treat these numbers as a
-pipeline sanity benchmark; mix in public HASOC-style data via
-prepare_public_data.py for an external measure.
+the same template families as training data (with disjoint slot fills), so
+treat these numbers as a pipeline sanity benchmark.
 """
 import json
 from collections import Counter, defaultdict
@@ -21,8 +20,7 @@ from app.schemas import RawPost
 
 
 def evaluate() -> dict:
-    _, test_path = build()
-    rows = [json.loads(l) for l in open(test_path, encoding="utf-8")]
+    _, rows = build()
     pipeline = get_pipeline()
     print(f"Evaluating {len(rows)} held-out samples with NLP_MODE={pipeline.mode} ...")
 

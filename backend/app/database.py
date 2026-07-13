@@ -12,6 +12,18 @@ def init_db() -> None:
     from app import models  # noqa: F401 — register tables
 
     SQLModel.metadata.create_all(engine)
+    _migrate(engine)
+
+
+def _migrate(eng) -> None:
+    """Additive micro-migrations for columns create_all won't add to an
+    existing table (SQLite). Safe to run on every boot."""
+    from sqlalchemy import inspect, text
+
+    cols = {c["name"] for c in inspect(eng).get_columns("post")}
+    if "llm_verification" not in cols:
+        with eng.begin() as conn:
+            conn.execute(text("ALTER TABLE post ADD COLUMN llm_verification JSON"))
 
 
 def get_session():

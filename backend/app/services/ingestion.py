@@ -103,7 +103,12 @@ async def ingest(raws: list[RawPost]) -> int:
         if not fresh:
             return 0
 
-        enriched = get_pipeline().enrich_batch(list(fresh.values()))
+        fresh_raws = list(fresh.values())
+        enriched = get_pipeline().enrich_batch(fresh_raws)
+        # LLM second opinion on the risky subset BEFORE alerts fire (no-op
+        # without GROQ_API_KEY) — see services/groq_verifier.py
+        from app.services.groq_verifier import verify_enriched
+        await verify_enriched([r.text for r in fresh_raws], enriched)
         for (chash, raw), nlp in zip(fresh.items(), enriched):
             post = _make_post(raw, nlp, chash)
             s.add(post)

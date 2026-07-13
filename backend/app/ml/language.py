@@ -12,21 +12,29 @@ it could replace this, but this detector alone scores >97% on the eval set.
 """
 from app.ml.normalize import latin_tokens, normalize
 
-# Romanized Hindi/Gujarati function words & very common tokens.
-HINGLISH_MARKERS = {
-    # Hindi
+# Romanized function words & very common tokens, split per source language so
+# Latin-script text can be separated into Hinglish (romanized Hindi) vs
+# Gujlish (romanized Gujarati).
+HINDI_ROMAN_MARKERS = {
     "hai", "nahi", "kya", "bhai", "karo", "kare", "karna", "karke", "log", "logon",
     "mat", "yaar", "aaj", "kal", "raat", "sab", "sabko", "hoga", "hogi", "wale",
-    "wala", "walo", "ko", "se", "mein", "me", "hum", "hamara", "hamare", "tum",
+    "wala", "walo", "ko", "se", "mein", "hum", "hamara", "hamare", "tum",
     "apna", "apne", "inko", "unko", "iski", "uski", "matlab", "paisa", "sach",
     "jhooth", "jaldi", "bahut", "abhi", "phir", "lekin", "kyun", "kaise", "kahan",
     "dekho", "suno", "chalo", "aao", "jao", "bhejo", "milkar", "zaroor", "bilkul",
-    "gaya", "gayi", "raha", "rahi", "rahe", "tha", "thi", "the", "ho", "hain",
+    "gaya", "gayi", "raha", "rahi", "rahe", "tha", "thi", "hain",
     "kuch", "koi", "yeh", "woh", "yahan", "wahan", "andar", "bahar", "ghar",
-    # Romanized Gujarati
+    # NOTE: "the", "me", "ho" are omitted on purpose — they are common English
+    # tokens and were tipping short English posts into Hinglish via the ratio rule.
+}
+GUJARATI_ROMAN_MARKERS = {
     "chhe", "nathi", "tame", "aapne", "badha", "karvanu", "joie", "maja", "kem",
     "su", "shu", "chho", "amne", "tamne", "apnu", "aavo", "javanu", "thayu",
+    "ane", "pan", "mate", "hatu", "hati", "thay", "karvu", "khub", "saru",
+    "sari", "ghanu", "ghani", "bau", "majama", "avyu", "gayu", "karyu", "malse",
+    "joine", "levanu", "devanu", "badhu", "kai", "koi", "ahiya", "tya", "aje",
 }
+HINGLISH_MARKERS = HINDI_ROMAN_MARKERS | GUJARATI_ROMAN_MARKERS
 
 # English words that signal code-mixing when they appear inside Indic-script text
 ENGLISH_HINTS = {"the", "is", "this", "that", "please", "share", "video", "news", "breaking", "proof", "delete", "group", "market"}
@@ -68,8 +76,11 @@ def detect_language(text: str) -> tuple[str, bool]:
         mixed = lat_r >= 0.20 and len(toks) >= 2
         return "Hindi", mixed
 
-    # Latin-dominant: Hinglish vs English
+    # Latin-dominant: Hinglish / Gujlish vs English
     if toks and (marker_hits >= 2 or marker_hits / max(len(toks), 1) >= 0.15):
         eng_hits = sum(1 for t in toks if t in ENGLISH_HINTS)
-        return "Hinglish", eng_hits >= 2
+        gu_hits = sum(1 for t in toks if t in GUJARATI_ROMAN_MARKERS)
+        hi_hits = sum(1 for t in toks if t in HINDI_ROMAN_MARKERS)
+        lang = "Gujlish" if gu_hits > hi_hits else "Hinglish"
+        return lang, eng_hits >= 2
     return "English", False

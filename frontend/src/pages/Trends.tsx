@@ -2,6 +2,7 @@ import { Flame, Hash, MapPinned, TrendingUp } from "lucide-react";
 import { useState } from "react";
 import { LanguageChip, ThreatBadge } from "../components/Badges";
 import GlassCard, { SectionTitle } from "../components/GlassCard";
+import GujaratMap from "../components/GujaratMap";
 import { SkeletonChart, SkeletonRow } from "../components/Skeletons";
 import Sparkline from "../components/Sparkline";
 import { ACCENT, THREAT_COLORS } from "../data/constants";
@@ -103,11 +104,13 @@ export default function Trends() {
         <GlassCard className="p-4 xl:col-span-2">
           <SectionTitle
             title="Gujarat Regional Heat"
-            sub="average threat score by monitored location"
+            sub="geo threat map · marker size = volume, color = avg threat"
             right={<MapPinned size={14} className="text-slate-600" />}
           />
           {loading && !data ? <SkeletonChart h={230} /> : (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <>
+            {data && data.regions.length > 0 && <GujaratMap regions={data.regions} />}
+            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
               {data?.regions.map((r) => (
                 <div
                   key={r.name}
@@ -131,6 +134,7 @@ export default function Trends() {
                 </div>
               ))}
             </div>
+            </>
           )}
         </GlassCard>
 

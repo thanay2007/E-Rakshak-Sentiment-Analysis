@@ -27,7 +27,7 @@ export const SENTIMENT_COLORS: Record<string, string> = {
   negative: "#EF4444",
 };
 
-export const LANGUAGES = ["Gujarati", "Hindi", "Hinglish", "English", "Mixed"];
+export const LANGUAGES = ["Gujarati", "Hindi", "Hinglish", "Gujlish", "English", "Mixed"];
 export const PLATFORMS = ["X", "Facebook", "Instagram", "YouTube", "Reddit", "Web"];
 export const THREAT_LABELS = Object.keys(THREAT_COLORS);
 

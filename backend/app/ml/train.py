@@ -10,11 +10,10 @@ NLP_MODE=full (it outranks zero-shot).
 
 Requires the heavy stack:  pip install -r requirements-ml.txt
 Usage (from backend/):
-    python -m app.ml.train                      # MuRIL, 3 epochs
+    python -m app.ml.train                      # MuRIL, 6 epochs
     python -m app.ml.train --model xlm-roberta-base --epochs 4
 """
 import argparse
-import json
 
 from app.config import THREAT_LABELS, settings
 from app.ml.make_dataset import build
@@ -23,9 +22,11 @@ from app.ml.make_dataset import build
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="google/muril-base-cased")
-    ap.add_argument("--epochs", type=int, default=3)
+    # the ~950-sample corpus needs the longer schedule — 3 epochs @ 2e-5
+    # leaves MuRIL underfit (Inflammatory recall collapses to 0)
+    ap.add_argument("--epochs", type=int, default=6)
     ap.add_argument("--batch", type=int, default=16)
-    ap.add_argument("--lr", type=float, default=2e-5)
+    ap.add_argument("--lr", type=float, default=5e-5)
     args = ap.parse_args()
 
     import numpy as np
@@ -34,18 +35,17 @@ def main() -> None:
     from transformers import (AutoModelForSequenceClassification, AutoTokenizer,
                               Trainer, TrainingArguments)
 
-    train_path, test_path = build()
+    train_rows, test_rows = build()
     label2id = {l: i for i, l in enumerate(THREAT_LABELS)}
     id2label = {i: l for l, i in label2id.items()}
 
-    def load(path):
-        rows = [json.loads(l) for l in open(path, encoding="utf-8")]
+    def to_ds(rows):
         return Dataset.from_dict({
             "text": [r["text"] for r in rows],
             "label": [label2id[r["label"]] for r in rows],
         })
 
-    train_ds, eval_ds = load(train_path), load(test_path)
+    train_ds, eval_ds = to_ds(train_rows), to_ds(test_rows)
     tokenizer = AutoTokenizer.from_pretrained(args.model)
 
     def tok(batch):

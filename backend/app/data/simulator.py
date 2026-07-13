@@ -34,9 +34,9 @@ CATEGORY_WEIGHTS = {
 }
 
 FIRST = ["Raj", "Amit", "Priya", "Neha", "Vikram", "Sanjay", "Kavita", "Rahul", "Meera", "Arjun",
-         "Pooja", "Deepak", "Anita", "Suresh", "Jignesh", "Hetal", "Chirag", "Falguni", "Parth", "Krupa"]
+         "Pooja", "Deepak", "Anita", "Suresh", "Jignesh", "Hetal", "Chirag", "Falguni", "Parth", "Krupa", "Sivahari"]
 LAST = ["Patel", "Shah", "Desai", "Mehta", "Joshi", "Trivedi", "Vyas", "Gandhi", "Modi", "Bhatt",
-        "Solanki", "Parmar", "Chauhan", "Jadeja", "Rana"]
+        "Solanki", "Parmar", "Chauhan", "Jadeja", "Rana", "Prakash"]
 
 BOT_NET_PREFIXES = ["desh_sachai", "bharat_awaaz", "asli_news"]
 

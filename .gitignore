@@ -7,9 +7,14 @@ backend/sentinel.db
 backend/reports/*.pdf
 backend/app/ml/models/
 backend/app/ml/eval_report.json
-backend/app/data/train.jsonl
-backend/app/data/test.jsonl
+backend/app/ml/sentiment_eval_report.json
+backend/app/ml/baseline_report.json
+# raw public datasets (hundreds of MB) — one command brings everything back:
+#   cd backend && python -m app.ml.bootstrap
+backend/app/data/datasets/**
+!backend/app/data/datasets/README.md
 node_modules/
 frontend/dist/
 frontend/.env.local
+*.tsbuildinfo
 .DS_Store
