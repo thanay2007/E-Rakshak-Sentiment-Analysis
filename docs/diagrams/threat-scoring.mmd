@@ -1,0 +1,22 @@
+flowchart TD
+    POST["Classified post"]
+
+    POST --> A["0.40 × severity(label) × confidence\nIncitement 1.00 · Inflammatory 0.75\nFake News 0.65 · Neutral 0.05"]
+    POST --> B["0.25 × toxicity\nhate / abuse intensity"]
+    POST --> C["0.20 × virality\nlog10(1 + likes + 3·shares + 2·comments + views/50) / 4\n+0.15 if inside a detected burst"]
+    POST --> D["0.15 × keyword_severity\nstrongest lexicon term matched"]
+
+    A --> SUM["score = 100 × Σ weighted components"]
+    B --> SUM
+    C --> SUM
+    D --> SUM
+
+    SUM --> BAND{"score band"}
+    BAND -- "≥ 74" --> CRIT["CRITICAL alert\n+ auto-generated escalation packet"]
+    BAND -- "≥ 65" --> HIGH["HIGH alert"]
+    BAND -- "≥ 50" --> ACTIVE["Active threat"]
+    BAND -- "< 50" --> MON["Monitored only"]
+
+    CRIT --> UI["Analyst UI: alerts page,\ntoasts, report generation"]
+    HIGH --> UI
+    ACTIVE --> UI
