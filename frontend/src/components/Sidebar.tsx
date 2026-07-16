@@ -1,5 +1,5 @@
 import {
-  Bell, ChevronsLeft, Eye, FileText, LayoutDashboard, Radar, Settings,
+  Bell, ChevronsLeft, Eye, FileText, LayoutDashboard, Radar, ScanSearch, Settings,
   Share2, TrendingUp,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
@@ -7,6 +7,7 @@ import { NavLink } from "react-router-dom";
 const NAV = [
   { to: "/app", label: "Overview", icon: LayoutDashboard, end: true },
   { to: "/app/feed", label: "Threat Feed", icon: Radar },
+  { to: "/app/investigate", label: "Investigate", icon: ScanSearch },
   { to: "/app/network", label: "Network", icon: Share2 },
   { to: "/app/trends", label: "Trends", icon: TrendingUp },
   { to: "/app/alerts", label: "Alerts", icon: Bell },
