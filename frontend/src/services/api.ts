@@ -197,6 +197,101 @@ export interface FeedFilters {
   page_size?: number;
 }
 
+// ── Investigation / OSINT toolkit ──────────────────────────────────────
+
+export interface ImageFinding { level: string; text: string }
+export interface ImageAnalysis {
+  filename: string; size_bytes: number; sha256: string; media_type: string;
+  format?: string; width?: number; height?: number; megapixels?: number; mode?: string;
+  perceptual_hash?: string | null; average_hash?: string | null;
+  camera?: string | null; captured_at?: string | null; software?: string | null;
+  exif?: Record<string, unknown>;
+  gps?: { latitude: number; longitude: number; maps_url: string; altitude_m?: number } | null;
+  manipulation: { integrity_score: number | null; findings: ImageFinding[] };
+  note?: string; error?: string;
+  resolved_from_index?: boolean; subject?: string;
+}
+export interface ImageSource {
+  kind: string; via: string; post_url?: string; image_url?: string; note?: string;
+  post?: { post_id: string; platform: string; author_handle: string; text: string; threat_label: string; url: string };
+}
+export interface PostImageReport {
+  ok: boolean; error?: string; source?: ImageSource;
+  analysis?: ImageAnalysis; reverse_image?: ReverseImage; person?: PersonFind;
+  post?: { post_id: string; platform: string; author_handle: string; text: string; threat_label: string; url: string };
+}
+export interface Appearance {
+  platform: string; handle: string; name: string; followers: number;
+  verified: boolean; account_age_days: number; posted_at: string; kind: string;
+  url: string; bot_score?: number; bot_verdict?: string;
+}
+export interface ReverseImage {
+  matched: boolean; confidence?: number; hamming_distance?: number; query_hash?: string;
+  match?: {
+    id: string; subject: string; context: string; first_seen_hours_ago: number;
+    total_appearances: number; platforms: string[]; platform_count: number;
+    public_figures: Appearance[]; impersonators: Appearance[]; other_accounts: Appearance[];
+  } | null;
+  nearest_reference?: { subject: string; hamming_distance: number } | null;
+  external_engines: { name: string; url: string }[];
+  note?: string; reason?: string;
+}
+export interface PersonFind {
+  identified: boolean; confidence?: number; subject?: string; is_public_figure?: boolean;
+  public_figures?: Appearance[]; impersonators?: Appearance[]; other_accounts?: Appearance[];
+  summary?: string; reason?: string; external_engines?: { name: string; url: string }[];
+}
+export interface ImageReport { analysis: ImageAnalysis; reverse_image: ReverseImage; person: PersonFind }
+
+export interface UsernameHit { site: string; category: string; url: string; status: string; http: number | null }
+export interface UsernameReport {
+  username: string; valid: boolean; error?: string; results: UsernameHit[];
+  summary: { found: number; not_found: number; blocked: number; unknown: number; checked: number };
+}
+
+export interface UrlFinding { level: string; text: string; on?: string }
+export interface UrlReport {
+  url: string; valid: boolean; error?: string; risk_score?: number; risk_level?: string;
+  meta?: Record<string, unknown>;
+  redirect?: { resolved: boolean; hops?: number; chain: { url: string; status: number }[]; final_url: string | null; reason?: string };
+  findings?: UrlFinding[];
+}
+
+export interface AnalyzedComment {
+  author_handle: string; author_name: string; text: string;
+  sentiment_label: string; sentiment_score: number; duplicate_ratio: number;
+  bot_score: number; bot_verdict: string; bot_signals: string[];
+}
+export interface CommentReport {
+  source: string; synthetic?: boolean;
+  post?: { post_id: string; platform: string; author_handle: string; text: string; threat_label: string };
+  total_comments: number;
+  sentiment_breakdown: { positive: number; neutral: number; negative: number; positive_pct: number; neutral_pct: number; negative_pct: number };
+  bot_analysis: { likely_bots: number; suspicious: number; suspected_pct: number; bot_pct: number; coordinated: boolean };
+  assessment: string[]; comments: AnalyzedComment[]; error?: string;
+}
+
+export interface PrCampaign {
+  id: string; type: string; type_label: string; confidence: number;
+  law_order_category: string; accounts: string[]; account_count: number; posts: number;
+  bot_ratio: number; sentiment_lean: string; sentiment_uniformity: number;
+  reach_estimate: number; top_hashtags: string[]; why: string[]; sample_text: string;
+  locations: string[]; first_seen: string;
+}
+export interface PrReport { window_hours: number; campaigns_found: number; campaigns: PrCampaign[]; note: string }
+
+export interface Dossier {
+  handle: string; found: boolean; note?: string; error?: string;
+  profile?: { author_name: string; followers: number; verified: boolean; account_age_days: number; primary_platform: string; platforms: string[]; languages: string[]; locations: string[] };
+  activity?: { posts_tracked: number; posts_per_day: number; first_seen: string; last_seen: string; duplicate_ratio: number };
+  threat_profile?: { avg_threat_score: number; max_threat_score: number; label_breakdown: Record<string, number>; non_neutral_posts: number };
+  sentiment_lean?: Record<string, number>;
+  authenticity: { score: number; verdict: string; signals: string[]; verified: boolean };
+  coordination?: { in_cluster: boolean; cluster_ids: string[]; amplified_posts: number };
+  notable_posts?: { platform: string; threat_label: string; threat_score: number; text: string; url: string; created_at: string }[];
+  cross_platform?: UsernameReport;
+}
+
 // ── HTTP helpers ───────────────────────────────────────────────────────
 
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
@@ -241,4 +336,30 @@ export const api = {
   updateWatch: (id: string, body: Partial<Pick<WatchItem, "value" | "note" | "active">>) =>
     http<WatchItem>(`/api/watchlist/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteWatch: (id: string) => http<void>(`/api/watchlist/${id}`, { method: "DELETE" }),
+
+  // ── investigation / OSINT toolkit ──────────────────────────────────────
+  investigateImage: (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return fetch(`${API_BASE}/api/investigate/image`, { method: "POST", body: fd })
+      .then((r) => {
+        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+        return r.json() as Promise<ImageReport>;
+      });
+  },
+  investigateImageFromUrl: (url: string) =>
+    http<PostImageReport>("/api/investigate/image-from-url", { method: "POST", body: JSON.stringify({ url }) }),
+  investigatePostMedia: (postId: string) =>
+    http<PostImageReport>(`/api/investigate/post-media/${encodeURIComponent(postId)}`),
+  investigateUsername: (u: string) =>
+    http<UsernameReport>(`/api/investigate/username?u=${encodeURIComponent(u)}`),
+  investigateUrl: (url: string, resolve = true) =>
+    http<UrlReport>("/api/investigate/url", { method: "POST", body: JSON.stringify({ url, resolve }) }),
+  investigatePostComments: (postId: string) =>
+    http<CommentReport>(`/api/investigate/comments/${encodeURIComponent(postId)}`),
+  investigateComments: (comments: { author_handle: string; text: string; followers?: number; account_age_days?: number }[]) =>
+    http<CommentReport>("/api/investigate/comments", { method: "POST", body: JSON.stringify({ comments }) }),
+  investigatePrCampaigns: (hours = 72) => http<PrReport>(`/api/investigate/pr-campaigns?hours=${hours}`),
+  investigateSleuth: (handle: string, lookup = true) =>
+    http<Dossier>(`/api/investigate/sleuth?handle=${encodeURIComponent(handle)}&lookup=${lookup}`),
 };

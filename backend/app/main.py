@@ -17,7 +17,7 @@ from sqlmodel import select
 
 from app.database import init_db, session_scope
 from app.models import WatchlistItem
-from app.routers import alerts, feed, network, reports, stats, trends, watchlist, ws
+from app.routers import alerts, feed, investigate, network, reports, stats, trends, watchlist, ws
 from app.services.ingestion import seed_if_empty
 from app.services.scheduler import start_scheduler, stop_scheduler
 
@@ -80,6 +80,7 @@ app.include_router(network.router, prefix="/api", tags=["network"])
 app.include_router(alerts.router, prefix="/api", tags=["alerts"])
 app.include_router(reports.router, prefix="/api", tags=["reports"])
 app.include_router(watchlist.router, prefix="/api", tags=["watchlist"])
+app.include_router(investigate.router, prefix="/api", tags=["investigate"])
 app.include_router(ws.router, tags=["websocket"])
 
 
