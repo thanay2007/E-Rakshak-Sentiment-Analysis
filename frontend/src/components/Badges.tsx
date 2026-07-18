@@ -51,9 +51,7 @@ const PLATFORM_META: Record<string, { short: string; color: string }> = {
   X: { short: "𝕏", color: "#E7E9EA" },
   Facebook: { short: "f", color: "#1877F2" },
   Instagram: { short: "IG", color: "#E1306C" },
-  YouTube: { short: "▶", color: "#FF0033" },
   Reddit: { short: "R", color: "#FF4500" },
-  Web: { short: "W", color: "#14B8C4" },
 };
 
 export function PlatformIcon({ platform, size = 22 }: { platform: string; size?: number }) {

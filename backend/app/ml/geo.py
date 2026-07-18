@@ -21,6 +21,19 @@ _ALIASES: dict[str, list[str]] = {
 }
 
 
+def city_search_terms() -> list[str]:
+    """Every spelling of the target cities — English, Hindi, Gujarati and the
+    romanized (Gujlish/Hinglish) forms — for collectors to query with."""
+    from app.config import settings
+
+    terms: list[str] = []
+    for city in settings.TARGET_CITIES:
+        for alias in _ALIASES.get(city, [city.lower()]):
+            if alias not in terms:
+                terms.append(alias)
+    return terms
+
+
 def infer_city(text: str) -> tuple[str, float, float] | None:
     """Return (city, lat, lon) for the first known city mentioned, else None."""
     low = text.lower()

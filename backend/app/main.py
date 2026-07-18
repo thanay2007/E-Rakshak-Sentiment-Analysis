@@ -25,14 +25,25 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname
 log = logging.getLogger("sentinel")
 
 from app.config import settings
+from app.ml.geo import _ALIASES as CITY_ALIASES
 
 DEFAULT_WATCHLIST = [
-    ("keyword", "बच्चा चोर", "child-kidnapper rumor trigger phrase"),
+    # Threat phrases across scripts (English / Hindi / Gujarati / romanized)
+    ("keyword", "बच्चा चोर", "child-kidnapper rumor trigger phrase (Hindi)"),
+    ("keyword", "bacha chor", "child-kidnapper rumor (Hinglish)"),
     ("keyword", "sabak sikhana", "mobilization phrase (Hinglish)"),
     ("keyword", "ભેગા થાઓ", "gathering call (Gujarati)"),
+    ("keyword", "અફવા", "rumor (Gujarati)"),
+    ("keyword", "afwa", "rumor (Gujlish/Hinglish)"),
     ("hashtag", "FinalWarning", "mobilization hashtag"),
     ("hashtag", "Boycott", "economic-exclusion campaigns"),
     ("account", "desh_sachai_*", "suspected bot network prefix"),
+] + [
+    # City names in every script so collectors pull posts in all five languages
+    ("keyword", alias, "city watch (all scripts)")
+    for city in settings.TARGET_CITIES
+    for alias in CITY_ALIASES.get(city, [])
+    if alias != city.lower()  # lowercase-English duplicate of the location entry below
 ] + [
     ("location", city, f"geo watch: {city}") for city in settings.TARGET_CITIES
 ]

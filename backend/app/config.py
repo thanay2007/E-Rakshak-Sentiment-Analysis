@@ -56,7 +56,17 @@ class Settings:
     CRAWL_MIN_INTERVAL_SECONDS: int = _int("CRAWL_MIN_INTERVAL_SECONDS", 300)
 
     X_BEARER_TOKEN: str = os.getenv("X_BEARER_TOKEN", "").strip()
-    YOUTUBE_API_KEY: str = os.getenv("YOUTUBE_API_KEY", "").strip()
+
+    # X via twikit (unofficial, key-free) — credentials of a real X account
+    # (use a dedicated burner). Activates the "X (twikit)" adapter when
+    # username + password are set; cookies persist in backend/x_cookies.json.
+    X_USERNAME: str = os.getenv("X_USERNAME", "").strip()
+    X_EMAIL: str = os.getenv("X_EMAIL", "").strip()
+    X_PASSWORD: str = os.getenv("X_PASSWORD", "").strip()
+    # Preferred twikit auth: session cookies from a browser logged into x.com
+    # (Cloudflare blocks the password-login endpoint for Python clients).
+    X_AUTH_TOKEN: str = os.getenv("X_AUTH_TOKEN", "").strip()
+    X_CT0: str = os.getenv("X_CT0", "").strip()
 
     # Groq LLM second-opinion layer (services/groq_verifier.py). Free key from
     # console.groq.com — without it the layer simply stays off.
@@ -87,8 +97,6 @@ class Settings:
     IG_ACCESS_TOKEN: str = os.getenv("IG_ACCESS_TOKEN", "").strip()
     IG_BUSINESS_ACCOUNT_ID: str = os.getenv("IG_BUSINESS_ACCOUNT_ID", "").strip()
     IG_SEED_USERNAMES: list[tuple[str, str]] = _seeded("IG_SEED_USERNAMES")
-
-    RSS_FEEDS: list[str] = _csv("RSS_FEEDS")
 
     REPORTS_DIR: Path = BASE_DIR / "reports"
     MODELS_DIR: Path = APP_DIR / "ml" / "models"

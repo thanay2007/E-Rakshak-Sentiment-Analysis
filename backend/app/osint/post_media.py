@@ -24,26 +24,33 @@ from sqlmodel import col, select
 from app.database import session_scope
 from app.models import Post
 from app.osint import media_intel
-from app.osint.image_analysis import analyze_image
+from app.osint.image_analysis import analyze_image, analyze_video
 
 _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 _MAX_BYTES = 25 * 1024 * 1024
 _IMG_EXT = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp")
+_VID_EXT = (".mp4", ".mov", ".webm", ".m4v", ".3gp", ".mkv", ".avi")
 _META_RE = re.compile(r"<meta\b[^>]*>", re.IGNORECASE)
 _ATTR_RE = re.compile(r'(property|name)\s*=\s*["\']([^"\']+)["\']', re.IGNORECASE)
 _CONTENT_RE = re.compile(r'content\s*=\s*["\']([^"\']+)["\']', re.IGNORECASE)
 _IMG_META_KEYS = {"og:image", "og:image:url", "og:image:secure_url", "twitter:image",
                   "twitter:image:src"}
+_VID_META_KEYS = {"og:video", "og:video:url", "og:video:secure_url",
+                  "twitter:player:stream"}
 
 
-def _extract_og_image(html: str, base_url: str) -> str | None:
+def _extract_og(html: str, base_url: str, keys: set[str]) -> str | None:
     for tag in _META_RE.findall(html):
         key = _ATTR_RE.search(tag)
         content = _CONTENT_RE.search(tag)
-        if key and content and key.group(2).lower() in _IMG_META_KEYS:
+        if key and content and key.group(2).lower() in keys:
             return urljoin(base_url, content.group(1))
     return None
+
+
+def _extract_og_image(html: str, base_url: str) -> str | None:
+    return _extract_og(html, base_url, _IMG_META_KEYS)
 
 
 async def _download_image(client: httpx.AsyncClient, url: str) -> tuple[bytes, str] | None:
@@ -56,26 +63,91 @@ async def _download_image(client: httpx.AsyncClient, url: str) -> tuple[bytes, s
     return data, name
 
 
+async def _download_video(client: httpx.AsyncClient, url: str) -> tuple[bytes, str, bool] | None:
+    """Returns (bytes, name, truncated). Accepts video/* or octet-stream."""
+    r = await client.get(url, headers={"User-Agent": _UA})
+    ctype = r.headers.get("content-type", "")
+    if r.status_code != 200:
+        return None
+    if not (ctype.startswith("video/") or ctype in ("application/octet-stream", "binary/octet-stream")
+            or url.lower().split("?")[0].endswith(_VID_EXT)):
+        return None
+    truncated = len(r.content) > _MAX_BYTES
+    name = url.split("/")[-1].split("?")[0] or "post-video"
+    return r.content[:_MAX_BYTES], name, truncated
+
+
+def _candidate_video_urls(url: str) -> list[str]:
+    """Direct-download candidates for a video URL. v.redd.it exposes plain
+    DASH_<res>.mp4 renditions next to the DASH manifest."""
+    low = url.lower().split("?")[0]
+    if low.endswith(_VID_EXT):
+        return [url]
+    if "v.redd.it" in low:
+        base = url.split("?")[0].rstrip("/")
+        return [f"{base}/DASH_720.mp4", f"{base}/DASH_480.mp4", f"{base}/DASH_360.mp4"]
+    return []
+
+
 async def _resolve_and_analyze(url: str) -> dict:
-    """Resolve `url` to an image, download it and run the full pipeline."""
-    async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-        image_url, via = None, ""
-        # direct image link?
-        low = url.lower().split("?")[0]
-        if low.endswith(_IMG_EXT):
-            image_url, via = url, "direct image link"
+    """Resolve `url` to its media (image OR video), download it and run the
+    full forensic pipeline. For videos the page's preview image (og:image) is
+    also analyzed so the perceptual-hash reverse trace still works."""
+    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+        image_url, video_url, via = None, None, ""
+        page_html = ""
+
+        for cand in _candidate_video_urls(url):
+            dl = await _download_video(client, cand)
+            if dl:
+                video_url, via = cand, "direct video link"
+                data, name, truncated = dl
+                break
         else:
-            page = await client.get(url, headers={"User-Agent": _UA})
-            ctype = page.headers.get("content-type", "")
-            if ctype.startswith("image/"):
-                image_url, via = str(page.url), "direct image link"
-            elif "text/html" in ctype or "<meta" in page.text[:5000].lower():
-                image_url = _extract_og_image(page.text, str(page.url))
-                via = "og:image / preview tag"
+            low = url.lower().split("?")[0]
+            if low.endswith(_IMG_EXT):
+                image_url, via = url, "direct image link"
+            else:
+                page = await client.get(url, headers={"User-Agent": _UA})
+                ctype = page.headers.get("content-type", "")
+                if ctype.startswith("image/"):
+                    image_url, via = str(page.url), "direct image link"
+                elif ctype.startswith("video/"):
+                    video_url, via = str(page.url), "direct video link"
+                    dl = await _download_video(client, video_url)
+                    if not dl:
+                        return {"ok": False, "reason": "Could not download the video."}
+                    data, name, truncated = dl
+                elif "text/html" in ctype or "<meta" in page.text[:5000].lower():
+                    page_html = page.text
+                    vid_meta = _extract_og(page_html, str(page.url), _VID_META_KEYS)
+                    if vid_meta:
+                        dl = await _download_video(client, vid_meta)
+                        if dl:
+                            video_url, via = vid_meta, "og:video tag"
+                            data, name, truncated = dl
+                    if not video_url:
+                        image_url = _extract_og_image(page_html, str(page.url))
+                        via = "og:image / preview tag"
+
+        # ── video path: container forensics + thumbnail-based reverse trace ──
+        if video_url:
+            analysis = analyze_video(data, filename=name, truncated=truncated)
+            thumb, thumb_hash = None, ""
+            thumb_url = _extract_og_image(page_html, url) if page_html else None
+            if thumb_url:
+                tdl = await _download_image(client, thumb_url)
+                if tdl:
+                    thumb = analyze_image(tdl[0], filename=tdl[1])
+                    thumb_hash = thumb.get("perceptual_hash") or ""
+            return {"ok": True, "image_url": video_url, "via": via,
+                    "analysis": analysis, "thumbnail": thumb,
+                    **media_intel.report_for_hash(thumb_hash, image_url=video_url)}
+
         if not image_url:
             return {"ok": False,
-                    "reason": "No image found on the post (no og:image / preview tag). "
-                              "The page may require login or block automated fetches."}
+                    "reason": "No image or video found on the post (no og:image/og:video "
+                              "tag). The page may require login or block automated fetches."}
         dl = await _download_image(client, image_url)
         if not dl:
             return {"ok": False, "reason": f"Could not download the post image ({image_url})."}
@@ -103,6 +175,7 @@ async def analyze_from_url(url: str) -> dict:
         "ok": True,
         "source": {"kind": "url", "post_url": url, "image_url": res["image_url"], "via": res["via"]},
         "analysis": res["analysis"],
+        "thumbnail": res.get("thumbnail"),
         "reverse_image": res["reverse_image"],
         "person": res["person"],
     }
@@ -120,14 +193,27 @@ async def analyze_from_post(post_id: str, *, try_live: bool = True) -> dict:
     with session_scope() as s:
         post = s.get(Post, post_id) if post_id and post_id != "top" else None
         if not post:
-            # convenience: newest post that carries media in the index
+            # convenience: newest post that carries media (live attachment
+            # first, then the simulated monitored-media index)
             rows = s.exec(select(Post).order_by(col(Post.threat_score).desc()).limit(120)).all()
-            post = next((p for p in rows
-                         if media_intel.scenario_for(p.id, p.threat_label)), rows[0] if rows else None)
+            post = next((p for p in rows if p.media_urls
+                         or media_intel.scenario_for(p.id, p.threat_label)),
+                        rows[0] if rows else None)
         if not post:
             return {"ok": False, "error": "No posts available in the feed."}
         ref = _post_ref(post)
         pid, label, url = post.id, post.threat_label, post.url
+        media_urls = list(post.media_urls or [])
+
+    # Live posts store their attached media directly (pbs.twimg.com / i.redd.it
+    # are publicly fetchable) — the strongest path, try it first.
+    if try_live:
+        for murl in media_urls:
+            live = await analyze_from_url(murl)
+            if live.get("ok"):
+                live["source"]["kind"] = "post"
+                live["source"]["post"] = ref
+                return live
 
     # A real platform URL (news/RSS/Web) may expose a public og:image — try it.
     if try_live and url and any(url.lower().split("?")[0].endswith(e) for e in _IMG_EXT):
