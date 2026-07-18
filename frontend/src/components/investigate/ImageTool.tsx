@@ -9,7 +9,16 @@ import type { Appearance, ImageAnalysis, ImageSource, PersonFind, ReverseImage }
 import { AccountChip, EmptyHint, FindingRow, KV, Meter, Pill, RunButton, Spinner, TextInput } from "./shared";
 
 type Mode = "upload" | "url" | "feed";
-interface Result { analysis: ImageAnalysis; reverse_image: ReverseImage; person: PersonFind; source?: ImageSource; preview?: string | null }
+interface Result {
+  analysis: ImageAnalysis; reverse_image: ReverseImage; person: PersonFind;
+  source?: ImageSource; preview?: string | null; thumbnail?: ImageAnalysis | null;
+}
+
+function fmtDuration(s?: number | null): string {
+  if (!s && s !== 0) return "?";
+  const m = Math.floor(s / 60);
+  return `${m}:${String(Math.round(s % 60)).padStart(2, "0")} min`;
+}
 
 function Bucket({ title, icon, accounts, tone }: {
   title: string; icon: React.ReactNode; accounts: Appearance[]; tone: string;
@@ -56,8 +65,8 @@ export default function ImageTool() {
     reset(); setLoading(true);
     try {
       const r = await api.investigateImageFromUrl(url.trim());
-      if (!r.ok || !r.analysis) { setErr(r.error || "Could not resolve an image from that URL."); }
-      else setResult({ analysis: r.analysis, reverse_image: r.reverse_image!, person: r.person!, source: r.source, preview: r.source?.image_url });
+      if (!r.ok || !r.analysis) { setErr(r.error || "Could not resolve media from that URL."); }
+      else setResult({ analysis: r.analysis, reverse_image: r.reverse_image!, person: r.person!, source: r.source, preview: r.analysis.media_type === "video" ? null : r.source?.image_url, thumbnail: r.thumbnail });
     } catch (e) { setErr((e as Error).message); }
     finally { setLoading(false); }
   }
@@ -67,7 +76,7 @@ export default function ImageTool() {
     try {
       const r = await api.investigatePostMedia(postId.trim() || "top");
       if (!r.ok || !r.analysis) { setErr(r.error || "That post has no attached media."); }
-      else setResult({ analysis: r.analysis, reverse_image: r.reverse_image!, person: r.person!, source: r.source, preview: r.source?.image_url });
+      else setResult({ analysis: r.analysis, reverse_image: r.reverse_image!, person: r.person!, source: r.source, preview: r.analysis.media_type === "video" ? null : r.source?.image_url, thumbnail: r.thumbnail });
     } catch (e) { setErr((e as Error).message); }
     finally { setLoading(false); }
   }
@@ -86,8 +95,8 @@ export default function ImageTool() {
   return (
     <div className="space-y-4">
       <GlassCard className="p-4">
-        <SectionTitle title="Image / Media Forensics"
-          sub="Upload an image, pull it straight from a post URL, or grab a flagged post from the live feed — then trace where else it appears." />
+        <SectionTitle title="Image & Video Forensics"
+          sub="Upload an image or video, pull it straight from a post URL, or grab a flagged post from the live feed — then trace where else it appears." />
 
         <div className="mb-3 flex gap-1.5">
           {MODES.map(({ id, label, icon: Icon }) => (
@@ -107,8 +116,8 @@ export default function ImageTool() {
             className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-white/[0.1] bg-white/[0.02] py-8 text-center transition-colors hover:border-accent/40"
           >
             <ImageUp size={26} className="text-slate-500" />
-            <div className="text-sm text-slate-400">Drop an image here or <span className="text-accent">browse</span></div>
-            <div className="text-[11px] text-slate-600">JPG / PNG / WEBP — EXIF + reverse-source tracing · max 25 MB</div>
+            <div className="text-sm text-slate-400">Drop an image or video here or <span className="text-accent">browse</span></div>
+            <div className="text-[11px] text-slate-600">JPG / PNG / WEBP · MP4 / MOV — EXIF & container forensics + reverse-source tracing · max 25 MB</div>
             <input ref={inputRef} type="file" accept="image/*,video/*" className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) fromFile(f); }} />
           </div>
@@ -118,10 +127,10 @@ export default function ImageTool() {
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <div className="flex-1"><TextInput value={url} onChange={setUrl} onEnter={fromUrl}
-                placeholder="Paste a post or image URL (Facebook / Instagram / X / news / direct .jpg)" mono /></div>
+                placeholder="Paste a post, image or video URL (X / Reddit / news / direct .jpg / .mp4 / v.redd.it)" mono /></div>
               <RunButton onClick={fromUrl} disabled={loading || !url.trim()}><ScanSearch size={15} /> Fetch & analyze</RunButton>
             </div>
-            <p className="text-[11px] text-slate-600">The system reads the post's preview image (og:image) or a direct image link — no manual download needed. Login-gated posts can't be fetched.</p>
+            <p className="text-[11px] text-slate-600">The system reads the post's media — og:image preview, og:video stream, direct image/video links, or v.redd.it renditions. Login-gated posts can't be fetched.</p>
           </div>
         )}
 
@@ -169,6 +178,27 @@ export default function ImageTool() {
               <>
                 <KV k="Subject" v={a.subject} />
                 <KV k="pHash" v={a.perceptual_hash} />
+                <div className="space-y-1.5">
+                  {a.manipulation.findings.map((f, i) => <FindingRow key={i} level={f.level} text={f.text} />)}
+                </div>
+              </>
+            ) : a.media_type === "video" ? (
+              <>
+                <div>
+                  <KV k="Format" v={`${a.format} · ${a.codec || "?"}`} />
+                  {a.width && a.height && <KV k="Resolution" v={`${a.width}×${a.height}`} />}
+                  <KV k="Duration" v={fmtDuration(a.duration_s)} />
+                  {a.bitrate_kbps && <KV k="Bitrate" v={`${a.bitrate_kbps} kbps`} />}
+                  <KV k="Size" v={`${(a.size_bytes / (1024 * 1024)).toFixed(2)} MB`} />
+                  {a.captured_at && <KV k="Captured" v={a.captured_at} />}
+                  {a.modified_at && <KV k="Modified" v={a.modified_at} />}
+                  <KV k="SHA-256" v={<span title={a.sha256}>{a.sha256?.slice(0, 16)}…</span>} />
+                </div>
+                {a.manipulation.integrity_score !== null && (
+                  <Meter value={a.manipulation.integrity_score}
+                    color={a.manipulation.integrity_score >= 70 ? "#10B981" : a.manipulation.integrity_score >= 40 ? "#F59E0B" : "#EF4444"}
+                    label="Metadata integrity" />
+                )}
                 <div className="space-y-1.5">
                   {a.manipulation.findings.map((f, i) => <FindingRow key={i} level={f.level} text={f.text} />)}
                 </div>

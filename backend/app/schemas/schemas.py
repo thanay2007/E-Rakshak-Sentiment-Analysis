@@ -22,6 +22,7 @@ class RawPost(BaseModel):
     longitude: float = 0.0
     engagement: dict = {}
     url: str = ""
+    media_urls: list[str] = []     # direct image/video URLs attached to the post
     cluster_id: str = ""
     is_amplified: bool = False
     true_label: str = ""

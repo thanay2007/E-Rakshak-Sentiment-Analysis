@@ -4,10 +4,9 @@ from app.crawlers.base import Collector
 from app.crawlers.facebook import FacebookCollector
 from app.crawlers.instagram import InstagramCollector
 from app.crawlers.reddit import RedditCollector
-from app.crawlers.rss import RSSCollector
 from app.crawlers.simulated import SimulatedCollector
+from app.crawlers.twikit_x import TwikitXCollector
 from app.crawlers.twitter import XCollector
-from app.crawlers.youtube import YouTubeCollector
 
 _ALL: list[Collector] = [
     SimulatedCollector(),
@@ -15,8 +14,7 @@ _ALL: list[Collector] = [
     InstagramCollector(),
     RedditCollector(),
     XCollector(),
-    YouTubeCollector(),
-    RSSCollector(),
+    TwikitXCollector(),
 ]
 
 

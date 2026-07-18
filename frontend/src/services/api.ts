@@ -42,10 +42,22 @@ export interface Post {
     llm_threat_label?: string;
     llm_sentiment?: string;
     llm_confidence?: number;
+    evidence?: string[];
     reason?: string;
     verdict?: "agrees" | "disagrees";
     overridden?: boolean;
   };
+  evidence_report?: EvidenceReport;
+  fact_check?: {
+    checked?: boolean;
+    query?: string;
+    verdict?: "corroborated" | "partially corroborated" | "uncorroborated";
+    note?: string;
+    matches?: { title: string; source: string; link: string }[];
+    checked_at?: string;
+  };
+  media_urls?: string[];
+  url?: string;
   created_at: string;
   // full detail
   author_account_age_days?: number;
@@ -56,9 +68,26 @@ export interface Post {
   keywords?: string[];
   latitude?: number;
   longitude?: number;
-  url?: string;
   true_label?: string;
   ingested_at?: string;
+}
+
+export interface EvidenceReport {
+  generated_at?: string;
+  model?: string;
+  summary?: string;
+  claims?: { claim: string; type: string; assessment: string; basis: string }[];
+  evidence_phrases?: { quote: string; significance: string }[];
+  corroboration?: {
+    verdict?: string;
+    explanation?: string;
+    citations?: { source: string; title: string; link: string }[];
+  };
+  account_assessment?: string;
+  risk_assessment?: string;
+  recommended_action?: string;
+  limitations?: string;
+  confidence?: number;
 }
 
 export interface FeedPage {
@@ -205,6 +234,9 @@ export interface ImageAnalysis {
   format?: string; width?: number; height?: number; megapixels?: number; mode?: string;
   perceptual_hash?: string | null; average_hash?: string | null;
   camera?: string | null; captured_at?: string | null; software?: string | null;
+  // video-specific (MP4 container forensics)
+  codec?: string | null; duration_s?: number | null; bitrate_kbps?: number | null;
+  modified_at?: string | null;
   exif?: Record<string, unknown>;
   gps?: { latitude: number; longitude: number; maps_url: string; altitude_m?: number } | null;
   manipulation: { integrity_score: number | null; findings: ImageFinding[] };
@@ -225,7 +257,8 @@ export interface ImageSource {
 }
 export interface PostImageReport {
   ok: boolean; error?: string; source?: ImageSource;
-  analysis?: ImageAnalysis; reverse_image?: ReverseImage; person?: PersonFind;
+  analysis?: ImageAnalysis; thumbnail?: ImageAnalysis | null;
+  reverse_image?: ReverseImage; person?: PersonFind;
   post?: { post_id: string; platform: string; author_handle: string; text: string; threat_label: string; url: string };
 }
 export interface Appearance {
@@ -327,6 +360,10 @@ export const api = {
   stats: () => http<Stats>("/api/stats"),
   feed: (f: FeedFilters = {}) => http<FeedPage>(`/api/feed${qs(f as Record<string, unknown>)}`),
   post: (id: string) => http<Post>(`/api/feed/${id}`),
+  factCheckPost: (id: string) =>
+    http<NonNullable<Post["fact_check"]>>(`/api/feed/${id}/fact-check`, { method: "POST" }),
+  evidenceReport: (id: string) =>
+    http<EvidenceReport>(`/api/feed/${id}/evidence-report`, { method: "POST" }),
   trends: (hours = 24) => http<Trends>(`/api/trends?hours=${hours}`),
   network: (hours = 24) => http<NetworkData>(`/api/network?hours=${hours}`),
   alerts: (params: { status?: string; severity?: string; limit?: number } = {}) =>

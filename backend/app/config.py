@@ -31,6 +31,17 @@ class Settings(BaseSettings):
     X_BEARER_TOKEN: str = ""
     YOUTUBE_API_KEY: str = ""
 
+    # X via twikit (unofficial, key-free) — credentials of a real X account
+    # (use a dedicated burner). Activates the "X (twikit)" adapter when
+    # username + password are set; cookies persist in backend/x_cookies.json.
+    X_USERNAME: str = ""
+    X_EMAIL: str = ""
+    X_PASSWORD: str = ""
+    # Preferred twikit auth: session cookies from a browser logged into x.com
+    # (Cloudflare blocks the password-login endpoint for Python clients).
+    X_AUTH_TOKEN: str = ""
+    X_CT0: str = ""
+
     # Groq LLM second-opinion layer (services/groq_verifier.py). Free key from
     # console.groq.com — without it the layer simply stays off.
     GROQ_API_KEY: str = ""

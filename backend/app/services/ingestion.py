@@ -42,10 +42,12 @@ def _make_post(raw: RawPost, nlp: dict, chash: str) -> Post:
         author_followers=raw.author_followers, author_verified=raw.author_verified,
         author_account_age_days=raw.author_account_age_days,
         text=raw.text,
-        translation=raw.translation,  # simulated gloss; real posts get MT in full mode
+        # simulated posts carry their own gloss; live non-English posts get a
+        # Groq machine translation during enrichment
+        translation=nlp.pop("translation", "") or raw.translation,
         hashtags=raw.hashtags, location=raw.location,
         latitude=raw.latitude, longitude=raw.longitude,
-        engagement=raw.engagement, url=raw.url,
+        engagement=raw.engagement, url=raw.url, media_urls=raw.media_urls,
         cluster_id=raw.cluster_id, is_amplified=raw.is_amplified,
         true_label=raw.true_label,
         created_at=raw.created_at or None,
@@ -121,8 +123,13 @@ async def ingest(raws: list[RawPost]) -> int:
         enriched = get_pipeline().enrich_batch(fresh_raws)
         # LLM second opinion on the risky subset BEFORE alerts fire (no-op
         # without GROQ_API_KEY) — see services/groq_verifier.py
-        from app.services.groq_verifier import verify_enriched
+        from app.services.groq_verifier import translate_enriched, verify_enriched
         await verify_enriched([r.text for r in fresh_raws], enriched)
+        # English gloss for every non-English post (Groq MT)
+        await translate_enriched([r.text for r in fresh_raws], enriched)
+        # Cross-source corroboration of suspected fake news (Google News RSS)
+        from app.services.fact_check import corroborate_enriched
+        await corroborate_enriched([r.text for r in fresh_raws], enriched)
         for (chash, raw), nlp in zip(fresh.items(), enriched):
             post = _make_post(raw, nlp, chash)
             s.add(post)
@@ -148,7 +155,11 @@ async def ingest(raws: list[RawPost]) -> int:
 
 
 def seed_if_empty() -> int:
-    """First boot: backfill simulated history so the dashboard is alive immediately."""
+    """First boot: backfill simulated history so the dashboard is alive immediately.
+    Skipped in live mode (SIMULATION_ENABLED=false) — the portal then shows
+    only real collected posts."""
+    if not settings.SIMULATION_ENABLED:
+        return 0
     with session_scope() as s:
         if s.exec(select(Post.id).limit(1)).first():
             return 0

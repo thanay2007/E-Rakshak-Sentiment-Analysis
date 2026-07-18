@@ -12,9 +12,10 @@ python-multipart>=0.0.9
 Pillow>=10.0
 pydantic-settings>=2.0.0
 alembic>=1.13.0
-telethon>=1.33
 twilio>=8.0
 openai-whisper>=20231117
 face_recognition>=1.3.0
 scikit-learn>=1.3.0
 dlib>=19.24.0
+# PyPI twikit 2.3.3 is broken vs X's 2026 frontend; use the community-patched PR build
+twikit @ git+https://github.com/d60/twikit.git@refs/pull/432/head

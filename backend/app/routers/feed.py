@@ -85,6 +85,51 @@ def get_post(post_id: str, session: Session = Depends(get_session)) -> dict:
     return post_to_dict(post, full=True)
 
 
+@router.post("/feed/{post_id}/fact-check")
+async def fact_check_post(post_id: str) -> dict:
+    """Analyst-triggered cross-source corroboration from the detail drawer:
+    checks the post's claim against Google News India and stores the verdict
+    (with the matching headlines as proof links) on the post."""
+    import httpx
+
+    from app.services.fact_check import _query_for, check_claim
+
+    with session_scope() as s:
+        post = s.get(Post, post_id)
+        if not post:
+            raise HTTPException(404, "Post not found")
+        query = _query_for({"keywords": post.keywords or []},
+                           post.translation or post.text)
+    if not query:
+        raise HTTPException(422, "Post has no usable terms to check")
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            record = await check_claim(client, query)
+    except Exception:
+        raise HTTPException(502, "News corroboration lookup failed — try again")
+    with session_scope() as s:
+        post = s.get(Post, post_id)
+        if post:
+            post.fact_check = record
+            s.add(post)
+            s.commit()
+    return record
+
+
+@router.post("/feed/{post_id}/evidence-report")
+async def evidence_report(post_id: str) -> dict:
+    """Analyst-triggered detailed dossier: claims assessed one by one, verbatim
+    evidence quotes, cited news sources, account/risk assessment and a
+    recommended action. Stored on the post."""
+    from app.services.evidence import generate_report
+
+    result = await generate_report(post_id)
+    if not result.get("ok"):
+        raise HTTPException(502 if "not found" not in result.get("error", "").lower() else 404,
+                            result.get("error", "Dossier generation failed"))
+    return result
+
+
 @router.post("/feed/{post_id}/escalate")
 def escalate_post(post_id: str, session: Session = Depends(get_session)) -> dict:
     """Analyst-triggered escalation from the detail drawer: files an

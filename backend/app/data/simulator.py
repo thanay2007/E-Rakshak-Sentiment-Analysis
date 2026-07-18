@@ -23,7 +23,7 @@ from datetime import datetime, timedelta, timezone
 from app.data.templates import CITIES, GROUPS, LANG_NAMES, OFFICIALS, PLACES, TEMPLATES, TIMES
 from app.schemas import RawPost
 
-PLATFORMS = ["X", "Facebook", "Instagram", "YouTube"]
+PLATFORMS = ["X", "Facebook", "Instagram", "Reddit"]
 PLATFORM_WEIGHTS = [0.40, 0.25, 0.20, 0.15]
 
 CATEGORY_WEIGHTS = {
@@ -131,7 +131,7 @@ class Simulator:
             "X": f"https://x.com/{author['handle']}/status/{pid}",
             "Facebook": f"https://facebook.com/{author['handle']}/posts/{pid}",
             "Instagram": f"https://instagram.com/p/{pid}",
-            "YouTube": f"https://youtube.com/watch?v=sim{pid}",
+            "Reddit": f"https://reddit.com/r/gujarat/comments/sim{pid}",
         }
         lat, lon = CITIES[slots["city"]]
         return RawPost(

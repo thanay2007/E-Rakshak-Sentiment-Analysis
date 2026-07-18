@@ -17,7 +17,7 @@ def utcnow() -> datetime:
 class Post(SQLModel, table=True):
     id: str = Field(default_factory=_uuid, primary_key=True)
     content_hash: str = Field(index=True, unique=True)
-    platform: str = Field(index=True)                 # X | Facebook | Instagram | YouTube | Reddit | Web
+    platform: str = Field(index=True)                 # X | Facebook | Instagram | Reddit
     author_handle: str = Field(index=True)
     author_name: str = ""
     author_followers: int = 0
@@ -46,12 +46,19 @@ class Post(SQLModel, table=True):
     longitude: float = 0.0
     engagement: dict = Field(default_factory=dict, sa_column=Column(JSON))  # likes/shares/comments/views
     url: str = ""
+    media_urls: list = Field(default_factory=list, sa_column=Column(JSON))  # attached image/video URLs
     cluster_id: str = Field(default="", index=True)   # coordinated-burst id ("" = organic)
     is_amplified: bool = False
 
     # Groq LLM second-opinion verdict (services/groq_verifier.py): model,
     # llm labels, confidence, reason, agrees/disagrees, overridden flag.
     llm_verification: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    # Cross-source corroboration for suspected fake news (services/fact_check.py):
+    # verdict, matching news headlines, query used.
+    fact_check: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    # Analyst-grade dossier (services/evidence.py): claims individually assessed,
+    # verbatim evidence phrases, cited news sources, risk + recommended action.
+    evidence_report: dict = Field(default_factory=dict, sa_column=Column(JSON))
 
     true_label: str = ""                              # ground truth for simulated posts (accuracy metrics)
     created_at: datetime = Field(default_factory=utcnow, index=True)   # when posted on the platform
