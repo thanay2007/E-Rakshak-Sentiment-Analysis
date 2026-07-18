@@ -55,7 +55,7 @@ export default function TopBar() {
           navigate(e.target.value ? `/app/feed?language=${encodeURIComponent(e.target.value)}` : "/app/feed")
         }
         defaultValue=""
-        className="rounded-xl border border-white/[0.08] bg-base-800 px-2.5 py-2 text-xs text-slate-400 focus:border-accent/40 focus:outline-none"
+        className="rounded-xl border border-white/[0.08] bg-base-800 pl-2.5 pr-8 py-2 text-xs text-slate-400 focus:border-accent/40 focus:outline-none"
         aria-label="Language quick filter"
       >
         <option value="">All languages</option>

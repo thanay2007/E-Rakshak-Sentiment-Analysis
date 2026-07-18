@@ -55,3 +55,8 @@ As requested, rather than adding a generic user login system, I have implemented
 - **Files Touched:** `frontend/src/index.css`, `frontend/tailwind.config.js`, `frontend/src/pages/Dashboard.tsx`, `frontend/src/components/StatTile.tsx`, `frontend/src/pages/Landing.tsx`, `frontend/src/pages/Reports.tsx`
 - **What Changed:** Fixed a visibility issue where Recharts tooltips (e.g. Threat Levels Pie Chart) rendered black text on dark backgrounds by manually injecting payload `fill` colors and overriding inline styles using custom CSS variables. Fixed a bug where KPI numbers were invisible in Light Mode by dynamically aliasing `text-slate-100` to `text-slate-200` and propagating the changes globally.
 - **Why:** Ensures that the command center dashboard remains perfectly readable and fully accessible whether the duty officer is viewing it in dark mode at night or light mode during the day.
+
+## 12. Frontend UI Select Dropdown Overlap Fix
+- **Files Touched:** `frontend/src/components/TopBar.tsx`, `frontend/src/pages/Alerts.tsx`, `frontend/src/pages/Watchlist.tsx`, `frontend/src/pages/ThreatFeed.tsx`, `frontend/src/pages/Reports.tsx`
+- **What Changed:** Adjusted right padding (`pr-8`) on all `<select>` tags across the application.
+- **Why:** To prevent text from overlapping with the native drop-down arrows, ensuring a cleaner and fully legible interface.

@@ -195,7 +195,7 @@ export default function Reports() {
           placeholder="Report title (optional)"
           className="w-64 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs text-slate-200 placeholder:text-slate-600 focus:border-accent/40 focus:outline-none"
         />
-        <select value={period} onChange={(e) => setPeriod(Number(e.target.value))} className="rounded-xl border border-white/[0.08] bg-base-800 px-2.5 py-2 text-xs text-slate-400">
+        <select value={period} onChange={(e) => setPeriod(Number(e.target.value))} className="rounded-xl border border-white/[0.08] bg-base-800 pl-2.5 pr-8 py-2 text-xs text-slate-400">
           <option value={6}>Last 6 hours</option>
           <option value={24}>Last 24 hours</option>
           <option value={72}>Last 72 hours</option>

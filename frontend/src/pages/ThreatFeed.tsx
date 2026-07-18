@@ -104,11 +104,11 @@ export default function ThreatFeed() {
             placeholder="Keyword / #hashtag / @handle"
             className="w-52 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-600 focus:border-accent/40 focus:outline-none"
           />
-          <select value={get("language")} onChange={(e) => setParam("language", e.target.value)} className="rounded-xl border border-white/[0.08] bg-base-800 px-2 py-1.5 text-slate-400">
+          <select value={get("language")} onChange={(e) => setParam("language", e.target.value)} className="rounded-xl border border-white/[0.08] bg-base-800 pl-2 pr-8 py-1.5 text-slate-400">
             <option value="">Language</option>
             {LANGUAGES.map((l) => <option key={l} value={l}>{l}</option>)}
           </select>
-          <select value={get("location")} onChange={(e) => setParam("location", e.target.value)} className="rounded-xl border border-white/[0.08] bg-base-800 px-2 py-1.5 text-slate-400">
+          <select value={get("location")} onChange={(e) => setParam("location", e.target.value)} className="rounded-xl border border-white/[0.08] bg-base-800 pl-2 pr-8 py-1.5 text-slate-400">
             <option value="">Geo watchlist</option>
             {CITIES.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
@@ -124,7 +124,7 @@ export default function ThreatFeed() {
           </label>
           <input type="datetime-local" value={get("date_from")} onChange={(e) => setParam("date_from", e.target.value)} className="rounded-xl border border-white/[0.08] bg-base-800 px-2 py-1.5 text-slate-400" aria-label="From" />
           <input type="datetime-local" value={get("date_to")} onChange={(e) => setParam("date_to", e.target.value)} className="rounded-xl border border-white/[0.08] bg-base-800 px-2 py-1.5 text-slate-400" aria-label="To" />
-          <select value={get("sort") || "recent"} onChange={(e) => setParam("sort", e.target.value)} className="rounded-xl border border-white/[0.08] bg-base-800 px-2 py-1.5 text-slate-400">
+          <select value={get("sort") || "recent"} onChange={(e) => setParam("sort", e.target.value)} className="rounded-xl border border-white/[0.08] bg-base-800 pl-2 pr-8 py-1.5 text-slate-400">
             <option value="recent">Most recent</option>
             <option value="score">Highest threat</option>
             <option value="engagement">Most shared</option>

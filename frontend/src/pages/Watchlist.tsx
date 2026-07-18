@@ -42,7 +42,7 @@ export default function Watchlist() {
 
       <GlassCard className="p-4">
         <form onSubmit={add} className="flex flex-wrap items-center gap-2">
-          <select value={kind} onChange={(e) => setKind(e.target.value)} className="rounded-xl border border-white/[0.08] bg-base-800 px-2.5 py-2 text-xs text-slate-400">
+          <select value={kind} onChange={(e) => setKind(e.target.value)} className="rounded-xl border border-white/[0.08] bg-base-800 pl-2.5 pr-8 py-2 text-xs text-slate-400">
             {Object.keys(KIND_META).map((k) => <option key={k} value={k}>{k}</option>)}
           </select>
           <input
