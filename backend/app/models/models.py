@@ -91,3 +91,12 @@ class Report(SQLModel, table=True):
     payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
     pdf_path: str = ""
     created_at: datetime = Field(default_factory=utcnow, index=True)
+
+class AuditLog(SQLModel, table=True):
+    """Immutable log of analyst actions for chain-of-custody compliance."""
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    action: str = Field(index=True)                    # e.g., "alert_escalated", "report_generated", "osint_lookup"
+    target_id: str = Field(default="")                 # the ID of the affected resource
+    details: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=utcnow, index=True)
+

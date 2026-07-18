@@ -155,3 +155,28 @@ async def verify_enriched(texts: list[str], enriched: list[dict]) -> int:
     if n:
         log.info("Groq verified %d/%d risky posts", n, len(candidates))
     return n
+
+
+async def summarize_briefing(text: str) -> str:
+    """Uses LLM to summarize recent threat data into a concise intelligence briefing."""
+    if not enabled():
+        return text
+    body = {
+        "model": settings.GROQ_MODEL,
+        "temperature": 0.3,
+        "messages": [
+            {"role": "system", "content": "You are a senior intelligence officer summarizing threat data into a concise 1-paragraph briefing for local law enforcement."},
+            {"role": "user", "content": f"Summarize this data into a short tactical briefing:\n\n{text}"},
+        ],
+    }
+    try:
+        async with httpx.AsyncClient(timeout=settings.GROQ_TIMEOUT_SECONDS) as client:
+            resp = await client.post(GROQ_URL, json=body, headers={
+                "Authorization": f"Bearer {settings.GROQ_API_KEY}",
+                "Content-Type": "application/json",
+            })
+        if resp.status_code == 200:
+            return resp.json()["choices"][0]["message"]["content"].strip()
+    except Exception as exc:
+        log.warning("Groq briefing failed (%s)", exc)
+    return text

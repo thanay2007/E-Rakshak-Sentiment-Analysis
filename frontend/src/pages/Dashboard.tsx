@@ -21,12 +21,12 @@ import { api } from "../services/api";
 import type { Post } from "../services/api";
 
 const TOOLTIP_STYLE = {
-  backgroundColor: "rgba(15,20,32,0.96)",
-  border: "1px solid rgba(255,255,255,0.1)",
+  backgroundColor: "rgba(var(--color-base-800), 0.96)",
+  border: "1px solid rgba(var(--color-white), 0.1)",
   borderRadius: 12,
   fontSize: 11,
   fontFamily: "'JetBrains Mono', monospace",
-  color: "#e2e8f0",
+  color: "rgb(var(--color-slate-200))",
 };
 
 export default function Dashboard() {
@@ -62,6 +62,7 @@ export default function Dashboard() {
       Object.entries(stats?.threat_distribution ?? {}).map(([name, value]) => ({
         name,
         value,
+        fill: THREAT_COLORS[name] ?? "#64748B",
       })),
     [stats]
   );

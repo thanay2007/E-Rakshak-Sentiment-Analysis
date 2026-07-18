@@ -2,10 +2,10 @@
  *  labels (validated palette: color is never the only identity channel). */
 
 export const THREAT_COLORS: Record<string, string> = {
-  "Incitement to Violence": "#EF4444",
-  Inflammatory: "#F59E0B",
-  "Fake News": "#A855F7",
-  Neutral: "#10B981",
+  "Incitement to Violence": "#DC2626",
+  Inflammatory: "#EA580C",
+  "Fake News": "#9333EA",
+  Neutral: "#059669",
 };
 
 export const THREAT_SHORT: Record<string, string> = {
@@ -16,26 +16,26 @@ export const THREAT_SHORT: Record<string, string> = {
 };
 
 export const SEVERITY_COLORS: Record<string, string> = {
-  critical: "#EF4444",
-  high: "#F59E0B",
-  medium: "#14B8C4",
+  critical: "#DC2626",
+  high: "#EA580C",
+  medium: "#F59E0B",
 };
 
 export const SENTIMENT_COLORS: Record<string, string> = {
-  positive: "#10B981",
+  positive: "#059669",
   neutral: "#64748B",
-  negative: "#EF4444",
+  negative: "#DC2626",
 };
 
 export const LANGUAGES = ["Gujarati", "Hindi", "Hinglish", "Gujlish", "English", "Mixed"];
 export const PLATFORMS = ["X", "Facebook", "Instagram", "YouTube", "Reddit", "Web"];
 export const THREAT_LABELS = Object.keys(THREAT_COLORS);
 
-export const ACCENT = "#14B8C4";
+export const ACCENT = "#F59E0B";
 
 export function threatColor(score: number): string {
-  if (score >= 65) return "#EF4444";
-  if (score >= 45) return "#F59E0B";
-  if (score >= 25) return "#A855F7";
-  return "#10B981";
+  if (score >= 65) return "#DC2626";
+  if (score >= 45) return "#EA580C";
+  if (score >= 25) return "#9333EA";
+  return "#059669";
 }

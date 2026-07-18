@@ -19,14 +19,21 @@ const NAV = [
 export function Logo({ size = 30 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 100 100" aria-hidden>
-      <polygon
-        points="50,6 90,26 90,60 50,94 10,60 10,26"
-        fill="none"
-        stroke="#14B8C4"
-        strokeWidth="6"
-      />
-      <circle cx="50" cy="47" r="12" fill="#14B8C4" />
-      <line x1="50" y1="62" x2="50" y2="80" stroke="#14B8C4" strokeWidth="6" strokeLinecap="round" />
+      <circle cx="50" cy="50" r="42" fill="none" stroke="#F59E0B" strokeWidth="6" />
+      <circle cx="50" cy="50" r="35" fill="none" stroke="#F59E0B" strokeWidth="2" />
+      <circle cx="50" cy="50" r="8" fill="#F59E0B" />
+      {Array.from({ length: 24 }).map((_, i) => (
+        <line
+          key={i}
+          x1="50"
+          y1="50"
+          x2="50"
+          y2="15"
+          stroke="#F59E0B"
+          strokeWidth="2"
+          transform={`rotate(${i * 15} 50 50)`}
+        />
+      ))}
     </svg>
   );
 }
@@ -47,8 +54,8 @@ export default function Sidebar({
       <div className="flex h-14 items-center gap-2.5 border-b border-white/[0.06] px-4">
         <Logo size={26} />
         {!collapsed && (
-          <span className="text-glow font-mono text-sm font-bold tracking-[0.25em] text-slate-100">
-            SENTINEL
+          <span className="text-glow font-mono text-sm font-bold tracking-[0.15em] text-slate-200">
+            E-RAKSHAK
           </span>
         )}
       </div>

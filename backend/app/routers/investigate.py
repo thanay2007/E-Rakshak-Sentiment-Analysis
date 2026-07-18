@@ -6,8 +6,10 @@ Covers the analyst-tool features:
   comment sentiment + bot detection, fake-PR campaign detection, and the
   all-in-one account sleuth dossier.
 """
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
+from sqlmodel import Session
+from app.database import get_session
 
 from app.osint.comment_analysis import analyze_comments, analyze_post_comments
 from app.osint.image_analysis import analyze_image
@@ -60,9 +62,33 @@ async def investigate_image(file: UploadFile = File(...)) -> dict:
 
 
 @router.post("/image-from-url")
-async def investigate_image_from_url(req: PostImageRequest) -> dict:
+async def investigate_image_from_url(req: PostImageRequest, session: Session = Depends(get_session)) -> dict:
     """Pull the image from a post/image URL and analyze it (no manual upload)."""
+    from app.services.audit import log_action
+    log_action(session, "osint_image_from_url", req.url)
     return await analyze_from_url(req.url)
+
+@router.post("/audio")
+async def investigate_audio(file: UploadFile = File(...), session: Session = Depends(get_session)) -> dict:
+    from app.services.audit import log_action
+    from app.osint.audio_analysis import transcribe_audio
+    import tempfile
+    import os
+    
+    log_action(session, "osint_audio_transcribe", file.filename)
+    
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".m4a") as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = tmp.name
+        
+    try:
+        result = transcribe_audio(tmp_path)
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+            
+    return result
 
 
 @router.get("/post-media/{post_id}")
@@ -73,32 +99,44 @@ async def investigate_post_media(post_id: str) -> dict:
 
 
 @router.get("/username")
-async def investigate_username(u: str) -> dict:
+async def investigate_username(u: str, session: Session = Depends(get_session)) -> dict:
+    from app.services.audit import log_action
+    log_action(session, "osint_username_lookup", u)
     return await lookup_username(u)
 
 
 @router.post("/url")
-async def investigate_url(req: UrlRequest) -> dict:
+async def investigate_url(req: UrlRequest, session: Session = Depends(get_session)) -> dict:
+    from app.services.audit import log_action
+    log_action(session, "osint_url_lookup", req.url)
     return await analyze_url(req.url, resolve=req.resolve)
 
 
 @router.get("/comments/{post_id}")
-def investigate_post_comments(post_id: str) -> dict:
+def investigate_post_comments(post_id: str, session: Session = Depends(get_session)) -> dict:
+    from app.services.audit import log_action
+    log_action(session, "osint_post_comments", post_id)
     return analyze_post_comments(post_id)
 
 
 @router.post("/comments")
-def investigate_comments(req: CommentsRequest) -> dict:
+def investigate_comments(req: CommentsRequest, session: Session = Depends(get_session)) -> dict:
+    from app.services.audit import log_action
     if not req.comments:
         raise HTTPException(400, "Provide at least one comment.")
+    log_action(session, "osint_raw_comments", str(len(req.comments)))
     return analyze_comments([c.model_dump() for c in req.comments])
 
 
 @router.get("/pr-campaigns")
-def investigate_pr_campaigns(hours: int = 48) -> dict:
+def investigate_pr_campaigns(hours: int = 48, session: Session = Depends(get_session)) -> dict:
+    from app.services.audit import log_action
+    log_action(session, "osint_pr_campaigns", str(hours))
     return detect_pr_campaigns(hours=max(1, min(hours, 168)))
 
 
 @router.get("/sleuth")
-async def investigate_sleuth(handle: str, lookup: bool = True) -> dict:
+async def investigate_sleuth(handle: str, lookup: bool = True, session: Session = Depends(get_session)) -> dict:
+    from app.services.audit import log_action
+    log_action(session, "osint_sleuth", handle)
     return await build_dossier(handle, do_username_lookup=lookup)

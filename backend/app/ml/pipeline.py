@@ -41,7 +41,8 @@ class NLPPipeline:
 
     # ── batched (used by seeding / evaluation / burst ingestion) ─────────
     def enrich_batch(self, raws: list[RawPost]) -> list[dict]:
-        texts = [r.text for r in raws]
+        from app.ml.slang import translate_slang
+        texts = [translate_slang(r.text) for r in raws]
         lite = [classify(t) for t in texts]  # always run: supplies intent/evidence/signals
 
         if self.mode == "full" and self._engine is not None:

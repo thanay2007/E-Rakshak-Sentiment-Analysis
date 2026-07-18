@@ -3,11 +3,11 @@ GET /api/feed/{id} — full NLP breakdown for the detail drawer."""
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import String, cast, func, or_
-from sqlmodel import col, select
+from sqlmodel import Session, col, select
 
-from app.database import session_scope
+from app.database import get_session
 from app.models import Post
 from app.schemas import FeedPage
 from app.services.serializers import post_to_dict
@@ -37,6 +37,7 @@ def get_feed(
     sort: str = Query("recent", pattern="^(recent|score|engagement)$"),
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
+    session: Session = Depends(get_session)
 ):
     stmt = select(Post)
     if platform:
@@ -63,49 +64,46 @@ def get_feed(
     if dt_:
         stmt = stmt.where(Post.created_at <= dt_)
 
-    with session_scope() as s:
-        total = s.exec(select(func.count()).select_from(stmt.subquery())).one()
-        if sort == "score":
-            stmt = stmt.order_by(col(Post.threat_score).desc(), col(Post.created_at).desc())
-        elif sort == "engagement":
-            stmt = stmt.order_by(func.json_extract(Post.engagement, "$.shares").desc())
-        else:
-            stmt = stmt.order_by(col(Post.created_at).desc())
-        rows = s.exec(stmt.offset((page - 1) * page_size).limit(page_size)).all()
-        items = [post_to_dict(p, full=True) for p in rows]
+    total = session.exec(select(func.count()).select_from(stmt.subquery())).one()
+    if sort == "score":
+        stmt = stmt.order_by(col(Post.threat_score).desc(), col(Post.created_at).desc())
+    elif sort == "engagement":
+        stmt = stmt.order_by(func.json_extract(Post.engagement, "$.shares").desc())
+    else:
+        stmt = stmt.order_by(col(Post.created_at).desc())
+    rows = session.exec(stmt.offset((page - 1) * page_size).limit(page_size)).all()
+    items = [post_to_dict(p, full=True) for p in rows]
 
     return FeedPage(items=items, total=total, page=page, page_size=page_size)
 
 
 @router.get("/feed/{post_id}")
-def get_post(post_id: str) -> dict:
-    with session_scope() as s:
-        post = s.get(Post, post_id)
-        if not post:
-            raise HTTPException(404, "Post not found")
-        return post_to_dict(post, full=True)
+def get_post(post_id: str, session: Session = Depends(get_session)) -> dict:
+    post = session.get(Post, post_id)
+    if not post:
+        raise HTTPException(404, "Post not found")
+    return post_to_dict(post, full=True)
 
 
 @router.post("/feed/{post_id}/escalate")
-def escalate_post(post_id: str) -> dict:
+def escalate_post(post_id: str, session: Session = Depends(get_session)) -> dict:
     """Analyst-triggered escalation from the detail drawer: files an
     escalation report pre-filled from the post's NLP evidence."""
     from app.models import Report
     from app.services.report_service import escalation_template
     from app.services.serializers import iso
 
-    with session_scope() as s:
-        post = s.get(Post, post_id)
-        if not post:
-            raise HTTPException(404, "Post not found")
-        report = Report(
-            title=f"Escalation — {post.threat_label} by @{post.author_handle}",
-            kind="escalation", period_hours=0,
-            payload={"escalation": escalation_template(post)},
-        )
-        s.add(report)
-        s.commit()
-        s.refresh(report)
-        return {"id": report.id, "title": report.title, "kind": report.kind,
-                "created_at": iso(report.created_at), "has_pdf": False,
-                "payload": report.payload}
+    post = session.get(Post, post_id)
+    if not post:
+        raise HTTPException(404, "Post not found")
+    report = Report(
+        title=f"Escalation — {post.threat_label} by @{post.author_handle}",
+        kind="escalation", period_hours=0,
+        payload={"escalation": escalation_template(post)},
+    )
+    session.add(report)
+    session.commit()
+    session.refresh(report)
+    return {"id": report.id, "title": report.title, "kind": report.kind,
+            "created_at": iso(report.created_at), "has_pdf": False,
+            "payload": report.payload}

@@ -40,8 +40,8 @@ export default function Landing() {
         <Logo size={92} />
       </div>
 
-      <h1 className="flex font-mono text-5xl font-bold tracking-[0.3em] text-slate-100 sm:text-6xl" aria-label="SENTINEL">
-        {"SENTINEL".split("").map((ch, i) => (
+      <h1 className="flex font-mono text-5xl font-bold tracking-[0.3em] text-slate-200 sm:text-6xl" aria-label="E-RAKSHAK">
+        {"E-RAKSHAK".split("").map((ch, i) => (
           <span key={i} className="hero-letter text-glow">
             {ch}
           </span>
@@ -74,7 +74,7 @@ export default function Landing() {
       </button>
 
       <p className="hero-foot mt-10 font-mono text-[10px] tracking-widest text-slate-600">
-        E-RAKSHAK · CYBER THREAT INTELLIGENCE UNIT · AUTHORIZED ANALYSTS ONLY
+        E-RAKSHAK · STATE CYBER CELL HQ · AUTHORIZED PERSONNEL ONLY
       </p>
     </div>
   );

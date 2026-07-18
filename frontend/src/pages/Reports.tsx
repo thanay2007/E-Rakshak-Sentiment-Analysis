@@ -34,9 +34,9 @@ function ReportModal({ report, onClose }: { report: Report; onClose: () => void 
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="font-mono text-[10px] uppercase tracking-widest text-accent">
-              SENTINEL · {report.kind} report · {report.id}
+              E-RAKSHAK · {report.kind} report · {report.id}
             </div>
-            <h2 className="mt-1 text-lg font-bold text-slate-100">{report.title}</h2>
+            <h2 className="mt-1 text-lg font-bold text-slate-200">{report.title}</h2>
             <div className="font-mono text-[11px] text-slate-500">
               generated {new Date(report.created_at).toLocaleString("en-IN")}
             </div>
@@ -243,7 +243,7 @@ export default function Reports() {
                         </span>
                       )}
                     </div>
-                    <h3 className="mt-1.5 line-clamp-2 text-[13px] font-semibold text-slate-200 transition-colors group-hover:text-slate-100">
+                    <h3 className="mt-1.5 line-clamp-2 text-[13px] font-semibold text-slate-200 transition-colors group-hover:text-slate-200">
                       {r.title}
                     </h3>
                   </div>
