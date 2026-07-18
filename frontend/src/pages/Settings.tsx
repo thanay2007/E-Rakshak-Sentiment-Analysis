@@ -4,10 +4,11 @@ import { usePolling } from "../hooks/usePolling";
 import { api, API_BASE } from "../services/api";
 
 const KEY_ROWS = [
-  ["X_BEARER_TOKEN", "X (Twitter) API v2 recent search"],
-  ["YOUTUBE_API_KEY", "YouTube Data API v3"],
-  ["REDDIT_CLIENT_ID / SECRET", "Reddit search (open JSON)"],
-  ["RSS_FEEDS", "Generic web/RSS monitoring"],
+  ["X_AUTH_TOKEN / X_CT0", "X (Twitter) via twikit session cookies"],
+  ["X_BEARER_TOKEN", "X (Twitter) official API v2 (paid)"],
+  ["REDDIT_CLIENT_ID / SECRET", "Reddit official API (keyless PullPush fallback active)"],
+  ["FB_ACCESS_TOKEN / FB_PAGE_IDS", "Facebook Graph API seed pages"],
+  ["IG_ACCESS_TOKEN / IG_SEED_USERNAMES", "Instagram Graph API seed accounts"],
 ];
 
 export default function Settings() {

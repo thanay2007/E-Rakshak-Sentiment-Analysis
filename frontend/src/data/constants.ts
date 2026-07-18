@@ -28,7 +28,7 @@ export const SENTIMENT_COLORS: Record<string, string> = {
 };
 
 export const LANGUAGES = ["Gujarati", "Hindi", "Hinglish", "Gujlish", "English", "Mixed"];
-export const PLATFORMS = ["X", "Facebook", "Instagram", "YouTube", "Reddit", "Web"];
+export const PLATFORMS = ["X", "Facebook", "Instagram", "Reddit"];
 export const THREAT_LABELS = Object.keys(THREAT_COLORS);
 
 export const ACCENT = "#14B8C4";

@@ -10,3 +10,5 @@ reportlab>=4.1
 feedparser>=6.0
 python-multipart>=0.0.9
 Pillow>=10.0
+# PyPI twikit 2.3.3 is broken vs X's 2026 frontend; use the community-patched PR build
+twikit @ git+https://github.com/d60/twikit.git@refs/pull/432/head

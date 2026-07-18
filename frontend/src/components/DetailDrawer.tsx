@@ -2,9 +2,10 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle, ExternalLink, Flag, Languages, ShieldCheck, UserRound, X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { SENTIMENT_COLORS, THREAT_COLORS, THREAT_SHORT } from "../data/constants";
-import type { Post } from "../services/api";
+import type { EvidenceReport, Post } from "../services/api";
 import { api, API_BASE } from "../services/api";
 import { BotChip, LanguageChip, PlatformIcon, ThreatBadge } from "./Badges";
 
@@ -18,6 +19,50 @@ export default function DetailDrawer({
 }) {
   const [escalated, setEscalated] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [factCheck, setFactCheck] = useState<Post["fact_check"] | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [dossier, setDossier] = useState<EvidenceReport | null>(null);
+  const [dossierBusy, setDossierBusy] = useState(false);
+  const [dossierError, setDossierError] = useState(false);
+
+  useEffect(() => {
+    setFactCheck(null);
+    setEscalated(null);
+    setDossier(null);
+    setDossierError(false);
+  }, [post?.id]);
+
+  const report = dossier ?? (post?.evidence_report?.summary ? post.evidence_report : undefined);
+
+  const generateDossier = async () => {
+    if (!post || dossierBusy) return;
+    setDossierBusy(true);
+    setDossierError(false);
+    try {
+      setDossier(await api.evidenceReport(post.id));
+    } catch {
+      setDossierError(true);
+    } finally {
+      setDossierBusy(false);
+    }
+  };
+
+  const fc = post ? factCheck ?? post.fact_check : undefined;
+  const fakeSuspect =
+    post?.threat_label === "Fake News" ||
+    post?.llm_verification?.llm_threat_label === "Fake News";
+
+  const runFactCheck = async () => {
+    if (!post || checking) return;
+    setChecking(true);
+    try {
+      setFactCheck(await api.factCheckPost(post.id));
+    } catch {
+      /* surfaced via button state */
+    } finally {
+      setChecking(false);
+    }
+  };
 
   const escalate = async () => {
     if (!post || busy) return;
@@ -33,7 +78,10 @@ export default function DetailDrawer({
     }
   };
 
-  return (
+  // Portal to <body>: ancestors use CSS transforms (page transitions), which
+  // would trap position:fixed and pin the drawer to the page top instead of
+  // the viewport.
+  return createPortal(
     <AnimatePresence>
       {post && (
         <>
@@ -95,6 +143,25 @@ export default function DetailDrawer({
                   <p className="glass p-3 text-[13px] italic leading-relaxed text-slate-400">
                     {post.translation}
                   </p>
+                </div>
+              )}
+              {(post.media_urls?.length ?? 0) > 0 && (
+                <div>
+                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    Attached media
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {post.media_urls!.map((m) => (
+                      <a key={m} href={m} target="_blank" rel="noreferrer">
+                        <img
+                          src={m}
+                          alt="post media"
+                          className="max-h-40 rounded-xl border border-white/10 object-cover"
+                          loading="lazy"
+                        />
+                      </a>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -232,6 +299,16 @@ export default function DetailDrawer({
                     <div className="font-mono text-slate-300">{post.llm_verification.llm_sentiment}</div>
                   </div>
                 </div>
+                {(post.llm_verification.evidence?.length ?? 0) > 0 && (
+                  <div className="mt-2 space-y-1">
+                    <div className="text-[10px] text-slate-500">Verbatim evidence from the post:</div>
+                    {post.llm_verification.evidence!.map((q) => (
+                      <p key={q} className="rounded-lg border-l-2 border-threat-high/50 bg-white/[0.03] px-2 py-1 text-[11px] text-slate-300">
+                        "{q}"
+                      </p>
+                    ))}
+                  </div>
+                )}
                 {post.llm_verification.reason && (
                   <p className="mt-2 text-[11px] italic leading-relaxed text-slate-400">
                     "{post.llm_verification.reason}"
@@ -241,6 +318,212 @@ export default function DetailDrawer({
                   {post.llm_verification.model}
                 </p>
               </div>
+            )}
+
+            {/* Cross-source fact check (Google News corroboration) */}
+            {fc?.checked ? (
+              <div
+                className={`glass mt-4 border p-4 ${
+                  fc.verdict === "uncorroborated"
+                    ? "border-threat-high/40"
+                    : "border-threat-neutral/30"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    Cross-source fact check
+                  </span>
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-mono text-[10px] font-bold ${
+                      fc.verdict === "corroborated"
+                        ? "bg-threat-neutral/15 text-threat-neutral"
+                        : "bg-threat-high/15 text-threat-high"
+                    }`}
+                  >
+                    {fc.verdict?.toUpperCase()}
+                  </span>
+                </div>
+                <p className="mt-2 text-[11px] leading-relaxed text-slate-400">{fc.note}</p>
+                {fc.query && (
+                  <p className="mt-1 text-[10px] text-slate-500">
+                    Checked terms: <span className="font-mono text-slate-400">{fc.query}</span>
+                  </p>
+                )}
+                {(fc.matches?.length ?? 0) > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {fc.matches!.map((m) => (
+                      <a
+                        key={m.link}
+                        href={m.link}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block truncate text-[11px] text-sky-400 hover:underline"
+                      >
+                        {m.source ? `${m.source} — ` : ""}{m.title}
+                      </a>
+                    ))}
+                  </div>
+                )}
+                <p className="mt-1 text-right font-mono text-[9.5px] text-slate-600">
+                  Google News India
+                </p>
+              </div>
+            ) : (
+              fakeSuspect && (
+                <button
+                  onClick={runFactCheck}
+                  disabled={checking}
+                  className="glass mt-4 flex w-full items-center justify-center gap-2 border border-threat-high/30 p-3 text-xs font-semibold text-slate-300 hover:bg-white/[0.06] disabled:opacity-60"
+                >
+                  <ShieldCheck size={14} />
+                  {checking
+                    ? "Checking news sources..."
+                    : "Run cross-source fact check (Google News)"}
+                </button>
+              )
+            )}
+
+            {/* Evidence dossier — analyst-grade detailed report */}
+            {report ? (
+              <div className="glass mt-4 border border-sky-500/25 p-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    Evidence dossier
+                  </span>
+                  <span className="font-mono text-[10px] font-bold text-sky-400">
+                    confidence {((report.confidence ?? 0) * 100).toFixed(0)}%
+                  </span>
+                </div>
+
+                {report.summary && (
+                  <p className="mt-2 text-[11.5px] leading-relaxed text-slate-300">{report.summary}</p>
+                )}
+
+                {(report.claims?.length ?? 0) > 0 && (
+                  <div className="mt-3">
+                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      Claims assessed
+                    </div>
+                    <div className="space-y-2">
+                      {report.claims!.map((c, i) => (
+                        <div key={i} className="rounded-lg bg-white/[0.03] p-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="text-[11px] text-slate-300">{c.claim}</span>
+                            <span
+                              className={`shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[9.5px] font-bold uppercase ${
+                                c.assessment === "supported"
+                                  ? "bg-threat-neutral/15 text-threat-neutral"
+                                  : c.assessment === "contradicted"
+                                    ? "bg-threat-critical/15 text-threat-critical"
+                                    : "bg-threat-high/15 text-threat-high"
+                              }`}
+                            >
+                              {c.assessment}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[10.5px] leading-relaxed text-slate-500">
+                            <span className="font-mono text-slate-600">[{c.type}]</span> {c.basis}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {(report.evidence_phrases?.length ?? 0) > 0 && (
+                  <div className="mt-3">
+                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      Verbatim evidence
+                    </div>
+                    <div className="space-y-1.5">
+                      {report.evidence_phrases!.map((e, i) => (
+                        <div key={i} className="rounded-lg border-l-2 border-sky-500/40 bg-white/[0.03] px-2 py-1.5">
+                          <p className="text-[11px] text-slate-200">"{e.quote}"</p>
+                          <p className="mt-0.5 text-[10.5px] text-slate-500">{e.significance}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {report.corroboration?.verdict && (
+                  <div className="mt-3 rounded-lg bg-white/[0.03] p-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                        Source corroboration
+                      </span>
+                      <span className="font-mono text-[10px] font-bold text-slate-300">
+                        {report.corroboration.verdict.toUpperCase()}
+                      </span>
+                    </div>
+                    {report.corroboration.explanation && (
+                      <p className="mt-1 text-[10.5px] leading-relaxed text-slate-400">
+                        {report.corroboration.explanation}
+                      </p>
+                    )}
+                    {(report.corroboration.citations?.length ?? 0) > 0 && (
+                      <div className="mt-1.5 space-y-1">
+                        {report.corroboration.citations!.map((m) => (
+                          <a
+                            key={m.link}
+                            href={m.link}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="block truncate text-[10.5px] text-sky-400 hover:underline"
+                          >
+                            {m.source ? `${m.source} — ` : ""}{m.title}
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="mt-3 grid gap-2 text-[10.5px]">
+                  {report.account_assessment && (
+                    <div className="rounded-lg bg-white/[0.03] p-2">
+                      <div className="text-slate-500">Account assessment</div>
+                      <p className="mt-0.5 leading-relaxed text-slate-400">{report.account_assessment}</p>
+                    </div>
+                  )}
+                  {report.risk_assessment && (
+                    <div className="rounded-lg bg-white/[0.03] p-2">
+                      <div className="text-slate-500">Risk assessment</div>
+                      <p className="mt-0.5 leading-relaxed text-slate-400">{report.risk_assessment}</p>
+                    </div>
+                  )}
+                  {report.recommended_action && (
+                    <div className="rounded-lg border border-sky-500/25 bg-sky-500/5 p-2">
+                      <div className="text-slate-500">Recommended action</div>
+                      <p className="mt-0.5 font-semibold leading-relaxed text-sky-300">
+                        {report.recommended_action}
+                      </p>
+                    </div>
+                  )}
+                  {report.limitations && (
+                    <div className="rounded-lg bg-white/[0.03] p-2">
+                      <div className="text-slate-500">Limitations of this analysis</div>
+                      <p className="mt-0.5 leading-relaxed text-slate-400">{report.limitations}</p>
+                    </div>
+                  )}
+                </div>
+                <p className="mt-2 text-right font-mono text-[9.5px] text-slate-600">
+                  {report.model} · {report.generated_at?.slice(0, 19).replace("T", " ")} UTC
+                </p>
+              </div>
+            ) : (
+              <button
+                onClick={generateDossier}
+                disabled={dossierBusy}
+                className="glass mt-4 flex w-full items-center justify-center gap-2 border border-sky-500/30 p-3 text-xs font-semibold text-slate-300 hover:bg-white/[0.06] disabled:opacity-60"
+              >
+                <ShieldCheck size={14} />
+                {dossierBusy
+                  ? "Compiling evidence dossier..."
+                  : dossierError
+                    ? "Failed — tap to retry evidence dossier"
+                    : "Generate evidence dossier (detailed analysis)"}
+              </button>
             )}
 
             {/* actions */}
@@ -283,6 +566,7 @@ export default function DetailDrawer({
           </motion.aside>
         </>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 }

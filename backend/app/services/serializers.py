@@ -31,6 +31,10 @@ def post_to_dict(p: Post, full: bool = False) -> dict:
         "is_amplified": p.is_amplified,
         "cluster_id": p.cluster_id,
         "llm_verification": p.llm_verification or {},
+        "fact_check": p.fact_check or {},
+        "evidence_report": p.evidence_report or {},
+        "media_urls": p.media_urls or [],
+        "url": p.url,
         "created_at": iso(p.created_at),
     }
     if full:
@@ -43,7 +47,6 @@ def post_to_dict(p: Post, full: bool = False) -> dict:
             "keywords": p.keywords or [],
             "latitude": p.latitude,
             "longitude": p.longitude,
-            "url": p.url,
             "true_label": p.true_label,
             "ingested_at": iso(p.ingested_at),
         })
