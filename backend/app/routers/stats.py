@@ -3,11 +3,11 @@ including LIVE classification accuracy against simulated ground truth."""
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter
-from sqlmodel import func, select
+from fastapi import APIRouter, Depends
+from sqlmodel import Session, func, select
 
 from app.crawlers.registry import platform_status
-from app.database import session_scope
+from app.database import get_session
 from app.models import Alert, Post
 
 router = APIRouter()
@@ -24,17 +24,16 @@ def _hour_buckets(posts, hours: int, key=lambda p: 1) -> list[int]:
 
 
 @router.get("/stats")
-def get_stats() -> dict:
+def get_stats(session: Session = Depends(get_session)) -> dict:
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     since24 = now - timedelta(hours=24)
-    with session_scope() as s:
-        total_posts = s.exec(select(func.count()).select_from(Post)).one()
-        posts24 = s.exec(select(Post).where(Post.created_at >= since24)).all()
-        alerts24 = s.exec(select(Alert).where(Alert.created_at >= since24)).all()
-        open_critical = s.exec(
-            select(func.count()).select_from(Alert)
-            .where(Alert.severity == "critical", Alert.status == "new")
-        ).one()
+    total_posts = session.exec(select(func.count()).select_from(Post)).one()
+    posts24 = session.exec(select(Post).where(Post.created_at >= since24)).all()
+    alerts24 = session.exec(select(Alert).where(Alert.created_at >= since24)).all()
+    open_critical = session.exec(
+        select(func.count()).select_from(Alert)
+        .where(Alert.severity == "critical", Alert.status == "new")
+    ).one()
 
     threats24 = [p for p in posts24 if p.threat_score >= 50]
     campaigns = len({p.cluster_id for p in posts24 if p.cluster_id})
@@ -100,3 +99,4 @@ def get_stats() -> dict:
         },
         "last_updated": now.isoformat() + "Z",
     }
+

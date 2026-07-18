@@ -53,6 +53,13 @@ def _make_post(raw: RawPost, nlp: dict, chash: str) -> Post:
         created_at=raw.created_at or None,
         **nlp,
     )
+    from app.ml.bot_classifier import is_likely_bot
+    if is_likely_bot(post):
+        # We store the bot flag in the JSON column to avoid schema migrations
+        if post.class_probs is None:
+            post.class_probs = {}
+        post.class_probs["is_bot"] = True
+    return post
 
 
 def _maybe_alert(post: Post) -> Alert | None:
@@ -72,8 +79,15 @@ def _maybe_alert(post: Post) -> Alert | None:
     escalation = {}
     if severity == "critical":
         from app.services.report_service import escalation_template
+        from app.services.notifications import send_critical_alert_notification
 
         escalation = escalation_template(post)
+        snippet = (post.translation or post.text)[:160]
+        send_critical_alert_notification(
+            alert_title=f"{post.threat_label} — {post.location or post.platform}",
+            alert_summary=snippet,
+            location=post.location
+        )
 
     snippet = (post.translation or post.text)[:160]
     return Alert(

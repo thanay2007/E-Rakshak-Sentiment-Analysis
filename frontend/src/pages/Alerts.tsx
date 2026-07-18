@@ -143,13 +143,13 @@ export default function Alerts() {
           </p>
         </div>
         <div className="ml-auto flex gap-2 text-xs">
-          <select value={severityFilter} onChange={(e) => setSeverityFilter(e.target.value)} className="rounded-xl border border-white/[0.08] bg-base-800 px-2.5 py-1.5 text-slate-400">
+          <select value={severityFilter} onChange={(e) => setSeverityFilter(e.target.value)} className="rounded-xl border border-white/[0.08] bg-base-800 pl-2.5 pr-8 py-1.5 text-slate-400">
             <option value="">All severities</option>
             <option value="critical">Critical</option>
             <option value="high">High</option>
             <option value="medium">Medium</option>
           </select>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-xl border border-white/[0.08] bg-base-800 px-2.5 py-1.5 text-slate-400">
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-xl border border-white/[0.08] bg-base-800 pl-2.5 pr-8 py-1.5 text-slate-400">
             <option value="">All statuses</option>
             <option value="new">New</option>
             <option value="acknowledged">Acknowledged</option>

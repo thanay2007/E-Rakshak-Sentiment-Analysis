@@ -240,6 +240,14 @@ export interface ImageAnalysis {
   exif?: Record<string, unknown>;
   gps?: { latitude: number; longitude: number; maps_url: string; altitude_m?: number } | null;
   manipulation: { integrity_score: number | null; findings: ImageFinding[] };
+  forensics?: {
+    faces_detected: number;
+    face_matches: {
+      bounding_box: { top: number; right: number; bottom: number; left: number };
+      matched_suspect: string | null;
+      confidence: number | null;
+    }[];
+  };
   note?: string; error?: string;
   resolved_from_index?: boolean; subject?: string;
 }

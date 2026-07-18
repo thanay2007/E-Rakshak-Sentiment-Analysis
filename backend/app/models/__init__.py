@@ -1,1 +1,1 @@
-from app.models.models import Alert, Post, Report, WatchlistItem  # noqa: F401
+from app.models.models import Alert, Post, Report, WatchlistItem, AuditLog  # noqa: F401

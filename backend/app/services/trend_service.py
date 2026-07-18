@@ -24,7 +24,7 @@ def _spike_z(series: list[int]) -> float:
     return round((last - mu) / (sd + 0.75), 2)
 
 
-def _term_stats(posts: list[Post], hours: int, getter) -> list[dict]:
+def _term_stats(posts: list[Post], hours: int, getter, kind: str) -> list[dict]:
     now = _now()
     buckets = min(hours, 24)
     bucket_len = hours / buckets
@@ -43,6 +43,10 @@ def _term_stats(posts: list[Post], hours: int, getter) -> list[dict]:
             labels[t][p.threat_label] += 1
 
     out = []
+    
+    # Auto-discovery
+    spiking_threats = []
+
     for term, count in counts.most_common(14):
         s = series[term]
         half = max(1, len(s) // 2)
@@ -50,11 +54,27 @@ def _term_stats(posts: list[Post], hours: int, getter) -> list[dict]:
         change = round(((last_half - prev_half) / max(prev_half, 1)) * 100)
         z = _spike_z(s)
         top_label = labels[term].most_common(1)[0][0]
+        spiking = z >= 2.0
+        
+        if spiking and top_label != "Neutral":
+            spiking_threats.append({"kind": kind, "value": term})
+
         out.append({
             "term": term, "count": count, "series": s,
-            "change_pct": change, "spike_z": z, "spiking": z >= 2.0,
+            "change_pct": change, "spike_z": z, "spiking": spiking,
             "top_label": top_label,
         })
+        
+    if spiking_threats:
+        from app.models import WatchlistItem
+        with session_scope() as s:
+            existing = {w.value for w in s.exec(select(WatchlistItem)).all()}
+            for st in spiking_threats:
+                if st["value"] not in existing:
+                    w = WatchlistItem(kind=st["kind"], value=st["value"], note="Auto-discovered due to threat spike", active=False)
+                    s.add(w)
+            s.commit()
+            
     return out
 
 
@@ -88,8 +108,8 @@ def get_trends(hours: int = 24) -> dict:
     return {
         "window_hours": hours,
         "total_posts": len(posts),
-        "hashtags": _term_stats(posts, hours, lambda p: p.hashtags),
-        "keywords": _term_stats(posts, hours, lambda p: p.keywords),
+        "hashtags": _term_stats(posts, hours, lambda p: p.hashtags, "hashtag"),
+        "keywords": _term_stats(posts, hours, lambda p: p.keywords, "keyword"),
         "languages": languages,
         "regions": regions,
     }

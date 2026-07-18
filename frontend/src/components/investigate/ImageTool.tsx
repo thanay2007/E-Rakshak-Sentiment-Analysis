@@ -217,6 +217,35 @@ export default function ImageTool() {
                   <KV k="pHash" v={a.perceptual_hash} />
                   <KV k="SHA-256" v={<span title={a.sha256}>{a.sha256?.slice(0, 16)}…</span>} />
                 </div>
+                {a.forensics && a.forensics.faces_detected > 0 && (
+                  <div className="mt-4 space-y-2 rounded-lg border border-accent/20 bg-accent/[0.02] p-3">
+                    <div className="flex items-center gap-2 text-[13px] font-semibold text-slate-200">
+                      <ScanSearch size={14} className="text-accent" /> Facial Recognition
+                    </div>
+                    <div className="text-[12px] text-slate-400">
+                      Detected {a.forensics.faces_detected} face{a.forensics.faces_detected > 1 ? 's' : ''}.
+                    </div>
+                    {result?.preview && a.width && a.height && (
+                      <div className="relative mt-2 overflow-hidden rounded border border-white/10" style={{ maxWidth: '300px' }}>
+                        <img src={result.preview} alt="analyzed" className="w-full h-auto block" />
+                        {a.forensics.face_matches.map((f, i) => {
+                          const topPct = (f.bounding_box.top / a.height!) * 100;
+                          const leftPct = (f.bounding_box.left / a.width!) * 100;
+                          const widthPct = ((f.bounding_box.right - f.bounding_box.left) / a.width!) * 100;
+                          const heightPct = ((f.bounding_box.bottom - f.bounding_box.top) / a.height!) * 100;
+                          return (
+                            <div key={i} className="absolute border-2 border-[#14B8C4] bg-[#14B8C4]/20"
+                              style={{ top: `${topPct}%`, left: `${leftPct}%`, width: `${widthPct}%`, height: `${heightPct}%` }}>
+                              <div className="absolute -top-5 left-[-2px] whitespace-nowrap bg-[#14B8C4] px-1 text-[9px] font-bold text-[#0F1420]">
+                                {f.matched_suspect || `Unknown #${i+1}`}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
                 {a.gps && (
                   <a href={a.gps.maps_url} target="_blank" rel="noreferrer"
                     className="flex items-center gap-2 rounded-lg border border-accent/20 bg-accent/[0.06] px-3 py-2 text-[13px] text-accent hover:bg-accent/10">
@@ -241,7 +270,7 @@ export default function ImageTool() {
             {rev?.matched && rev.match ? (
               <>
                 <div className="rounded-lg border border-white/[0.07] bg-white/[0.02] p-3">
-                  <div className="text-[13px] font-medium text-slate-100">{rev.match.subject}</div>
+                  <div className="text-[13px] font-medium text-slate-200">{rev.match.subject}</div>
                   <div className="mt-1 text-[12px] text-slate-400">{rev.match.context}</div>
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     <Pill color="#14B8C4">{(rev.confidence! * 100).toFixed(0)}% match</Pill>

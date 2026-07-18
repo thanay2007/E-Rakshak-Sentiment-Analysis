@@ -55,7 +55,7 @@ export default function StatTile({
       </div>
       <div className="mt-3 flex items-end justify-between gap-2">
         <div>
-          <div className="font-mono text-2xl font-semibold text-slate-100">
+          <div className="font-mono text-2xl font-semibold text-slate-200">
             <span ref={ref}>0</span>
             {suffix}
           </div>

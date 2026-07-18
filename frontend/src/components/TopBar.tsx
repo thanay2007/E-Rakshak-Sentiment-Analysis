@@ -1,4 +1,4 @@
-import { Bell, Search, UserRound } from "lucide-react";
+import { Bell, Moon, Search, Sun, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { LANGUAGES } from "../data/constants";
@@ -12,11 +12,25 @@ export default function TopBar() {
   const [seen, setSeen] = useState(0);
   const unread = Math.max(0, liveAlerts.length - seen);
   const [clock, setClock] = useState(new Date());
+  
+  const [isLight, setIsLight] = useState(() => document.documentElement.classList.contains("light"));
 
   useEffect(() => {
     const id = window.setInterval(() => setClock(new Date()), 1000);
     return () => window.clearInterval(id);
   }, []);
+
+  const toggleTheme = () => {
+    if (isLight) {
+      document.documentElement.classList.remove("light");
+      document.documentElement.classList.add("dark");
+      setIsLight(false);
+    } else {
+      document.documentElement.classList.remove("dark");
+      document.documentElement.classList.add("light");
+      setIsLight(true);
+    }
+  };
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,7 +55,7 @@ export default function TopBar() {
           navigate(e.target.value ? `/app/feed?language=${encodeURIComponent(e.target.value)}` : "/app/feed")
         }
         defaultValue=""
-        className="rounded-xl border border-white/[0.08] bg-base-800 px-2.5 py-2 text-xs text-slate-400 focus:border-accent/40 focus:outline-none"
+        className="rounded-xl border border-white/[0.08] bg-base-800 pl-2.5 pr-8 py-2 text-xs text-slate-400 focus:border-accent/40 focus:outline-none"
         aria-label="Language quick filter"
       >
         <option value="">All languages</option>
@@ -69,6 +83,15 @@ export default function TopBar() {
         </span>
 
         <button
+          onClick={toggleTheme}
+          className="relative rounded-xl p-2 text-slate-400 hover:bg-white/[0.06]"
+          aria-label="Toggle theme"
+          title="Toggle Day/Night Mode"
+        >
+          {isLight ? <Moon size={16} /> : <Sun size={16} />}
+        </button>
+
+        <button
           onClick={() => {
             setSeen(liveAlerts.length);
             navigate("/app/alerts");
@@ -89,8 +112,8 @@ export default function TopBar() {
             <UserRound size={15} />
           </span>
           <div className="hidden leading-tight lg:block">
-            <div className="text-xs font-semibold text-slate-300">Analyst K. Sharma</div>
-            <div className="font-mono text-[10px] text-slate-600">CLEARANCE L3</div>
+            <div className="text-xs font-semibold text-slate-300">Inspector K. Sharma</div>
+            <div className="font-mono text-[10px] text-slate-600">CYBER CELL HQ</div>
           </div>
         </div>
       </div>

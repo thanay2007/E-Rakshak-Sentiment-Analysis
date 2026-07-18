@@ -34,9 +34,9 @@ function ReportModal({ report, onClose }: { report: Report; onClose: () => void 
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="font-mono text-[10px] uppercase tracking-widest text-accent">
-              SENTINEL · {report.kind} report · {report.id}
+              E-RAKSHAK · {report.kind} report · {report.id}
             </div>
-            <h2 className="mt-1 text-lg font-bold text-slate-100">{report.title}</h2>
+            <h2 className="mt-1 text-lg font-bold text-slate-200">{report.title}</h2>
             <div className="font-mono text-[11px] text-slate-500">
               generated {new Date(report.created_at).toLocaleString("en-IN")}
             </div>
@@ -195,7 +195,7 @@ export default function Reports() {
           placeholder="Report title (optional)"
           className="w-64 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs text-slate-200 placeholder:text-slate-600 focus:border-accent/40 focus:outline-none"
         />
-        <select value={period} onChange={(e) => setPeriod(Number(e.target.value))} className="rounded-xl border border-white/[0.08] bg-base-800 px-2.5 py-2 text-xs text-slate-400">
+        <select value={period} onChange={(e) => setPeriod(Number(e.target.value))} className="rounded-xl border border-white/[0.08] bg-base-800 pl-2.5 pr-8 py-2 text-xs text-slate-400">
           <option value={6}>Last 6 hours</option>
           <option value={24}>Last 24 hours</option>
           <option value={72}>Last 72 hours</option>
@@ -243,7 +243,7 @@ export default function Reports() {
                         </span>
                       )}
                     </div>
-                    <h3 className="mt-1.5 line-clamp-2 text-[13px] font-semibold text-slate-200 transition-colors group-hover:text-slate-100">
+                    <h3 className="mt-1.5 line-clamp-2 text-[13px] font-semibold text-slate-200 transition-colors group-hover:text-slate-200">
                       {r.title}
                     </h3>
                   </div>

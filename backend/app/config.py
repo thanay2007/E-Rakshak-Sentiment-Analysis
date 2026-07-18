@@ -1,109 +1,116 @@
 """Central configuration. Everything defaults to the zero-key demo mode."""
-import os
 from pathlib import Path
+from typing import List, Tuple
 
-from dotenv import load_dotenv
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent  # backend/
 APP_DIR = Path(__file__).resolve().parent          # backend/app/
-load_dotenv(BASE_DIR / ".env")
 
 
-def _bool(name: str, default: bool) -> bool:
-    raw = os.getenv(name, "")
-    if not raw.strip():
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=str(BASE_DIR / ".env"), env_file_encoding="utf-8", extra="ignore")
 
-
-def _int(name: str, default: int) -> int:
-    try:
-        return int(os.getenv(name, "") or default)
-    except ValueError:
-        return default
-
-
-def _csv(name: str, default: str = "") -> list[str]:
-    return [v.strip() for v in os.getenv(name, default).split(",") if v.strip()]
-
-
-def _seeded(name: str, default: str = "") -> list[tuple[str, str]]:
-    """Parse a seed-source list: "id:City,id2:City2,id3" -> [(id, city), ...].
-    The optional :City suffix geo-tags everything collected from that source."""
-    out = []
-    for entry in _csv(name, default):
-        source, _, city = entry.partition(":")
-        out.append((source.strip(), city.strip()))
-    return [(s, c) for s, c in out if s]
-
-
-class Settings:
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "").strip() or f"sqlite:///{BASE_DIR / 'sentinel.db'}"
-    INGEST_INTERVAL_SECONDS: int = _int("INGEST_INTERVAL_SECONDS", 4)
-    NLP_MODE: str = os.getenv("NLP_MODE", "full").strip().lower()  # full | lite
-    ALERT_THRESHOLD: int = _int("ALERT_THRESHOLD", 65)
-    CRITICAL_THRESHOLD: int = _int("CRITICAL_THRESHOLD", 74)
-    SIMULATION_ENABLED: bool = _bool("SIMULATION_ENABLED", True)
+    DATABASE_URL: str = f"sqlite:///{BASE_DIR / 'sentinel.db'}"
+    INGEST_INTERVAL_SECONDS: int = 4
+    NLP_MODE: str = "full"  # full | lite
+    ALERT_THRESHOLD: int = 65
+    CRITICAL_THRESHOLD: int = 74
+    SIMULATION_ENABLED: bool = True
 
     # Deployment scope — the cities this instance monitors (seed pages, default
     # watchlist locations and geo-tagging all key off this list).
-    TARGET_CITIES: list[str] = _csv("TARGET_CITIES", "Surat,Ahmedabad,Vadodara,Rajkot")
+    TARGET_CITIES: list[str] = ["Surat", "Ahmedabad", "Vadodara", "Rajkot"]
 
     # Politeness floor for live-platform adapters: never hit the same API more
     # often than this, regardless of the ingestion tick. (The simulator ignores
     # it.) Rapid-fire queries against one endpoint look like abuse and get the
     # source blocked — batch, then wait.
-    CRAWL_MIN_INTERVAL_SECONDS: int = _int("CRAWL_MIN_INTERVAL_SECONDS", 300)
+    CRAWL_MIN_INTERVAL_SECONDS: int = 300
 
-    X_BEARER_TOKEN: str = os.getenv("X_BEARER_TOKEN", "").strip()
+    X_BEARER_TOKEN: str = ""
+    YOUTUBE_API_KEY: str = ""
 
     # X via twikit (unofficial, key-free) — credentials of a real X account
     # (use a dedicated burner). Activates the "X (twikit)" adapter when
     # username + password are set; cookies persist in backend/x_cookies.json.
-    X_USERNAME: str = os.getenv("X_USERNAME", "").strip()
-    X_EMAIL: str = os.getenv("X_EMAIL", "").strip()
-    X_PASSWORD: str = os.getenv("X_PASSWORD", "").strip()
+    X_USERNAME: str = ""
+    X_EMAIL: str = ""
+    X_PASSWORD: str = ""
     # Preferred twikit auth: session cookies from a browser logged into x.com
     # (Cloudflare blocks the password-login endpoint for Python clients).
-    X_AUTH_TOKEN: str = os.getenv("X_AUTH_TOKEN", "").strip()
-    X_CT0: str = os.getenv("X_CT0", "").strip()
+    X_AUTH_TOKEN: str = ""
+    X_CT0: str = ""
 
     # Groq LLM second-opinion layer (services/groq_verifier.py). Free key from
     # console.groq.com — without it the layer simply stays off.
-    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "").strip()
-    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip()
-    GROQ_VERIFY_MIN_SCORE: int = _int("GROQ_VERIFY_MIN_SCORE", 55)
-    GROQ_MAX_PER_TICK: int = _int("GROQ_MAX_PER_TICK", 8)
-    GROQ_TIMEOUT_SECONDS: int = _int("GROQ_TIMEOUT_SECONDS", 20)
+    GROQ_API_KEY: str = ""
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
+    GROQ_VERIFY_MIN_SCORE: int = 55
+    GROQ_MAX_PER_TICK: int = 8
+    GROQ_TIMEOUT_SECONDS: int = 20
+
+    # Twilio WhatsApp Alerts
+    TWILIO_ACCOUNT_SID: str = ""
+    TWILIO_AUTH_TOKEN: str = ""
+    TWILIO_WHATSAPP_TO: str = ""
+    TWILIO_WHATSAPP_FROM: str = "+14155238886"
 
     # Reddit official OAuth API (script app: client id + secret)
-    REDDIT_CLIENT_ID: str = os.getenv("REDDIT_CLIENT_ID", "").strip()
-    REDDIT_CLIENT_SECRET: str = os.getenv("REDDIT_CLIENT_SECRET", "").strip()
-    REDDIT_USER_AGENT: str = os.getenv("REDDIT_USER_AGENT", "sentinel-osint/1.0").strip()
+    REDDIT_CLIENT_ID: str = ""
+    REDDIT_CLIENT_SECRET: str = ""
+    REDDIT_USER_AGENT: str = "sentinel-osint/1.0"
+    
     # Seed subreddits (the "seed URL" strategy): city subs are geo-tagged.
-    REDDIT_SUBREDDITS: list[tuple[str, str]] = _seeded(
-        "REDDIT_SUBREDDITS",
-        "Surat:Surat,ahmedabad:Ahmedabad,Vadodara:Vadodara,rajkot:Rajkot,Gujarat",
-    )
+    REDDIT_SUBREDDITS_RAW: list[str] = ["Surat:Surat", "ahmedabad:Ahmedabad", "Vadodara:Vadodara", "rajkot:Rajkot", "Gujarat"]
+
+    @property
+    def REDDIT_SUBREDDITS(self) -> list[tuple[str, str]]:
+        out = []
+        for entry in self.REDDIT_SUBREDDITS_RAW:
+            source, _, city = entry.partition(":")
+            if source.strip():
+                out.append((source.strip(), city.strip()))
+        return out
 
     # Facebook Graph API — a Page/System-User access token plus the seed pages
     # to monitor (page id or username, optional :City geo-tag).
-    FB_ACCESS_TOKEN: str = os.getenv("FB_ACCESS_TOKEN", "").strip()
-    FB_API_VERSION: str = os.getenv("FB_API_VERSION", "v21.0").strip()
-    FB_PAGE_IDS: list[tuple[str, str]] = _seeded("FB_PAGE_IDS")
+    FB_ACCESS_TOKEN: str = ""
+    FB_API_VERSION: str = "v21.0"
+    FB_PAGE_IDS_RAW: list[str] = []
+
+    @property
+    def FB_PAGE_IDS(self) -> list[tuple[str, str]]:
+        out = []
+        for entry in self.FB_PAGE_IDS_RAW:
+            source, _, city = entry.partition(":")
+            if source.strip():
+                out.append((source.strip(), city.strip()))
+        return out
 
     # Instagram Graph API — token + the linked IG business-account id (needed
     # for business_discovery / hashtag search) + seed creator/business handles.
-    IG_ACCESS_TOKEN: str = os.getenv("IG_ACCESS_TOKEN", "").strip()
-    IG_BUSINESS_ACCOUNT_ID: str = os.getenv("IG_BUSINESS_ACCOUNT_ID", "").strip()
-    IG_SEED_USERNAMES: list[tuple[str, str]] = _seeded("IG_SEED_USERNAMES")
+    IG_ACCESS_TOKEN: str = ""
+    IG_BUSINESS_ACCOUNT_ID: str = ""
+    IG_SEED_USERNAMES_RAW: list[str] = []
+
+    @property
+    def IG_SEED_USERNAMES(self) -> list[tuple[str, str]]:
+        out = []
+        for entry in self.IG_SEED_USERNAMES_RAW:
+            source, _, city = entry.partition(":")
+            if source.strip():
+                out.append((source.strip(), city.strip()))
+        return out
+
+    RSS_FEEDS: list[str] = []
 
     REPORTS_DIR: Path = BASE_DIR / "reports"
     MODELS_DIR: Path = APP_DIR / "ml" / "models"
     DATA_DIR: Path = APP_DIR / "data"
 
     # How much simulated history to backfill on first boot (hours)
-    SEED_HISTORY_HOURS: int = _int("SEED_HISTORY_HOURS", 48)
+    SEED_HISTORY_HOURS: int = 48
 
 
 settings = Settings()
