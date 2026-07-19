@@ -31,6 +31,8 @@ class Post(SQLModel, table=True):
 
     sentiment_label: str = "neutral"                  # positive | neutral | negative
     sentiment_score: float = 0.0                      # -1 .. +1
+    # 3-model consensus (ml/ensemble.py): per-model votes, chosen_by, agreement
+    sentiment_consensus: dict = Field(default_factory=dict, sa_column=Column(JSON))
     intent: str = "informational"                     # informational | opinion | call_to_action | threat | rumor
     threat_label: str = Field(default="Neutral", index=True)
     threat_confidence: float = 0.0
@@ -86,6 +88,8 @@ class WatchlistItem(SQLModel, table=True):
     kind: str = Field(index=True)                      # keyword | hashtag | account | location
     value: str
     note: str = ""
+    priority: str = Field(default="medium", index=True)  # low | medium | high | critical
+    category: str = ""                                 # analyst grouping / preset pack name
     active: bool = True
     created_at: datetime = Field(default_factory=utcnow)
 

@@ -42,19 +42,25 @@ class NLPPipeline:
     # ── batched (used by seeding / evaluation / burst ingestion) ─────────
     def enrich_batch(self, raws: list[RawPost]) -> list[dict]:
         from app.ml.slang import translate_slang
+        from app.ml import ensemble, linear_model
         texts = [translate_slang(r.text) for r in raws]
         lite = [classify(t) for t in texts]  # always run: supplies intent/evidence/signals
 
+        # ── sentiment model #1 (transformer) + threat/toxicity, full mode ──
+        sent_tf = None
         if self.mode == "full" and self._engine is not None:
             try:
                 cls = self._engine.classify_batch(texts)
-                sents = self._engine.sentiment_batch(texts)
+                sent_tf = self._engine.sentiment_votes_batch(texts)
                 toxs = self._engine.toxicity_batch(texts)
             except Exception as exc:
                 log.warning("Transformer inference failed (%s); lite fallback for this batch", exc)
-                cls = sents = toxs = None
+                cls = toxs = None
         else:
-            cls = sents = toxs = None
+            cls = toxs = None
+
+        # ── sentiment model #2 (classical TF-IDF + LinearSVC) ──────────────
+        sent_lin = linear_model.predict_batch(texts)  # None if not trained
 
         out = []
         for i, raw in enumerate(raws):
@@ -62,10 +68,23 @@ class NLPPipeline:
             c = cls[i] if cls else {k: lite[i][k] for k in ("label", "confidence", "probs")}
             signals = lite[i]["signals"]
 
-            if sents:
-                s_label, s_score = sents[i]
-            else:
-                s_label, s_score = analyze_sentiment(raw.text, signals)
+            # ── 3-model sentiment consensus ────────────────────────────────
+            votes = []
+            if sent_tf:
+                v = sent_tf[i]
+                votes.append({"model": "transformer", "label": v["label"],
+                              "confidence": v["confidence"], "probs": v["probs"]})
+            if sent_lin:
+                v = sent_lin[i]
+                votes.append({"model": "classical", "label": v["label"],
+                              "confidence": v["confidence"], "probs": v["probs"]})
+            # lexicon vote (rule-based) — confidence from valence magnitude
+            lex_label, lex_val = analyze_sentiment(raw.text, signals)
+            votes.append({"model": "lexicon", "label": lex_label,
+                          "confidence": round(min(0.95, 0.45 + abs(lex_val) * 0.55), 4),
+                          "probs": {}})
+            consensus = ensemble.combine(votes)
+            s_label, s_score = consensus["label"], consensus["score"]
 
             tox_lite, flags = analyze_toxicity(signals)
             tox = toxs[i] if toxs else tox_lite
@@ -81,6 +100,7 @@ class NLPPipeline:
                 "code_mixed": mixed,
                 "sentiment_label": s_label,
                 "sentiment_score": s_score,
+                "sentiment_consensus": consensus,   # 3-model votes + chosen_by
                 "intent": lite[i]["intent"],
                 "threat_label": c["label"],
                 "threat_confidence": round(c["confidence"], 4),

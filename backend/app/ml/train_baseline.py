@@ -65,6 +65,10 @@ def main() -> None:
     print("Fitting LinearSVC ...")
     clf.fit(Xt, y_tr)
 
+    # Persist the fitted (vectorizer, classifier) so the ensemble can load it
+    from app.ml.linear_model import save as save_linear
+    save_linear(vec, clf)
+
     preds = clf.predict(vec.transform(X_te))
     overall = {"accuracy": round(accuracy_score(y_te, preds), 4),
                "macro_f1": round(f1_score(y_te, preds, average="macro"), 4)}

@@ -24,11 +24,19 @@ function profileUrl(n: NetNode): string | null {
   return null;
 }
 
+const PLATFORMS = ["All", "X", "Reddit", "Facebook", "Instagram"];
+
 export default function NetworkPage() {
   const [hours, setHours] = useState(24);
+  const [platform, setPlatform] = useState("All");
   const [selected, setSelected] = useState<NetNode | null>(null);
-  const { data, loading } = usePolling(() => api.network(hours), 60000, [hours]);
+  const { data, loading } = usePolling(
+    () => api.network(hours, platform === "All" ? "" : platform),
+    60000,
+    [hours, platform]
+  );
   const revealRef = useGsapReveal<HTMLDivElement>(data?.clusters.length ?? 0);
+  const counts = data?.platform_counts ?? {};
 
   const botCount = data?.nodes.filter((n) => n.is_bot).length ?? 0;
   const topInfluencers = useMemo(
@@ -81,6 +89,33 @@ export default function NetworkPage() {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* per-platform tabs — police can inspect each app's network in isolation */}
+      <div className="flex flex-wrap gap-1.5">
+        {PLATFORMS.map((p) => {
+          const n = p === "All"
+            ? Object.values(counts).reduce((a, b) => a + b, 0)
+            : counts[p] ?? 0;
+          const active = platform === p;
+          return (
+            <button
+              key={p}
+              onClick={() => { setPlatform(p); setSelected(null); }}
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium transition-all ${
+                active
+                  ? "border-accent/50 bg-accent/10 text-accent"
+                  : "border-white/10 text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              {p !== "All" && <PlatformIcon platform={p} size={16} />}
+              {p}
+              <span className={`rounded-md px-1.5 py-0.5 font-mono text-[10px] ${active ? "bg-accent/20" : "bg-white/[0.06] text-slate-500"}`}>
+                {n}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {/* case-board stats */}

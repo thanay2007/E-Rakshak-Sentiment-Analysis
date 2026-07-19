@@ -260,6 +260,63 @@ export default function DetailDrawer({
               )}
             </div>
 
+            {/* 3-model sentiment consensus (ensemble) */}
+            {(post.sentiment_consensus?.votes?.length ?? 0) > 0 && (
+              <div className="glass mt-4 border border-accent/25 p-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    3-Model Sentiment Consensus
+                  </span>
+                  <span className="font-mono text-[10px] text-slate-400">
+                    agreement {post.sentiment_consensus!.agreement}
+                  </span>
+                </div>
+                <div className="mt-2 space-y-1.5">
+                  {post.sentiment_consensus!.votes!.map((v) => {
+                    const isWinner = v.label === post.sentiment_consensus!.label;
+                    return (
+                      <div key={v.model} className="flex items-center gap-2">
+                        <span className="w-24 shrink-0 font-mono text-[10.5px] capitalize text-slate-400">
+                          {v.model}
+                        </span>
+                        <span
+                          className="w-16 shrink-0 text-[11px] font-semibold capitalize"
+                          style={{ color: SENTIMENT_COLORS[v.label] ?? "#94A3B8" }}
+                        >
+                          {v.label}
+                        </span>
+                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
+                          <div
+                            className="h-full rounded-full"
+                            style={{
+                              width: `${v.confidence * 100}%`,
+                              backgroundColor: SENTIMENT_COLORS[v.label] ?? "#94A3B8",
+                            }}
+                          />
+                        </div>
+                        <span className="w-10 text-right font-mono text-[10.5px] text-slate-500">
+                          {(v.confidence * 100).toFixed(0)}%
+                        </span>
+                        {isWinner && <span className="text-[10px] text-accent">✓</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-2 flex items-center justify-between rounded-lg bg-white/[0.03] px-2 py-1.5">
+                  <span className="text-[10.5px] text-slate-500">Chosen</span>
+                  <span className="font-mono text-[11px] font-semibold capitalize" style={{ color: SENTIMENT_COLORS[post.sentiment_consensus!.label ?? "neutral"] }}>
+                    {post.sentiment_consensus!.label} · {post.sentiment_consensus!.chosen_by}
+                  </span>
+                </div>
+                {post.sentiment_consensus!.groq_sentiment && (
+                  <div className={`mt-1.5 rounded-lg px-2 py-1.5 text-[10.5px] ${post.sentiment_consensus!.groq_agrees ? "bg-threat-neutral/10 text-threat-neutral" : "bg-threat-high/10 text-threat-high"}`}>
+                    Groq double-check: {post.sentiment_consensus!.groq_sentiment}
+                    {post.sentiment_consensus!.groq_agrees ? " — agrees ✓" : " — disagrees"}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* LLM second opinion (Groq verification layer) */}
             {post.llm_verification?.verdict && (
               <div

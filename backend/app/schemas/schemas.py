@@ -40,12 +40,16 @@ class WatchlistCreate(BaseModel):
     kind: str
     value: str
     note: str = ""
+    priority: str = "medium"
+    category: str = ""
     active: bool = True
 
 
 class WatchlistUpdate(BaseModel):
     value: Optional[str] = None
     note: Optional[str] = None
+    priority: Optional[str] = None
+    category: Optional[str] = None
     active: Optional[bool] = None
 
 

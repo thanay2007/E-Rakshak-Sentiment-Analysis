@@ -22,6 +22,7 @@ def post_to_dict(p: Post, full: bool = False) -> dict:
         "code_mixed": p.code_mixed,
         "sentiment_label": p.sentiment_label,
         "sentiment_score": p.sentiment_score,
+        "sentiment_consensus": p.sentiment_consensus or {},
         "threat_label": p.threat_label,
         "threat_confidence": p.threat_confidence,
         "threat_score": p.threat_score,

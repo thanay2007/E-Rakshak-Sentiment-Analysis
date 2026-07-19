@@ -9,6 +9,7 @@ import {
 } from "recharts";
 import { LanguageChip, ThreatBadge } from "../components/Badges";
 import DetailDrawer from "../components/DetailDrawer";
+import EmergingPanel from "../components/EmergingPanel";
 import FeedItemCard from "../components/FeedItemCard";
 import GlassCard, { SectionTitle } from "../components/GlassCard";
 import { SkeletonChart, SkeletonRow, SkeletonTile } from "../components/Skeletons";
@@ -165,6 +166,8 @@ export default function Dashboard() {
           </GlassCard>
         </div>
       </div>
+
+      <EmergingPanel />
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         {/* sentiment area */}
