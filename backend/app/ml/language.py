@@ -39,6 +39,35 @@ HINGLISH_MARKERS = HINDI_ROMAN_MARKERS | GUJARATI_ROMAN_MARKERS
 # English words that signal code-mixing when they appear inside Indic-script text
 ENGLISH_HINTS = {"the", "is", "this", "that", "please", "share", "video", "news", "breaking", "proof", "delete", "group", "market"}
 
+# Distinctly-Filipino (Tagalog/Taglish) function words. Real crawled feeds
+# occasionally surface Filipino posts, and shared tokens ("wala", "ko", "na")
+# were tipping them into Hinglish. The check exists only as a VETO on the
+# Hinglish call — matching posts are labeled plain English (slang/typos in
+# Latin script are never assumed to be another language).
+FILIPINO_MARKERS = {
+    "ang", "mga", "ako", "ikaw", "siya", "kami", "kayo", "sila", "ito", "iyan",
+    "po", "opo", "naman", "nman", "lang", "nlang", "kasi", "kase", "pag", "kapag",
+    "talaga", "gusto", "dito", "doon", "meron", "wala", "walang", "ganito",
+    "ganyan", "salamat", "natin", "namin", "akin", "iyo", "kanya", "iwan",
+    "hanggang", "bakit", "paano", "saan", "sino", "kailan", "muna", "pala",
+    "daw", "raw", "din", "rin", "yung", "yan", "yun", "niya", "nila", "natin",
+    "kang", "kong", "mong", "nga", "ba", "eh", "charot", "charing", "grabe",
+}
+
+# tokens Filipino shares with Hindi/Gujarati marker lists — excluded from the
+# Hinglish tally when the post looks Filipino overall
+_AMBIGUOUS = {"wala", "ko", "na", "din", "ba", "aa"}
+
+
+import re
+
+_REPEAT_RE = re.compile(r"(.)\1{2,}")
+
+
+def _squeeze(token: str) -> str:
+    """Collapse social-media elongation: 'talagaaaaa' -> 'talaga'."""
+    return _REPEAT_RE.sub(r"\1", token)
+
 
 def _script_counts(text: str) -> tuple[int, int, int]:
     gu = dev = lat = 0
@@ -76,7 +105,17 @@ def detect_language(text: str) -> tuple[str, bool]:
         mixed = lat_r >= 0.20 and len(toks) >= 2
         return "Hindi", mixed
 
-    # Latin-dominant: Hinglish / Gujlish vs English
+    # Latin-dominant: Hinglish / Gujlish vs English.
+    # Social-media elongation ("talagaaaaa") is collapsed before marker lookup.
+    # Filipino-looking text is NOT given its own label — it only vetoes the
+    # Hinglish call and falls through to English (could be slang or typos).
+    squeezed = [_squeeze(t) for t in toks]
+    fil_hits = sum(1 for t in squeezed if t in FILIPINO_MARKERS)
+    if fil_hits >= 2 and fil_hits > sum(
+        1 for t in squeezed if t in HINGLISH_MARKERS and t not in _AMBIGUOUS
+    ):
+        return "English", False
+
     if toks and (marker_hits >= 2 or marker_hits / max(len(toks), 1) >= 0.15):
         eng_hits = sum(1 for t in toks if t in ENGLISH_HINTS)
         gu_hits = sum(1 for t in toks if t in GUJARATI_ROMAN_MARKERS)

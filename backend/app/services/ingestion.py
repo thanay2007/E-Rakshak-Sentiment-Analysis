@@ -35,7 +35,7 @@ def _make_post(raw: RawPost, nlp: dict, chash: str) -> Post:
         from app.data.templates import CITIES
 
         raw.latitude, raw.longitude = CITIES.get(raw.location, (0.0, 0.0))
-    return Post(
+    post = Post(
         content_hash=chash,
         platform=raw.platform,
         author_handle=raw.author_handle, author_name=raw.author_name,
@@ -55,10 +55,8 @@ def _make_post(raw: RawPost, nlp: dict, chash: str) -> Post:
     )
     from app.ml.bot_classifier import is_likely_bot
     if is_likely_bot(post):
-        # We store the bot flag in the JSON column to avoid schema migrations
-        if post.class_probs is None:
-            post.class_probs = {}
-        post.class_probs["is_bot"] = True
+        # store the bot flag in the JSON column to avoid a schema migration
+        post.class_probs = {**(post.class_probs or {}), "is_bot": True}
     return post
 
 

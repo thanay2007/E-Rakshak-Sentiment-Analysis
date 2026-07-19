@@ -134,10 +134,13 @@ def _score_cluster(group: list[Post]) -> tuple[float, list[str]]:
     return round(min(confidence, 0.98), 2), why
 
 
-def get_network(hours: int = 24) -> dict:
+def get_network(hours: int = 24, platform: str = "") -> dict:
     since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=hours)
     with session_scope() as s:
-        posts = s.exec(select(Post).where(Post.created_at >= since)).all()
+        all_posts = s.exec(select(Post).where(Post.created_at >= since)).all()
+    # tab badges always reflect the whole window; the graph uses the active filter
+    platform_counts = dict(Counter(p.platform for p in all_posts))
+    posts = [p for p in all_posts if not platform or p.platform == platform]
 
     clusters_raw = _detect_clusters(posts)
 
@@ -230,6 +233,8 @@ def get_network(hours: int = 24) -> dict:
 
     return {
         "window_hours": hours,
+        "platform": platform,
+        "platform_counts": platform_counts,
         "nodes": nodes,
         "links": links,
         "clusters": sorted(clusters, key=lambda c: -c["confidence"]),

@@ -138,8 +138,8 @@ _DEFAULT_CAPS = {"genz": 2500, "hindi": 2500, "gujarati": 2500,
 # this lets targets run in parallel on fresh quotas instead of queueing on one
 # drained model. Override with --model.
 _TARGET_MODELS = {
-    "gujlish-pairs": "meta-llama/llama-4-scout-17b-16e-instruct",  # 30k TPM, easy task
-    "genz": "meta-llama/llama-4-scout-17b-16e-instruct",
+    "gujlish-pairs": "llama-3.1-8b-instant",  # easy labeling task, big quota
+    "genz": "openai/gpt-oss-20b",
     "gujlish": "openai/gpt-oss-120b",       # strongest fresh model for the hard target
     "gujarati": "openai/gpt-oss-120b",
     "hindi": "openai/gpt-oss-20b",

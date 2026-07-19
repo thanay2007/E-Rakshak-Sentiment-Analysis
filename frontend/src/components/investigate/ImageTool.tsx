@@ -267,6 +267,12 @@ export default function ImageTool() {
           {/* ── reverse image / person ────────────────────── */}
           <GlassCard className="space-y-3 p-4">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-200"><ScanSearch size={15} className="text-accent" /> Reverse-Source Trace</div>
+            {a.media_type === "video" && (
+              <p className="rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-[11px] text-slate-500">
+                Video traced by its poster frame (thumbnail). The frame is fingerprinted and matched
+                the same way as an image — the strongest signal for recycled/miscaptioned clips.
+              </p>
+            )}
             {rev?.matched && rev.match ? (
               <>
                 <div className="rounded-lg border border-white/[0.07] bg-white/[0.02] p-3">

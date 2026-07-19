@@ -29,6 +29,7 @@ export interface Post {
   code_mixed: boolean;
   sentiment_label: string;
   sentiment_score: number;
+  sentiment_consensus?: SentimentConsensus;
   threat_label: string;
   threat_confidence: number;
   threat_score: number;
@@ -70,6 +71,69 @@ export interface Post {
   longitude?: number;
   true_label?: string;
   ingested_at?: string;
+}
+
+export interface EmergingItem {
+  post_id: string;
+  platform: string;
+  author_handle: string;
+  author_name: string;
+  author_followers: number;
+  author_verified: boolean;
+  text: string;
+  threat_label: string;
+  threat_score: number;
+  spread_score: number;
+  source_count: number;
+  url: string;
+  reasons: string[];
+  created_at: string;
+}
+export interface EmergingData {
+  window_hours: number;
+  count: number;
+  items: EmergingItem[];
+}
+
+export interface ModelVote {
+  model: string;
+  label: string;
+  confidence: number;
+  probs?: Record<string, number>;
+}
+export interface SentimentConsensus {
+  label?: string;
+  score?: number;
+  confidence?: number;
+  chosen_by?: string;
+  agreement?: string;
+  votes?: ModelVote[];
+  groq_sentiment?: string;
+  groq_agrees?: boolean;
+}
+
+export interface ModelCard {
+  id: string;
+  name: string;
+  family: string;
+  base_model?: string;
+  approach: string;
+  training_data?: { train_rows?: number; test_rows?: number; sources?: string };
+  accuracy?: { accuracy?: number; macro_f1?: number };
+  per_language?: Record<string, { n: number; accuracy: number; macro_f1: number }>;
+  epochs?: number;
+  live?: boolean;
+  strength?: string;
+}
+export interface ModelsInfo {
+  ensemble: { task: string; decision_rule: string; models: ModelCard[] };
+  threat_model: {
+    name: string; family: string; labels: string[]; approach: string;
+    accuracy?: { accuracy?: number; macro_f1?: number };
+    per_class?: Record<string, { precision: number; recall: number; f1: number; support: number }>;
+    eval_samples?: number;
+  };
+  verification: { layer: string; role: string };
 }
 
 export interface EvidenceReport {
@@ -171,6 +235,8 @@ export interface NetCluster {
 
 export interface NetworkData {
   window_hours: number;
+  platform?: string;
+  platform_counts?: Record<string, number>;
   nodes: NetNode[];
   links: NetLink[];
   clusters: NetCluster[];
@@ -208,8 +274,32 @@ export interface WatchItem {
   kind: "keyword" | "hashtag" | "account" | "location";
   value: string;
   note: string;
+  priority: "low" | "medium" | "high" | "critical";
+  category: string;
   active: boolean;
   created_at: string;
+  hits_7d: number;
+  last_hit: string | null;
+  top_threat: number;
+}
+
+export interface WatchPreset { slug: string; title: string; description: string; count: number }
+
+export interface SystemStatus {
+  uptime_seconds: number;
+  nlp_mode: string;
+  simulation: boolean;
+  ingest_interval_seconds: number;
+  scheduler_running: boolean;
+  database: {
+    url: string; size_mb: number | null;
+    counts: { posts: number; alerts: number; reports: number; watchlist: number };
+    oldest_post: string | null; newest_post: string | null; untranslated_posts: number;
+  };
+  llm: {
+    enabled: boolean;
+    models: { model: string; role: string; state: string; cooldown_seconds_left: number; last_ok: string | null; last_error: string | null }[];
+  };
 }
 
 export interface FeedFilters {
@@ -358,6 +448,8 @@ function qs(params: Record<string, unknown>): string {
 export const api = {
   health: () => http<{ status: string; nlp_mode: string; simulation: boolean }>("/api/health"),
   stats: () => http<Stats>("/api/stats"),
+  models: () => http<ModelsInfo>("/api/models"),
+  emerging: (hours = 24) => http<EmergingData>(`/api/emerging?hours=${hours}`),
   feed: (f: FeedFilters = {}) => http<FeedPage>(`/api/feed${qs(f as Record<string, unknown>)}`),
   post: (id: string) => http<Post>(`/api/feed/${id}`),
   factCheckPost: (id: string) =>
@@ -365,7 +457,8 @@ export const api = {
   evidenceReport: (id: string) =>
     http<EvidenceReport>(`/api/feed/${id}/evidence-report`, { method: "POST" }),
   trends: (hours = 24) => http<Trends>(`/api/trends?hours=${hours}`),
-  network: (hours = 24) => http<NetworkData>(`/api/network?hours=${hours}`),
+  network: (hours = 24, platform = "") =>
+    http<NetworkData>(`/api/network?hours=${hours}${platform ? `&platform=${encodeURIComponent(platform)}` : ""}`),
   alerts: (params: { status?: string; severity?: string; limit?: number } = {}) =>
     http<Alert[]>(`/api/alerts${qs(params)}`),
   acknowledgeAlert: (id: string) => http<Alert>(`/api/alerts/${id}/acknowledge`, { method: "POST" }),
@@ -376,11 +469,30 @@ export const api = {
     http<Report>("/api/reports/generate", { method: "POST", body: JSON.stringify(body) }),
   reportDownloadUrl: (id: string) => `${API_BASE}/api/reports/${id}/download`,
   watchlist: () => http<WatchItem[]>("/api/watchlist"),
-  addWatch: (body: { kind: string; value: string; note?: string }) =>
+  addWatch: (body: { kind: string; value: string; note?: string; priority?: string; category?: string }) =>
     http<WatchItem>("/api/watchlist", { method: "POST", body: JSON.stringify(body) }),
-  updateWatch: (id: string, body: Partial<Pick<WatchItem, "value" | "note" | "active">>) =>
+  bulkAddWatch: (items: { kind: string; value: string; note?: string; priority?: string }[]) =>
+    http<{ added: number; skipped: number }>("/api/watchlist/bulk", { method: "POST", body: JSON.stringify({ items }) }),
+  watchPresets: () => http<WatchPreset[]>("/api/watchlist/presets"),
+  applyWatchPreset: (slug: string) =>
+    http<{ pack: string; added: number; skipped: number }>(`/api/watchlist/presets/${slug}`, { method: "POST" }),
+  watchlistExportUrl: () => `${API_BASE}/api/watchlist/export`,
+  updateWatch: (id: string, body: Partial<Pick<WatchItem, "value" | "note" | "active" | "priority" | "category">>) =>
     http<WatchItem>(`/api/watchlist/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteWatch: (id: string) => http<void>(`/api/watchlist/${id}`, { method: "DELETE" }),
+
+  // ── admin / operations toolkit ─────────────────────────────────────────
+  systemStatus: () => http<SystemStatus>("/api/admin/system"),
+  testLlm: () => http<{ ok: boolean; model?: string; latency_ms?: number; error?: string }>("/api/admin/test-llm", { method: "POST" }),
+  crawlNow: () => http<{ ok: boolean; new_posts: number }>("/api/admin/crawl-now", { method: "POST" }),
+  translateMissing: (limit = 40) =>
+    http<{ translated: number; remaining_candidates: number }>(`/api/admin/translate-missing?limit=${limit}`, { method: "POST" }),
+  relabelLanguages: () => http<{ relabeled: number }>("/api/admin/relabel-languages", { method: "POST" }),
+  purgePosts: (days: number) => http<{ deleted: number }>(`/api/admin/purge?days=${days}`, { method: "POST" }),
+  exportPostsUrl: (hours: number) => `${API_BASE}/api/admin/export/posts.csv?hours=${hours}`,
+  retrainBaseline: () => http<{ started: boolean }>("/api/admin/retrain-baseline", { method: "POST" }),
+  retrainStatus: () =>
+    http<{ state: "idle" | "running" | "done" | "failed"; elapsed_seconds?: number; exit_code?: number }>("/api/admin/retrain-baseline/status"),
 
   // ── investigation / OSINT toolkit ──────────────────────────────────────
   investigateImage: (file: File) => {

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import String, cast, func, or_
 from sqlmodel import Session, col, select
 
-from app.database import get_session
+from app.database import get_session, session_scope
 from app.models import Post
 from app.schemas import FeedPage
 from app.services.serializers import post_to_dict
@@ -104,7 +104,7 @@ async def fact_check_post(post_id: str) -> dict:
         raise HTTPException(422, "Post has no usable terms to check")
     try:
         async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-            record = await check_claim(client, query)
+            record = await check_claim(client, query, deep=True)
     except Exception:
         raise HTTPException(502, "News corroboration lookup failed — try again")
     with session_scope() as s:

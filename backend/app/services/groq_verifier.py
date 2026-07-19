@@ -21,14 +21,10 @@ import json
 import logging
 import re
 
-import httpx
-
 from app.config import THREAT_LABELS, settings
 from app.ml.threat_score import SEVERITY
 
 log = logging.getLogger("sentinel.groq")
-
-GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 _SYSTEM = (
     "You are a threat-intelligence reviewer for Gujarat police analysts. Your "
@@ -56,33 +52,19 @@ def enabled() -> bool:
 
 async def _call_groq(posts: list[dict]) -> list[dict] | None:
     """One batched request. posts: [{"id", "text"}]. Returns parsed results or None."""
-    body = {
-        "model": settings.GROQ_MODEL,
-        "temperature": 0,
-        "response_format": {"type": "json_object"},
-        "messages": [
-            {"role": "system", "content": _SYSTEM},
-            {"role": "user", "content": json.dumps(
-                {"posts": [{"id": p["id"], "text": p["text"][:600]} for p in posts]},
-                ensure_ascii=False)},
-        ],
-    }
-    async with httpx.AsyncClient(timeout=settings.GROQ_TIMEOUT_SECONDS) as client:
-        resp = await client.post(GROQ_URL, json=body, headers={
-            "Authorization": f"Bearer {settings.GROQ_API_KEY}",
-            "Content-Type": "application/json",
-        })
-    if resp.status_code != 200:
-        log.warning("Groq verify failed: HTTP %s %s", resp.status_code, resp.text[:200])
+    from app.services.groq_client import chat_json
+
+    data, model_used = await chat_json([
+        {"role": "system", "content": _SYSTEM},
+        {"role": "user", "content": json.dumps(
+            {"posts": [{"id": p["id"], "text": p["text"][:600]} for p in posts]},
+            ensure_ascii=False)},
+    ])
+    if data is None:
+        log.warning("Groq verify failed on every model in the fallback chain")
         return None
-    content = resp.json()["choices"][0]["message"]["content"]
-    try:
-        data = json.loads(content)
-    except json.JSONDecodeError:          # salvage a JSON object out of prose
-        m = re.search(r"\{.*\}", content, re.DOTALL)
-        if not m:
-            return None
-        data = json.loads(m.group(0))
+    if model_used and model_used != settings.GROQ_MODEL:
+        log.info("Groq verify served by fallback model %s", model_used)
     results = data.get("results", data if isinstance(data, list) else [])
     return results if isinstance(results, list) else None
 
@@ -129,11 +111,19 @@ def _reconcile(nlp: dict, verdict: dict) -> None:
 
     nlp["llm_verification"] = record
 
+    # ── bind the 3-model sentiment consensus to Groq's independent sentiment ──
+    consensus = nlp.get("sentiment_consensus")
+    if isinstance(consensus, dict) and consensus and llm_sent in ("negative", "neutral", "positive"):
+        consensus["groq_sentiment"] = llm_sent
+        consensus["groq_agrees"] = (llm_sent == consensus.get("label"))
+
 
 _TRANSLATE_SYSTEM = (
-    "You translate Indian social-media posts to English for police analysts. "
-    "Posts may be Hindi, Gujarati, or romanized Hinglish/Gujlish. Translate "
-    "faithfully, keep hashtags/handles/URLs as-is. Reply ONLY with JSON: "
+    "You translate social-media posts to English for police analysts. Posts "
+    "are usually Hindi, Gujarati, or romanized Hinglish/Gujlish, but may be "
+    "ANY language (e.g. Tagalog, Bengali, Marathi) — detect the language "
+    "yourself and translate faithfully. Keep hashtags/handles/URLs as-is. "
+    "Reply ONLY with JSON: "
     '{"translations": [{"id": <post id>, "en": "<English translation>"}, ...]} '
     "— one entry per post, same ids as given."
 )
@@ -163,29 +153,22 @@ async def translate_enriched(texts: list[str], enriched: list[dict]) -> int:
     ][:TRANSLATE_MAX_PER_TICK]
     if not candidates:
         return 0
-    body = {
-        "model": settings.GROQ_MODEL,
-        "temperature": 0,
-        "response_format": {"type": "json_object"},
-        "messages": [
+    from app.services.groq_client import chat_json
+
+    try:
+        # translation is high-volume background work — the fast model does it
+        # fine and keeps the big model's daily budget for analyst actions
+        data, _ = await chat_json([
             {"role": "system", "content": _TRANSLATE_SYSTEM},
             {"role": "user", "content": json.dumps(
                 {"posts": [{"id": i, "text": texts[i][:600]} for i in candidates]},
                 ensure_ascii=False)},
-        ],
-    }
-    try:
-        async with httpx.AsyncClient(timeout=settings.GROQ_TIMEOUT_SECONDS) as client:
-            resp = await client.post(GROQ_URL, json=body, headers={
-                "Authorization": f"Bearer {settings.GROQ_API_KEY}",
-                "Content-Type": "application/json",
-            })
-        if resp.status_code != 200:
-            log.warning("Groq translate failed: HTTP %s", resp.status_code)
-            return 0
-        data = json.loads(resp.json()["choices"][0]["message"]["content"])
+        ], model=settings.GROQ_MODEL_FAST)
     except Exception as exc:
         log.warning("Groq translate errored (%s) — batch stays untranslated", exc)
+        return 0
+    if data is None:
+        log.warning("Groq translate failed on every model — batch stays untranslated")
         return 0
     n = 0
     for r in data.get("translations", []):
@@ -247,22 +230,15 @@ async def summarize_briefing(text: str) -> str:
     """Uses LLM to summarize recent threat data into a concise intelligence briefing."""
     if not enabled():
         return text
-    body = {
-        "model": settings.GROQ_MODEL,
-        "temperature": 0.3,
-        "messages": [
+    from app.services.groq_client import chat
+
+    try:
+        content, _ = await chat([
             {"role": "system", "content": "You are a senior intelligence officer summarizing threat data into a concise 1-paragraph briefing for local law enforcement."},
             {"role": "user", "content": f"Summarize this data into a short tactical briefing:\n\n{text}"},
-        ],
-    }
-    try:
-        async with httpx.AsyncClient(timeout=settings.GROQ_TIMEOUT_SECONDS) as client:
-            resp = await client.post(GROQ_URL, json=body, headers={
-                "Authorization": f"Bearer {settings.GROQ_API_KEY}",
-                "Content-Type": "application/json",
-            })
-        if resp.status_code == 200:
-            return resp.json()["choices"][0]["message"]["content"].strip()
+        ], temperature=0.3, json_mode=False)
+        if content:
+            return content.strip()
     except Exception as exc:
         log.warning("Groq briefing failed (%s)", exc)
     return text

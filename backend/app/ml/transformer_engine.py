@@ -86,13 +86,23 @@ class TransformerEngine:
         ]
 
     def sentiment_batch(self, texts: list[str]) -> list[tuple[str, float]]:
+        return [(v["label"], v["value"]) for v in self.sentiment_votes_batch(texts)]
+
+    def sentiment_votes_batch(self, texts: list[str]) -> list[dict]:
+        """Richer sentiment output for the ensemble: label, numeric value
+        [-1,1], winning-class confidence, and full per-class probabilities."""
         outs = self.sent(texts, batch_size=16)
         results = []
         for scores in outs:
             by = {d["label"].lower(): d["score"] for d in scores}
             value = by.get("positive", 0) - by.get("negative", 0)  # [-1, 1]
             label = max(by, key=by.get)
-            results.append((label, round(value, 3)))
+            results.append({
+                "label": label,
+                "value": round(value, 3),
+                "confidence": round(by[label], 4),
+                "probs": {k: round(v, 4) for k, v in by.items()},
+            })
         return results
 
     def toxicity_batch(self, texts: list[str]) -> list[float] | None:

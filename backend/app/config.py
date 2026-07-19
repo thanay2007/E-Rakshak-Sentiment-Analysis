@@ -46,9 +46,26 @@ class Settings(BaseSettings):
     # console.groq.com — without it the layer simply stays off.
     GROQ_API_KEY: str = ""
     GROQ_MODEL: str = "llama-3.3-70b-versatile"
+    # Cheaper model for high-volume background work (translation) so the big
+    # model's daily token budget stays available for analyst-triggered work.
+    GROQ_MODEL_FAST: str = "llama-3.1-8b-instant"
+    # Groq rate limits are PER MODEL — when one model's daily budget drains,
+    # the next in this chain still has quota. Every LLM call walks this list.
+    GROQ_FALLBACK_MODELS: list[str] = [
+        "llama-3.1-8b-instant",
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b",
+        "qwen/qwen3.6-27b",
+    ]
     GROQ_VERIFY_MIN_SCORE: int = 55
     GROQ_MAX_PER_TICK: int = 8
     GROQ_TIMEOUT_SECONDS: int = 20
+
+    # GNews (gnews.io) — richer news corroboration for analyst-triggered
+    # fact-checks and evidence dossiers. Free tier: 100 requests/day, so the
+    # background ingest loop never touches it (it stays on Google News RSS).
+    GNEWS_API_KEY: str = ""
+    GNEWS_DAILY_BUDGET: int = 80  # self-imposed cap under the 100/day limit
 
     # Twilio WhatsApp Alerts
     TWILIO_ACCOUNT_SID: str = ""

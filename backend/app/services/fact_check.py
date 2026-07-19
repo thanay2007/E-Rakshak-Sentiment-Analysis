@@ -10,21 +10,70 @@ story: one Google News RSS query built from the post's evidence keywords.
 The verdict is stored on the post (`fact_check`) and shown to analysts next to
 the LLM verification block — it informs, it never overrides.
 
-Keyless (Google News RSS is public). Capped per tick to stay polite.
+Two tiers of coverage:
+  - Google News RSS (keyless, unlimited) — used everywhere, including the
+    background ingest loop.
+  - GNews API (gnews.io, GNEWS_API_KEY) — richer results with descriptions and
+    timestamps, but 100 requests/day on the free tier, so ONLY analyst-
+    triggered checks (fact-check button, evidence dossier) use it, behind a
+    self-imposed daily budget.
 """
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from urllib.parse import quote_plus
 
 import feedparser
 import httpx
 
+from app.config import settings
+
 log = logging.getLogger("sentinel.factcheck")
 
 RSS = "https://news.google.com/rss/search?q={q}&hl=en-IN&gl=IN&ceid=IN:en"
+GNEWS_URL = "https://gnews.io/api/v4/search"
 MAX_CHECKS_PER_TICK = 10
+
+# GNews daily budget tracking (in-memory; resets on date change / restart)
+_gnews_day: date | None = None
+_gnews_used = 0
+
+
+def _gnews_available() -> bool:
+    global _gnews_day, _gnews_used
+    if not settings.GNEWS_API_KEY:
+        return False
+    today = datetime.now(timezone.utc).date()
+    if _gnews_day != today:
+        _gnews_day, _gnews_used = today, 0
+    return _gnews_used < settings.GNEWS_DAILY_BUDGET
+
+
+def gnews_status() -> dict:
+    return {"configured": bool(settings.GNEWS_API_KEY),
+            "used_today": _gnews_used,
+            "daily_budget": settings.GNEWS_DAILY_BUDGET}
+
+
+async def _gnews_search(client: httpx.AsyncClient, query: str) -> list[dict]:
+    """One GNews lookup -> normalized article dicts ([] on any failure)."""
+    global _gnews_used
+    _gnews_used += 1
+    r = await client.get(GNEWS_URL, params={
+        "q": query, "apikey": settings.GNEWS_API_KEY,
+        "lang": "en", "country": "in", "max": 10, "sortby": "relevance",
+    })
+    if r.status_code != 200:
+        log.warning("GNews search failed: HTTP %s %s", r.status_code, r.text[:150])
+        return []
+    return [{
+        "title": a.get("title", ""),
+        "source": (a.get("source") or {}).get("name", ""),
+        "link": a.get("url", ""),
+        "published": a.get("publishedAt", ""),
+        "description": (a.get("description") or "")[:220],
+    } for a in r.json().get("articles", [])]
 
 
 def _query_for(nlp: dict, text: str) -> str:
@@ -45,8 +94,12 @@ def _needs_check(nlp: dict) -> bool:
     return nlp.get("threat_label") == "Fake News" or nlp.get("intent") == "rumor"
 
 
-async def check_claim(client: httpx.AsyncClient, query: str) -> dict:
-    """One Google News corroboration lookup -> a fact_check record."""
+async def check_claim(client: httpx.AsyncClient, query: str, deep: bool = False) -> dict:
+    """One news corroboration lookup -> a fact_check record.
+
+    deep=True (analyst-triggered paths only) additionally queries the GNews
+    API and merges its articles in — richer metadata, but it spends one unit
+    of the 100/day free-tier budget."""
     r = await client.get(RSS.format(q=quote_plus(query)))
     r.raise_for_status()
     feed = feedparser.parse(r.text)
@@ -56,6 +109,24 @@ async def check_claim(client: httpx.AsyncClient, query: str) -> dict:
         "link": e.get("link", ""),
     } for e in feed.entries[:3]]
     n = len(feed.entries)
+
+    sources = ["Google News"]
+    if deep and _gnews_available():
+        try:
+            gnews = await _gnews_search(client, query)
+        except Exception as exc:
+            log.warning("GNews lookup errored (%s)", exc)
+            gnews = []
+        if gnews:
+            sources.append("GNews")
+            seen_titles = {m["title"].strip().lower() for m in matches}
+            for a in gnews:
+                if a["title"].strip().lower() not in seen_titles:
+                    seen_titles.add(a["title"].strip().lower())
+                    matches.append(a)
+                    n += 1
+            matches = matches[:6]
+
     if n >= 2:
         verdict = "corroborated"
         note = (f"{n} independent news reports match these terms — the underlying "
@@ -69,7 +140,7 @@ async def check_claim(client: httpx.AsyncClient, query: str) -> dict:
                 "with a fabricated or unverified claim.")
     return {
         "checked": True, "query": query, "verdict": verdict, "note": note,
-        "matches": matches,
+        "sources": sources, "matches": matches,
         "checked_at": datetime.now(timezone.utc).isoformat(),
     }
 

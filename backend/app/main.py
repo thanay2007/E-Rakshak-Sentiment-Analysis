@@ -17,7 +17,7 @@ from sqlmodel import select
 
 from app.database import init_db, session_scope
 from app.models import WatchlistItem
-from app.routers import alerts, feed, investigate, network, reports, stats, trends, watchlist, ws
+from app.routers import admin, alerts, feed, investigate, network, reports, stats, trends, watchlist, ws
 from app.services.ingestion import seed_if_empty
 from app.services.scheduler import start_scheduler, stop_scheduler
 
@@ -50,11 +50,23 @@ DEFAULT_WATCHLIST = [
 
 
 def _seed_watchlist() -> None:
+    from app.data.watchlist_packs import PACKS
+
     with session_scope() as s:
         if s.exec(select(WatchlistItem).limit(1)).first():
             return
+        seen = set()
         for kind, value, note in DEFAULT_WATCHLIST:
+            seen.add((kind, value.lower()))
             s.add(WatchlistItem(kind=kind, value=value, note=note))
+        # every curated preset pack ships pre-applied on a fresh install
+        for pack in PACKS.values():
+            for kind, value, note, priority in pack["items"]:
+                if (kind, value.lower()) in seen:
+                    continue
+                seen.add((kind, value.lower()))
+                s.add(WatchlistItem(kind=kind, value=value, note=note,
+                                    priority=priority, category=pack["title"]))
         s.commit()
 
 
@@ -92,6 +104,7 @@ app.include_router(alerts.router, prefix="/api", tags=["alerts"])
 app.include_router(reports.router, prefix="/api", tags=["reports"])
 app.include_router(watchlist.router, prefix="/api", tags=["watchlist"])
 app.include_router(investigate.router, prefix="/api", tags=["investigate"])
+app.include_router(admin.router, prefix="/api", tags=["admin"])
 app.include_router(ws.router, tags=["websocket"])
 
 

@@ -100,3 +100,21 @@ def get_stats(session: Session = Depends(get_session)) -> dict:
         "last_updated": now.isoformat() + "Z",
     }
 
+
+
+@router.get("/models")
+def models() -> dict:
+    """Live metadata for the 3-model consensus ensemble + threat model —
+    architecture, training data and measured accuracy (read from eval reports)."""
+    from app.services.model_info import get_models
+
+    return get_models()
+
+
+@router.get("/emerging")
+def emerging(hours: int = 24) -> dict:
+    """Posts spreading fast from a single, uncorroborated source — flagged for
+    police to check before a possible rumour goes viral."""
+    from app.services.emerging import detect_emerging
+
+    return detect_emerging(hours=max(1, min(hours, 168)))

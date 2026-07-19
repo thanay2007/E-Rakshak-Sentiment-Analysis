@@ -18,3 +18,4 @@ frontend/dist/
 frontend/.env.local
 *.tsbuildinfo
 .DS_Store
+.playwright-mcp/

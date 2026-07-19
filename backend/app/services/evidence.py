@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from datetime import datetime, timezone
 
 import httpx
@@ -32,8 +31,6 @@ from app.models import Post
 from app.services.fact_check import _query_for, check_claim
 
 log = logging.getLogger("sentinel.evidence")
-
-GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 _SYSTEM = (
     "You are a senior threat-intelligence analyst preparing an evidence dossier "
@@ -123,7 +120,7 @@ async def generate_report(post_id: str) -> dict:
             query = _query_for({"keywords": keywords}, text_for_query)
             if query:
                 try:
-                    fact = await check_claim(client, query)
+                    fact = await check_claim(client, query, deep=True)
                 except Exception as exc:
                     log.warning("evidence: news lookup failed (%s)", exc)
         payload["news_search_results"] = {
@@ -133,34 +130,26 @@ async def generate_report(post_id: str) -> dict:
                     "terms — the ONLY citable external sources.",
         }
 
-        body = {
-            "model": settings.GROQ_MODEL,
-            "temperature": 0,
-            "response_format": {"type": "json_object"},
-            "messages": [
-                {"role": "system", "content": _SYSTEM},
-                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
-            ],
-        }
-        resp = await client.post(GROQ_URL, json=body, headers={
-            "Authorization": f"Bearer {settings.GROQ_API_KEY}",
-            "Content-Type": "application/json",
-        })
-    if resp.status_code != 200:
-        log.warning("evidence dossier failed: HTTP %s %s", resp.status_code, resp.text[:200])
-        return {"ok": False, "error": "LLM analysis unavailable right now — try again."}
-    content = resp.json()["choices"][0]["message"]["content"]
-    try:
-        dossier = json.loads(content)
-    except json.JSONDecodeError:
-        m = re.search(r"\{.*\}", content, re.DOTALL)
-        if not m:
-            return {"ok": False, "error": "LLM returned an unparseable dossier — try again."}
-        dossier = json.loads(m.group(0))
+        # walks the model fallback chain — a drained primary model no longer
+        # kills the dossier, a sibling model with fresh quota picks it up
+        from app.services.groq_client import chat_json, status
+
+        dossier, model_used = await chat_json([
+            {"role": "system", "content": _SYSTEM},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ], client=client)
+    if dossier is None:
+        st = status()
+        cooling = [m["model"] for m in st["models"] if m["state"] == "cooling_down"]
+        detail = (" All models are rate-limited (daily token budget) — retry in a few "
+                  "minutes." if cooling and len(cooling) == len(st["models"])
+                  else " Try again.")
+        log.warning("evidence dossier failed on every model (cooling: %s)", cooling)
+        return {"ok": False, "error": "LLM analysis unavailable right now." + detail}
 
     record = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "model": settings.GROQ_MODEL,
+        "model": model_used or settings.GROQ_MODEL,
         **{k: dossier.get(k) for k in (
             "summary", "claims", "evidence_phrases", "corroboration",
             "account_assessment", "risk_assessment", "recommended_action",
