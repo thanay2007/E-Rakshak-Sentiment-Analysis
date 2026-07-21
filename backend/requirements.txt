@@ -19,3 +19,6 @@ scikit-learn>=1.3.0
 dlib>=19.24.0
 # PyPI twikit 2.3.3 is broken vs X's 2026 frontend; use the community-patched PR build
 twikit @ git+https://github.com/d60/twikit.git@refs/pull/432/head
+# Telegram MTProto — optional: without it the Telegram adapter falls back to
+# the keyless t.me/s/<channel> public preview pages.
+telethon>=1.36

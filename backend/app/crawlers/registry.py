@@ -5,6 +5,7 @@ from app.crawlers.facebook import FacebookCollector
 from app.crawlers.instagram import InstagramCollector
 from app.crawlers.reddit import RedditCollector
 from app.crawlers.simulated import SimulatedCollector
+from app.crawlers.telegram import TelegramCollector
 from app.crawlers.twikit_x import TwikitXCollector
 from app.crawlers.twitter import XCollector
 
@@ -13,6 +14,7 @@ _ALL: list[Collector] = [
     FacebookCollector(),
     InstagramCollector(),
     RedditCollector(),
+    TelegramCollector(),
     XCollector(),
     TwikitXCollector(),
 ]

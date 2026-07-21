@@ -27,8 +27,16 @@ def content_hash(raw: RawPost) -> str:
 
 
 def _make_post(raw: RawPost, nlp: dict, chash: str) -> Post:
+    # simulated posts carry their own gloss; live non-English posts get a Groq
+    # machine translation during enrichment
+    translation = nlp.pop("translation", "") or raw.translation
     if not raw.location:  # live-platform posts: geo-tag from city mentions
-        hit = infer_city(raw.text)
+        # Check the English translation too, not just the raw text. infer_city
+        # only knows Latin/Gujarati/Devanagari spellings of the target cities,
+        # so a post written in any other language — deliberately or not — would
+        # otherwise land with no location and drop off the geo view. Translating
+        # first and matching on both is what keeps that from being an easy gap.
+        hit = infer_city(raw.text) or (infer_city(translation) if translation else None)
         if hit:
             raw.location, raw.latitude, raw.longitude = hit
     elif not raw.latitude and not raw.longitude:  # seed-source :City tag → coords
@@ -42,9 +50,7 @@ def _make_post(raw: RawPost, nlp: dict, chash: str) -> Post:
         author_followers=raw.author_followers, author_verified=raw.author_verified,
         author_account_age_days=raw.author_account_age_days,
         text=raw.text,
-        # simulated posts carry their own gloss; live non-English posts get a
-        # Groq machine translation during enrichment
-        translation=nlp.pop("translation", "") or raw.translation,
+        translation=translation,
         hashtags=raw.hashtags, location=raw.location,
         latitude=raw.latitude, longitude=raw.longitude,
         engagement=raw.engagement, url=raw.url, media_urls=raw.media_urls,

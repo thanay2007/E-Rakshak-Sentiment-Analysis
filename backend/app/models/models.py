@@ -17,7 +17,7 @@ def utcnow() -> datetime:
 class Post(SQLModel, table=True):
     id: str = Field(default_factory=_uuid, primary_key=True)
     content_hash: str = Field(index=True, unique=True)
-    platform: str = Field(index=True)                 # X | Facebook | Instagram | Reddit
+    platform: str = Field(index=True)                 # X | Facebook | Instagram | Reddit | Telegram
     author_handle: str = Field(index=True)
     author_name: str = ""
     author_followers: int = 0
