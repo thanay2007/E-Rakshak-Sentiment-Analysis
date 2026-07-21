@@ -14,6 +14,7 @@ const KEY_ROWS = [
   ["REDDIT_CLIENT_ID / SECRET", "Reddit official API (keyless PullPush fallback active)"],
   ["FB_ACCESS_TOKEN / FB_PAGE_IDS", "Facebook Graph API seed pages"],
   ["IG_ACCESS_TOKEN / IG_SEED_USERNAMES", "Instagram Graph API seed accounts"],
+  ["TELEGRAM_API_ID / HASH / SESSION_STRING", "Telegram MTProto full channel reads (keyless t.me previews active)"],
 ];
 
 function fmtUptime(s: number): string {

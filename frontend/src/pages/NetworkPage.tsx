@@ -21,10 +21,11 @@ function profileUrl(n: NetNode): string | null {
   if (n.platform === "Reddit") return `https://reddit.com/user/${n.id}`;
   if (n.platform === "Facebook") return `https://facebook.com/${n.id}`;
   if (n.platform === "Instagram") return `https://instagram.com/${n.id}`;
+  if (n.platform === "Telegram") return `https://t.me/${n.id}`;
   return null;
 }
 
-const PLATFORMS = ["All", "X", "Reddit", "Facebook", "Instagram"];
+const PLATFORMS = ["All", "X", "Reddit", "Facebook", "Instagram", "Telegram"];
 
 export default function NetworkPage() {
   const [hours, setHours] = useState(24);

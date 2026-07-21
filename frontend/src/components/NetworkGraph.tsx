@@ -30,6 +30,7 @@ const PLATFORM_RING: Record<string, string> = {
   Reddit: "#FF4500",
   Facebook: "#1877F2",
   Instagram: "#E1306C",
+  Telegram: "#229ED9",
 };
 
 /** Andrew monotone-chain convex hull for cluster envelopes. */

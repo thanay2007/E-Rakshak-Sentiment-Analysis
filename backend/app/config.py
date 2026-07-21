@@ -120,6 +120,61 @@ class Settings(BaseSettings):
                 out.append((source.strip(), city.strip()))
         return out
 
+    # Telegram — official MTProto API credentials from my.telegram.org, plus a
+    # session string generated once by `python -m app.crawlers.telegram_login`
+    # (the login handshake needs a console; the ingest loop has none).
+    # Without them the adapter still runs on t.me/s/<channel> public previews,
+    # which cover the seed channels; neither mode has keyword search (Telegram
+    # exposes no public message-search API).
+    TELEGRAM_API_ID: int = 0
+    TELEGRAM_API_HASH: str = ""
+    TELEGRAM_SESSION_STRING: str = ""
+
+    # Seed public channels (channel username, optional :City tag). A handle that
+    # later goes dead just logs a warning and is skipped.
+    # Every handle below was discovered through a directory search (not guessed)
+    # and then verified against t.me/s/<name>: it exists, is public, is still
+    # posting, and its content actually concerns Gujarat. Two failure modes make
+    # that verification non-optional — many plausible handles simply don't exist,
+    # and a dormant channel keeps serving its last 20 posts forever, which would
+    # re-inject months-old content every cycle. Re-run
+    # `python -m app.crawlers.telegram_discover` to refresh this list.
+    #
+    # Known dormant, do not re-add: gujaratsamacharofficial (Jul 2025),
+    # network_news_gujarat (2020), YouthBarodian (2024), abpasmitatv (2022),
+    # divyabhaskar (Feb 2026), zeenews (Apr 2026), TimesofIndia (2022).
+    # Not public on t.me/s: vtvgujarati, news18gujarati, gstvnews,
+    # sandesh_news_official, Gujarati_Daily_E_Paper.
+    #
+    # No :City tag on the statewide desks on purpose — they cover all four
+    # cities, so per-post geo-tagging beats a blanket label.
+    TELEGRAM_CHANNELS_RAW: list[str] = [
+        # city desks
+        "suratpolicesupporter:Surat",   # Surat police-adjacent, Gujarati
+        "Ahmedabad_News:Ahmedabad",     # Ahmedabad news and updates
+        "ahmedabadlivecommunity:Ahmedabad",
+        # statewide Gujarati desks — no :City tag, geo-tagged per post
+        "ddnews_gujarati",       # Doordarshan Gujarati — official public broadcaster
+        "akilanews",             # Akila — Gujarati daily, Rajkot desk, statewide
+        "khabargujarat",         # Khabar Gujarat News
+        "loktej",                # Loktej — Hindi news out of Surat
+        "manzilnewsgandhinagar2",  # Gujarati regional desk
+        "aapgujaratofficial",    # party channel — political sentiment, Gujarati
+        "gujaratieditorial",     # Gujarati editorial/opinion
+        # national wires — Gujarat stories that break nationally first
+        "ANINewsOfficial",
+        "IndianExpress",
+    ]
+
+    @property
+    def TELEGRAM_CHANNELS(self) -> list[tuple[str, str]]:
+        out = []
+        for entry in self.TELEGRAM_CHANNELS_RAW:
+            source, _, city = entry.partition(":")
+            if source.strip():
+                out.append((source.strip().lstrip("@"), city.strip()))
+        return out
+
     RSS_FEEDS: list[str] = []
 
     REPORTS_DIR: Path = BASE_DIR / "reports"

@@ -4,6 +4,10 @@ __pycache__/
 venv/
 backend/.env
 backend/sentinel.db
+# Telegram/X login state — these are full account access, same as a password
+backend/*.session
+backend/*.session-journal
+backend/x_cookies.json
 backend/reports/*.pdf
 backend/app/ml/models/
 backend/app/ml/eval_report.json
