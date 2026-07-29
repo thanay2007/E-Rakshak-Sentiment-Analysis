@@ -12,6 +12,7 @@ from sqlmodel import Session
 from app.database import get_session
 
 from app.osint.comment_analysis import analyze_comments, analyze_post_comments
+from app.osint.face_intel import identify_faces, identify_media
 from app.osint.image_analysis import analyze_image
 from app.osint.media_intel import find_person, reverse_lookup
 from app.osint.post_media import analyze_from_post, analyze_from_url
@@ -48,17 +49,24 @@ class CommentsRequest(BaseModel):
 
 
 @router.post("/image")
-async def investigate_image(file: UploadFile = File(...)) -> dict:
+async def investigate_image(file: UploadFile = File(...), deep_faces: bool = False,
+                            session: Session = Depends(get_session)) -> dict:
     data = await file.read()
     if not data:
         raise HTTPException(400, "Empty file.")
     if len(data) > _MAX_IMAGE_BYTES:
         raise HTTPException(413, "File too large (max 25 MB).")
-    analysis = analyze_image(data, filename=file.filename or "")
+    analysis = analyze_image(data, filename=file.filename or "", deep_faces=deep_faces)
     phash = analysis.get("perceptual_hash")
     reverse = reverse_lookup(phash)
     person = find_person(phash)
-    return {"analysis": analysis, "reverse_image": reverse, "person": person}
+    # Faces are matched against the suspect registry here rather than inside
+    # analyze_image, which has no DB session. This also strips the raw
+    # embeddings before the report is serialised.
+    identification = await identify_faces(session, analysis,
+                                          filename=file.filename or "")
+    return {"analysis": analysis, "reverse_image": reverse, "person": person,
+            "identification": identification}
 
 
 @router.post("/image-from-url")
@@ -66,7 +74,9 @@ async def investigate_image_from_url(req: PostImageRequest, session: Session = D
     """Pull the image from a post/image URL and analyze it (no manual upload)."""
     from app.services.audit import log_action
     log_action(session, "osint_image_from_url", req.url)
-    return await analyze_from_url(req.url)
+    report = await analyze_from_url(req.url)
+    report["identification"] = await identify_media(session, report, filename=req.url)
+    return report
 
 @router.post("/audio")
 async def investigate_audio(file: UploadFile = File(...), session: Session = Depends(get_session)) -> dict:
@@ -92,10 +102,12 @@ async def investigate_audio(file: UploadFile = File(...), session: Session = Dep
 
 
 @router.get("/post-media/{post_id}")
-async def investigate_post_media(post_id: str) -> dict:
+async def investigate_post_media(post_id: str, session: Session = Depends(get_session)) -> dict:
     """Resolve and analyze the media attached to a feed post (or the latest post
     with media when post_id is 'top')."""
-    return await analyze_from_post(post_id)
+    report = await analyze_from_post(post_id)
+    report["identification"] = await identify_media(session, report, filename=post_id)
+    return report
 
 
 @router.get("/username")

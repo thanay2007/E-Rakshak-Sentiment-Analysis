@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight, FilterX, SlidersHorizontal } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { Virtuoso } from "react-virtuoso";
 import DetailDrawer from "../components/DetailDrawer";
 import FeedItemCard from "../components/FeedItemCard";
 import GlassCard from "../components/GlassCard";
@@ -157,14 +158,21 @@ export default function ThreatFeed() {
       {loading && !data ? (
         <SkeletonRow n={8} />
       ) : (
-        <div ref={revealRef} className="space-y-2.5">
-          {data?.items.map((p) => (
-            <FeedItemCard key={p.id} post={p} onOpen={setSelected} />
-          ))}
-          {data?.items.length === 0 && (
+        <div ref={revealRef} className="h-[70vh] w-full">
+          {data?.items.length === 0 ? (
             <GlassCard className="p-10 text-center text-sm text-slate-500">
               No posts match the current filters.
             </GlassCard>
+          ) : (
+            <Virtuoso
+              style={{ height: '100%', width: '100%' }}
+              data={data?.items || []}
+              itemContent={(index, p) => (
+                <div className="pb-2.5 pr-1">
+                  <FeedItemCard post={p} onOpen={setSelected} />
+                </div>
+              )}
+            />
           )}
         </div>
       )}

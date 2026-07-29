@@ -60,3 +60,26 @@ As requested, rather than adding a generic user login system, I have implemented
 - **Files Touched:** `frontend/src/components/TopBar.tsx`, `frontend/src/pages/Alerts.tsx`, `frontend/src/pages/Watchlist.tsx`, `frontend/src/pages/ThreatFeed.tsx`, `frontend/src/pages/Reports.tsx`
 - **What Changed:** Adjusted right padding (`pr-8`) on all `<select>` tags across the application.
 - **Why:** To prevent text from overlapping with the native drop-down arrows, ensuring a cleaner and fully legible interface.
+
+## 13. Frontend Architecture Audit & Roadmap
+- **Files Touched:** N/A (Audit Phase)
+- **What Changed:** Conducted a comprehensive audit of the React frontend and generated a roadmap for scalability (`frontend_improvement_analysis.md`).
+- **Why:** To outline next steps for making the dashboard production-ready. Identified key areas for improvement including adopting TanStack Query for state management, implementing React.lazy() for code-splitting, adding virtualization (react-virtuoso) for live feeds, setting up Vitest/Playwright for testing, and introducing Storybook for UI component documentation.
+
+---
+Date: 2026-07-27
+
+## 14. Synced with `main` & Dependency Environment Hardening
+- **Files Touched:** `backend/requirements.txt`
+- **What Changed:** Fast-forwarded the `balodi` branch onto `origin/main`, pulling in the teammate-owned Telegram crawler (MTProto + keyless preview), the LLM fallback chain, watchlist packs, the ops console and the emerging-threats service. Installed the one genuinely missing dependency (`telethon`). Pinned two entries that were silently absent from the requirements file: `face_recognition_models` (its weights are not published on PyPI and must come from git) and `setuptools>=77.0.3,<81`.
+- **Why:** The `setuptools` upper bound is the load-bearing part. Version 81 deprecated `pkg_resources` and 83 removed it outright, which is what `face_recognition_models` imports — so a clean install on a fresh machine silently produced a broken face pipeline. The lower bound is Torch's own floor, so the pin cannot conflict with the ML stack. This makes the "hotfix" noted in section 7 reproducible instead of machine-local.
+
+## 15. Face Recognition Crash Fix (`SystemExit` Escaping Its Handler)
+- **Files Touched:** `app/osint/image_analysis.py`
+- **What Changed:** Widened the guard around the `face_recognition` import from `except ImportError` to `except (ImportError, SystemExit)`.
+- **Why:** When its model weights are missing, `face_recognition` calls `quit()` at import time. That raises `SystemExit`, which inherits from `BaseException` — so it slipped past *both* the `except ImportError` and the broader `except Exception` beneath it. Instead of degrading to `faces_detected: 0` as the fallback intended, any image uploaded to the OSINT toolkit would tear down the worker process. Reproduced by forcing the import to raise `SystemExit`; the analysis now completes and returns a zero face count.
+
+## 16. Frontend Build & Test Infrastructure Fixes
+- **Files Touched:** `frontend/vite.config.ts`, `frontend/src/components/StatTile.test.tsx`
+- **What Changed:** Switched `defineConfig` to import from `vitest/config` instead of `vite`, and made the `StatTile` test await its assertion via `findByText`.
+- **Why:** Vitest 4 removed the `/// <reference types="vitest" />` mechanism, so the `test` block in the Vite config no longer typechecked (`TS2769`) — and since the build script is `tsc -b && vite build`, that error broke `npm run build` outright. Separately, the `StatTile` test asserted on the final figure synchronously while `useCountUp` animates the value from 0 over 1.1s via GSAP, so it raced the animation and always read `0`. The component was correct; the assertion needed to wait.
