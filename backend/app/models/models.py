@@ -103,6 +103,68 @@ class Report(SQLModel, table=True):
     pdf_path: str = ""
     created_at: datetime = Field(default_factory=utcnow, index=True)
 
+class Suspect(SQLModel, table=True):
+    """A person of record — the database faces detected in evidence are matched
+    against (osint/face_db.py).
+
+    Holds three layers that the identification flow stitches together:
+      1. identity        — name, aliases, physical/demographic descriptors
+      2. the record      — case IDs, charges, custody status, jurisdiction
+      3. OSINT linkage   — known social handles, which drive the dossier pull
+    plus the biometric templates themselves in `face_templates`.
+    """
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    full_name: str = Field(index=True)
+    aliases: list = Field(default_factory=list, sa_column=Column(JSON))
+
+    # criminal | wanted | person_of_interest | missing | cleared
+    record_type: str = Field(default="person_of_interest", index=True)
+    risk_level: str = Field(default="medium", index=True)   # low | medium | high | critical
+    # at_large | in_custody | on_bail | convicted | acquitted | under_investigation
+    status: str = Field(default="under_investigation", index=True)
+
+    case_ids: list = Field(default_factory=list, sa_column=Column(JSON))   # FIR / case numbers
+    charges: list = Field(default_factory=list, sa_column=Column(JSON))    # [{section, description, status, date}]
+    convictions: int = 0
+    jurisdiction: str = ""                                # police station / district owning the record
+    last_known_location: str = Field(default="", index=True)
+    wanted_since: str = ""                                # free-text date on the warrant
+
+    gender: str = ""
+    age: int = 0
+    nationality: str = ""
+    identifying_marks: str = ""
+    notes: str = ""
+
+    # [{platform, handle, url, note}] — the handles the dossier builder expands
+    social_handles: list = Field(default_factory=list, sa_column=Column(JSON))
+
+    # [{id, vector[128], quality, source, added_at, thumb}] — reference templates
+    face_templates: list = Field(default_factory=list, sa_column=Column(JSON))
+    photo_thumb: str = ""                                 # data-URI mugshot for the registry UI
+
+    source: str = "analyst"                               # analyst | seed | import
+    active: bool = True
+    created_at: datetime = Field(default_factory=utcnow, index=True)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class FaceSearchLog(SQLModel, table=True):
+    """Every face query run against the registry, kept for chain of custody.
+
+    Biometric searches are the most consequential lookup in this system, so the
+    probe's own hash, what it matched and at what distance are recorded
+    separately from the general AuditLog.
+    """
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    image_sha256: str = Field(default="", index=True)
+    filename: str = ""
+    faces_detected: int = 0
+    identified_count: int = 0
+    results: list = Field(default_factory=list, sa_column=Column(JSON))  # [{suspect_id, name, distance, band}]
+    created_at: datetime = Field(default_factory=utcnow, index=True)
+
+
 class AuditLog(SQLModel, table=True):
     """Immutable log of analyst actions for chain-of-custody compliance."""
     id: str = Field(default_factory=_uuid, primary_key=True)

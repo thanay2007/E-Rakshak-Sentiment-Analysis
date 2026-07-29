@@ -53,6 +53,61 @@ class WatchlistUpdate(BaseModel):
     active: Optional[bool] = None
 
 
+class SocialHandleIn(BaseModel):
+    platform: str = ""
+    handle: str
+    url: str = ""
+    note: str = ""
+
+
+class ChargeIn(BaseModel):
+    section: str = ""              # e.g. "IPC 153A"
+    description: str = ""
+    status: str = ""               # charged | under trial | convicted | acquitted
+    date: str = ""                 # free text — records arrive in many formats
+
+
+class SuspectCreate(BaseModel):
+    full_name: str
+    aliases: list[str] = []
+    record_type: str = "person_of_interest"
+    risk_level: str = "medium"
+    status: str = "under_investigation"
+    case_ids: list[str] = []
+    charges: list[ChargeIn] = []
+    convictions: int = 0
+    jurisdiction: str = ""
+    last_known_location: str = ""
+    wanted_since: str = ""
+    gender: str = ""
+    age: int = 0
+    nationality: str = ""
+    identifying_marks: str = ""
+    notes: str = ""
+    social_handles: list[SocialHandleIn] = []
+
+
+class SuspectUpdate(BaseModel):
+    full_name: Optional[str] = None
+    aliases: Optional[list[str]] = None
+    record_type: Optional[str] = None
+    risk_level: Optional[str] = None
+    status: Optional[str] = None
+    case_ids: Optional[list[str]] = None
+    charges: Optional[list[ChargeIn]] = None
+    convictions: Optional[int] = None
+    jurisdiction: Optional[str] = None
+    last_known_location: Optional[str] = None
+    wanted_since: Optional[str] = None
+    gender: Optional[str] = None
+    age: Optional[int] = None
+    nationality: Optional[str] = None
+    identifying_marks: Optional[str] = None
+    notes: Optional[str] = None
+    social_handles: Optional[list[SocialHandleIn]] = None
+    active: Optional[bool] = None
+
+
 class ReportRequest(BaseModel):
     title: str = ""
     period_hours: int = 24

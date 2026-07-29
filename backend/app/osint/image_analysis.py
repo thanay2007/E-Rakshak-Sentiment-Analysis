@@ -343,9 +343,55 @@ def _looks_like_video(data: bytes, name_l: str) -> bool:
     return any(data.startswith(m) for m in _VIDEO_MAGIC)
 
 
-def analyze_image(data: bytes, filename: str = "") -> dict:
+def _detect(img: "Image.Image", *, deep: bool = False) -> dict:
+    """Face-detection block of the forensic report.
+
+    Shape is kept backwards-compatible (`faces_detected` + `face_matches`) while
+    each entry now carries its quality assessment and 128-d embedding. Callers
+    that return this to a client must run it through
+    `face_intel.identify_faces`, which attaches identity results and strips the
+    embeddings — raw biometric vectors never go over the wire.
+    """
+    from app.osint.face_detect import detect_faces, engine_status
+
+    try:
+        report = detect_faces(img, want_encodings=True, deep=deep)
+    except Exception as exc:  # detection must never fail an upload
+        import logging
+        logging.getLogger(__name__).error("face detection failed: %s", exc)
+        return {"faces_detected": 0, "face_matches": [], "available": False,
+                "reason": str(exc)}
+
+    if not report.get("available"):
+        return {"faces_detected": 0, "face_matches": [], "available": False,
+                "reason": report.get("reason") or engine_status().get("reason")}
+
+    return {
+        "available": True,
+        "engine": report.get("engine"),
+        "faces_detected": report.get("count", 0),
+        "truncated": report.get("truncated", False),
+        "detection_passes": report.get("passes", []),
+        "note": report.get("note"),
+        "face_matches": [{
+            "index": f["index"],
+            "bounding_box": f["bounding_box"],
+            "area_ratio": f["area_ratio"],
+            "quality": f["quality"],
+            "encoding": f["encoding"],
+            "matched_suspect": None,   # filled in by face_intel.identify_faces
+            "confidence": None,
+        } for f in report.get("faces", [])],
+    }
+
+
+def analyze_image(data: bytes, filename: str = "", *, deep_faces: bool = False) -> dict:
     """Analyze raw media bytes — dispatches to the video analyzer for video
-    files (by extension or magic bytes). Returns a JSON-safe forensic report."""
+    files (by extension or magic bytes). Returns a JSON-safe forensic report.
+
+    `deep_faces` enables the slow CNN detector pass as a last resort when the
+    fast passes find nobody (worth it for a single piece of key evidence, not
+    for bulk feed sweeps)."""
     sha = hashlib.sha256(data).hexdigest()
     name_l = (filename or "").lower()
     base = {
@@ -375,36 +421,12 @@ def analyze_image(data: bytes, filename: str = "") -> dict:
     if exif.get("Make") or exif.get("Model"):
         camera = " ".join(x for x in (exif.get("Make"), exif.get("Model")) if x).strip()
 
-    # Face Recognition
-    faces_detected = 0
-    face_matches = []
-    try:
-        import face_recognition
-        import numpy as np
-        
-        # Convert PIL Image to RGB numpy array for face_recognition
-        rgb_img = img.convert('RGB')
-        img_np = np.array(rgb_img)
-        
-        face_locations = face_recognition.face_locations(img_np)
-        faces_detected = len(face_locations)
-        
-        # If we had a local suspect database, we would encode and compare here:
-        # encodings = face_recognition.face_encodings(img_np, face_locations)
-        # matches = face_recognition.compare_faces(known_suspect_encodings, encodings[0])
-        # For now, just return the count and bounding boxes.
-        if faces_detected > 0:
-            for top, right, bottom, left in face_locations:
-                face_matches.append({
-                    "bounding_box": {"top": int(top), "right": int(right), "bottom": int(bottom), "left": int(left)},
-                    "matched_suspect": None, # Placeholder for cross-referencing logic
-                    "confidence": None
-                })
-    except ImportError:
-        pass # face_recognition not installed
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).error(f"Face recognition error: {e}")
+    # ── faces ──────────────────────────────────────────────────────────────
+    # Detection + embedding only. Matching against the suspect registry needs a
+    # DB session, so it happens one layer up (osint/face_intel.identify_faces);
+    # that also keeps this function usable from the crawler/media paths that
+    # have no request context.
+    faces = _detect(img, deep=deep_faces)
 
     return {
         **base,
@@ -422,8 +444,5 @@ def analyze_image(data: bytes, filename: str = "") -> dict:
         "exif": exif,
         "gps": gps,
         "manipulation": {"integrity_score": integrity, "findings": findings},
-        "forensics": {
-            "faces_detected": faces_detected,
-            "face_matches": face_matches
-        }
+        "forensics": faces,
     }

@@ -318,6 +318,105 @@ export interface FeedFilters {
 
 // ── Investigation / OSINT toolkit ──────────────────────────────────────
 
+// ── Facial identification ──────────────────────────────────────────────
+
+export interface FaceQuality {
+  score: number; band: "good" | "fair" | "poor"; face_px: number;
+  sharpness: number; brightness: number; yaw: number | null; roll: number | null;
+  issues: string[]; usable_for_matching: boolean;
+}
+export interface SuspectCandidate {
+  suspect_id: string; full_name: string; record_type: string; risk_level: string;
+  status: string; photo_thumb: string; distance: number; confidence: number;
+  band: "confirmed" | "probable" | "possible" | "no_match";
+  matched_template?: string; template_source?: string;
+}
+export interface FaceIdentity {
+  identified: boolean; searched?: boolean; ambiguous?: boolean;
+  match?: SuspectCandidate | null; candidates: SuspectCandidate[];
+  registry_size?: number; templates_searched?: number; reason?: string;
+}
+export interface FaceMatch {
+  index: number;
+  bounding_box: { top: number; right: number; bottom: number; left: number };
+  area_ratio: number;
+  quality: FaceQuality;
+  matched_suspect: string | null;
+  confidence: number | null;
+  identity?: FaceIdentity;
+}
+export interface FaceForensics {
+  available: boolean; engine?: string; reason?: string | null; note?: string | null;
+  faces_detected: number; truncated?: boolean;
+  detection_passes?: { pass: string; found: number; scale?: number; error?: string }[];
+  face_matches: FaceMatch[];
+}
+
+export interface Charge { section: string; description: string; status: string; date: string }
+export interface SocialHandle { platform: string; handle: string; url: string; note: string }
+export interface FaceTemplate {
+  id: string; quality: FaceQuality; source: string; thumb: string; added_at: string;
+}
+export interface Suspect {
+  id: string; full_name: string; aliases: string[];
+  record_type: string; risk_level: string; status: string;
+  case_ids: string[]; charges: Charge[]; convictions: number;
+  jurisdiction: string; last_known_location: string; wanted_since: string;
+  gender: string; age: number; nationality: string; identifying_marks: string;
+  notes: string; social_handles: SocialHandle[];
+  photo_thumb: string; source: string; active: boolean;
+  enrolled_faces: number; face_templates: FaceTemplate[];
+  created_at: string; updated_at: string;
+}
+export interface DossierAccount extends SocialHandle {
+  in_corpus?: boolean; not_expanded?: boolean; error?: string;
+  profile?: { author_name?: string; followers?: number; verified?: boolean; platforms?: string[]; languages?: string[]; locations?: string[] };
+  activity?: { posts_tracked?: number; posts_per_day?: number; first_seen?: string; last_seen?: string; duplicate_ratio?: number };
+  threat_profile?: { avg_threat_score?: number; max_threat_score?: number; label_breakdown?: Record<string, number>; non_neutral_posts?: number };
+  authenticity?: { score?: number; verdict?: string; signals?: { text: string; level?: string }[] };
+  coordination?: { in_cluster?: boolean; cluster_ids?: string[]; amplified_posts?: number };
+  notable_posts?: { platform: string; threat_label: string; threat_score: number; text: string; url: string; created_at: string }[];
+  cross_platform?: UsernameReport;
+}
+export interface DossierPost {
+  id: string; platform: string; author_handle: string; text: string;
+  original_text: string; language: string; threat_label: string; threat_score: number;
+  sentiment_label: string; location: string; engagement: Record<string, number>;
+  media_urls: string[]; is_amplified: boolean; cluster_id: string; url: string;
+  created_at: string;
+}
+export interface IdentityDossier {
+  suspect: Suspect; summary: string; error?: string;
+  social_footprint: { handles_known: number; handles_expanded: number; deep_lookup: boolean; accounts: DossierAccount[] };
+  monitored_posts: { total: number; returned: number; items: DossierPost[] };
+  threat_summary: {
+    posts: number; avg_threat_score?: number; max_threat_score?: number;
+    label_breakdown?: Record<string, number>; sentiment_breakdown?: Record<string, number>;
+    non_neutral_posts?: number; platforms?: string[]; locations?: string[];
+    amplified_posts?: number; clusters?: string[]; first_seen?: string; last_seen?: string;
+  };
+  linked_alerts: { id: string; post_id: string; severity: string; status: string; title: string; summary: string; category: string; location: string; platform: string; threat_score: number; created_at: string }[];
+  timeline: { kind: "charge" | "post" | "alert"; at: string; title: string; detail: string; status: string; ref?: string }[];
+}
+export interface Identification {
+  faces_detected: number; identified: number; candidates: number;
+  identities: Record<string, IdentityDossier>;
+  registry: { active_records: number; enrolled_records: number; templates: number };
+  summary: string; from_video_frame?: boolean;
+}
+export interface FaceEngine {
+  available: boolean; cnn_available: boolean; reason: string | null;
+  thresholds: { confirmed: number; probable: number; possible: number };
+  registry: { active_records: number; enrolled_records: number; templates: number; unenrolled_records: number };
+}
+export interface FaceSearchReport { analysis: ImageAnalysis; identification: Identification }
+export interface FaceSearchLogRow {
+  id: string; image_sha256: string; filename: string; faces_detected: number;
+  identified_count: number;
+  results: { suspect_id: string; name: string; distance: number; band: string }[];
+  created_at: string;
+}
+
 export interface ImageFinding { level: string; text: string }
 export interface ImageAnalysis {
   filename: string; size_bytes: number; sha256: string; media_type: string;
@@ -330,14 +429,7 @@ export interface ImageAnalysis {
   exif?: Record<string, unknown>;
   gps?: { latitude: number; longitude: number; maps_url: string; altitude_m?: number } | null;
   manipulation: { integrity_score: number | null; findings: ImageFinding[] };
-  forensics?: {
-    faces_detected: number;
-    face_matches: {
-      bounding_box: { top: number; right: number; bottom: number; left: number };
-      matched_suspect: string | null;
-      confidence: number | null;
-    }[];
-  };
+  forensics?: FaceForensics;
   note?: string; error?: string;
   resolved_from_index?: boolean; subject?: string;
 }

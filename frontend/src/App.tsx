@@ -1,32 +1,42 @@
+import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import Layout from "./components/Layout";
-import Alerts from "./pages/Alerts";
-import Dashboard from "./pages/Dashboard";
-import Investigate from "./pages/Investigate";
-import Landing from "./pages/Landing";
-import NetworkPage from "./pages/NetworkPage";
-import Reports from "./pages/Reports";
-import Settings from "./pages/Settings";
-import ThreatFeed from "./pages/ThreatFeed";
-import Trends from "./pages/Trends";
-import Watchlist from "./pages/Watchlist";
+
+const Alerts = lazy(() => import("./pages/Alerts"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Investigate = lazy(() => import("./pages/Investigate"));
+const Landing = lazy(() => import("./pages/Landing"));
+const NetworkPage = lazy(() => import("./pages/NetworkPage"));
+const Reports = lazy(() => import("./pages/Reports"));
+const Settings = lazy(() => import("./pages/Settings"));
+const ThreatFeed = lazy(() => import("./pages/ThreatFeed"));
+const Trends = lazy(() => import("./pages/Trends"));
+const Watchlist = lazy(() => import("./pages/Watchlist"));
+
+const Fallback = () => (
+  <div className="flex h-screen w-full items-center justify-center">
+    <span className="h-8 w-8 animate-spin rounded-full border-4 border-slate-600 border-t-accent"></span>
+  </div>
+);
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/" element={<Landing />} />
-      <Route path="/app" element={<Layout />}>
-        <Route index element={<Dashboard />} />
-        <Route path="feed" element={<ThreatFeed />} />
-        <Route path="investigate" element={<Investigate />} />
-        <Route path="network" element={<NetworkPage />} />
-        <Route path="trends" element={<Trends />} />
-        <Route path="alerts" element={<Alerts />} />
-        <Route path="reports" element={<Reports />} />
-        <Route path="watchlist" element={<Watchlist />} />
-        <Route path="settings" element={<Settings />} />
-      </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <Suspense fallback={<Fallback />}>
+      <Routes>
+        <Route path="/" element={<Landing />} />
+        <Route path="/app" element={<Layout />}>
+          <Route index element={<Dashboard />} />
+          <Route path="feed" element={<ThreatFeed />} />
+          <Route path="investigate" element={<Investigate />} />
+          <Route path="network" element={<NetworkPage />} />
+          <Route path="trends" element={<Trends />} />
+          <Route path="alerts" element={<Alerts />} />
+          <Route path="reports" element={<Reports />} />
+          <Route path="watchlist" element={<Watchlist />} />
+          <Route path="settings" element={<Settings />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Suspense>
   );
 }

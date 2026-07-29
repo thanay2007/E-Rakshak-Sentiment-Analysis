@@ -17,7 +17,11 @@ from sqlmodel import select
 
 from app.database import init_db, session_scope
 from app.models import WatchlistItem
-from app.routers import admin, alerts, feed, investigate, network, reports, stats, trends, watchlist, ws
+from app.routers import (
+    admin, alerts, faces, feed, investigate, network, reports, stats, trends,
+    watchlist, ws,
+)
+from app.data.suspect_seed import seed_suspects_if_empty
 from app.services.ingestion import seed_if_empty
 from app.services.scheduler import start_scheduler, stop_scheduler
 
@@ -75,6 +79,9 @@ async def lifespan(app: FastAPI):
     init_db()
     _seed_watchlist()
     seed_if_empty()
+    # after seed_if_empty: the demo suspect records bind their known handles to
+    # accounts that actually exist in the corpus, so they need it populated
+    seed_suspects_if_empty()
     start_scheduler()
     log.info("SENTINEL online")
     yield
@@ -104,6 +111,7 @@ app.include_router(alerts.router, prefix="/api", tags=["alerts"])
 app.include_router(reports.router, prefix="/api", tags=["reports"])
 app.include_router(watchlist.router, prefix="/api", tags=["watchlist"])
 app.include_router(investigate.router, prefix="/api", tags=["investigate"])
+app.include_router(faces.router, prefix="/api", tags=["faces"])
 app.include_router(admin.router, prefix="/api", tags=["admin"])
 app.include_router(ws.router, tags=["websocket"])
 
