@@ -179,7 +179,9 @@ export interface Stats {
   threat_distribution: Record<string, number>;
   sentiment_24h: { hour: string; positive: number; neutral: number; negative: number }[];
   platform_activity: { platform: string; posts: number; threats: number }[];
-  platforms: { name: string; online: boolean }[];
+  // `adapter` names the route actually in use for that platform — e.g. "X" for
+  // the official API vs "X (twikit)" for the session-cookie fallback.
+  platforms: { name: string; online: boolean; adapter?: string }[];
   accuracy: { overall: number | null; per_class: Record<string, number>; sample: number };
   last_updated: string;
 }

@@ -31,6 +31,7 @@ const PLATFORM_RING: Record<string, string> = {
   Facebook: "#1877F2",
   Instagram: "#E1306C",
   Telegram: "#229ED9",
+  YouTube: "#FF0000",
 };
 
 /** Andrew monotone-chain convex hull for cluster envelopes. */

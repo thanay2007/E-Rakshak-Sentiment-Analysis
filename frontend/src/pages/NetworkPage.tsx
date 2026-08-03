@@ -22,10 +22,15 @@ function profileUrl(n: NetNode): string | null {
   if (n.platform === "Facebook") return `https://facebook.com/${n.id}`;
   if (n.platform === "Instagram") return `https://instagram.com/${n.id}`;
   if (n.platform === "Telegram") return `https://t.me/${n.id}`;
+  // YouTube nodes are keyed by channel/commenter display name, not by the
+  // @handle a channel URL needs — a search lands the analyst on the right
+  // channel instead of a fabricated /@name that 404s.
+  if (n.platform === "YouTube")
+    return `https://www.youtube.com/results?search_query=${encodeURIComponent(n.id)}`;
   return null;
 }
 
-const PLATFORMS = ["All", "X", "Reddit", "Facebook", "Instagram", "Telegram"];
+const PLATFORMS = ["All", "X", "Reddit", "Facebook", "Instagram", "Telegram", "YouTube"];
 
 export default function NetworkPage() {
   const [hours, setHours] = useState(24);

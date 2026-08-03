@@ -29,7 +29,24 @@ class Settings(BaseSettings):
     CRAWL_MIN_INTERVAL_SECONDS: int = 300
 
     X_BEARER_TOKEN: str = ""
+
+    # YouTube Data API v3. The quota is the binding constraint, not politeness:
+    # search.list costs 100 units against a 10,000/day project total, so the full
+    # watchlist (~31 keyword/hashtag terms) would drain a day's budget in three
+    # collects. The adapter therefore searches a rotating slice of the watchlist
+    # per cycle and stops once the self-imposed budget is spent — every term
+    # still gets covered, just spread across the day instead of all at once.
+    # Budget math, so these stay tunable together: one searched (term, city) pair
+    # costs ~112 units (100 search + 1 videos.list + 1 channels.list + ~10
+    # commentThreads). At 2 pairs every 40 min that is 72 searches/day ≈ 8,064
+    # units, leaving ~900 for analyst-triggered channel lookups. The watchlist
+    # currently expands to ~88 pairs, so a full sweep takes a bit over a day —
+    # the 10,000/day quota simply does not buy more than roughly one pass.
+    # Raising TERMS_PER_CYCLE without lengthening the interval will overrun.
     YOUTUBE_API_KEY: str = ""
+    YOUTUBE_DAILY_QUOTA: int = 9000   # headroom under the real 10,000/day cap
+    YOUTUBE_TERMS_PER_CYCLE: int = 2
+    YOUTUBE_MIN_INTERVAL_SECONDS: int = 2400
 
     # X via twikit (unofficial, key-free) — credentials of a real X account
     # (use a dedicated burner). Activates the "X (twikit)" adapter when
