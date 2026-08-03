@@ -13,6 +13,12 @@ engine = create_engine(settings.DATABASE_URL, connect_args=connect_args)
 _COLUMN_MIGRATIONS = [
     ("watchlistitem", "priority", "TEXT NOT NULL DEFAULT 'medium'"),
     ("watchlistitem", "category", "TEXT NOT NULL DEFAULT ''"),
+    # Added with the 3-model sentiment ensemble but never given a migration, so
+    # any database created before it fails at startup with "no such column".
+    # Matches the other JSON columns on this table: nullable, no SQL default —
+    # the model's default_factory=dict supplies {} for new rows, and existing
+    # rows read back as NULL, which the serializer already tolerates.
+    ("post", "sentiment_consensus", "JSON"),
     # Chain-of-custody attribution. Existing rows keep empty actor fields, which
     # is honest: those actions genuinely were taken before authentication
     # existed, and backfilling a name onto them would be fabricating evidence.
