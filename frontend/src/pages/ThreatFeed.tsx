@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, FilterX, SlidersHorizontal } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Virtuoso } from "react-virtuoso";
 import DetailDrawer from "../components/DetailDrawer";
@@ -50,6 +50,31 @@ export default function ThreatFeed() {
       return next;
     });
   };
+
+  // The keyword box is uncontrolled by the URL while typing: writing straight
+  // through fired a request *and* a history entry per keystroke.
+  const urlQ = get("q");
+  const [qDraft, setQDraft] = useState(urlQ);
+
+  // refill the box when the URL changes from elsewhere (TopBar search, Clear)
+  useEffect(() => setQDraft(urlQ), [urlQ]);
+
+  useEffect(() => {
+    if (qDraft === urlQ) return;
+    const id = window.setTimeout(() => {
+      setPage(1);
+      setParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (qDraft) next.set("q", qDraft);
+          else next.delete("q");
+          return next;
+        },
+        { replace: true } // keeps the back button usable while typing
+      );
+    }, 350);
+    return () => window.clearTimeout(id);
+  }, [qDraft, urlQ, setParams]);
   const toggleCsv = (k: string, v: string) => {
     const cur = get(k) ? get(k).split(",") : [];
     const next = cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v];
@@ -100,9 +125,10 @@ export default function ThreatFeed() {
 
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <input
-            value={get("q")}
-            onChange={(e) => setParam("q", e.target.value)}
+            value={qDraft}
+            onChange={(e) => setQDraft(e.target.value)}
             placeholder="Keyword / #hashtag / @handle"
+            aria-label="Keyword search"
             className="w-52 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-600 focus:border-accent/40 focus:outline-none"
           />
           <select value={get("language")} onChange={(e) => setParam("language", e.target.value)} className="rounded-xl border border-white/[0.08] bg-base-800 pl-2 pr-8 py-1.5 text-slate-400">

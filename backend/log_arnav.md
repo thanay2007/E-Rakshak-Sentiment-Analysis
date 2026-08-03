@@ -83,3 +83,51 @@ Date: 2026-07-27
 - **Files Touched:** `frontend/vite.config.ts`, `frontend/src/components/StatTile.test.tsx`
 - **What Changed:** Switched `defineConfig` to import from `vitest/config` instead of `vite`, and made the `StatTile` test await its assertion via `findByText`.
 - **Why:** Vitest 4 removed the `/// <reference types="vitest" />` mechanism, so the `test` block in the Vite config no longer typechecked (`TS2769`) — and since the build script is `tsc -b && vite build`, that error broke `npm run build` outright. Separately, the `StatTile` test asserted on the final figure synchronously while `useCountUp` animates the value from 0 over 1.1s via GSAP, so it raced the animation and always read `0`. The component was correct; the assertion needed to wait.
+
+---
+Date: 2026-08-03
+
+Full sweep of `frontend/` — every page, component, hook, service and config file — producing a prioritized backlog, then implementing the top three tiers of it. Sections 17–23 are the fixes; section 24 records what the audit found but deliberately left open.
+
+## 17. PWA Was Advertising Icons That Did Not Exist
+- **Files Touched:** `frontend/public/` (new: `pwa-192x192.png`, `pwa-512x512.png`, `apple-touch-icon.png`, `favicon.ico`, `logo.svg`, `masked-icon.svg`), `frontend/vite.config.ts`, `frontend/index.html`
+- **What Changed:** Created the asset directory the manifest had always assumed, rendering the E-RAKSHAK radar mark (the 24-spoke Ashoka Chakra from section 10) into every required size. Added `purpose: 'any'`/`'maskable'` variants and a matching `background_color`. Replaced the ~4 KB inline data-URI favicon in `index.html` with real file references, and added `apple-touch-icon`, `mask-icon` and `theme-color` links.
+- **Why:** `vite.config.ts` declared five icon files and there was no `public/` directory in the repo at all — the built manifest shipped with 404 references, so the install prompt never fired and the app was not actually installable despite `vite-plugin-pwa` being configured. Worth noting for anyone regenerating these: ImageMagick on this machine has no `rsvg-convert` delegate, so it silently falls back to its own SVG renderer, which drops nested `<g transform>` and stroke inheritance and rendered the mark as a lone orange dot. The icons are therefore drawn directly with PIL rather than converted from SVG.
+
+## 18. Duplicate WebSocket Connections During Reconnect Backoff
+- **Files Touched:** `frontend/src/services/ws.ts`
+- **What Changed:** `start()` now bails if a reconnect is merely *scheduled*, not just if a socket already exists, and `scheduleReconnect()` refuses to queue a second timer.
+- **Why:** The guard was `if (this.ws) return`, but `this.ws` is set to `null` on close and only reassigned when the backoff timer actually fires. Every `useLivePosts` / `useLiveAlerts` / `useLiveStatus` mount calls `start()`, so any component mounting inside that backoff window opened a socket *alongside* the pending one. The result was two live connections delivering every post and alert twice — duplicated feed rows and duplicated toasts — and the effect compounds with each reconnect.
+
+## 19. Retrain Status Poller Could Run Forever
+- **Files Touched:** `frontend/src/pages/Settings.tsx`
+- **What Changed:** Wrapped the `retrainStatus()` call in `try`/`catch`, extracted a `stopRetrainPoll()` helper used by the success, failure and unmount paths, and added an in-flight guard.
+- **Why:** The polling callback was `async` with no error handling, and the only `clearInterval` sat on the success branch. A single failed status call therefore produced an unhandled promise rejection *and* left the 3-second interval hammering the backend indefinitely, with the UI frozen on "training…" and no way to recover short of a reload. The in-flight guard additionally stops requests stacking up if the backend takes longer than the poll interval to answer.
+
+## 20. Lint & Test Infrastructure
+- **Files Touched:** `frontend/eslint.config.js` (new), `frontend/package.json`, `frontend/src/pages/Reports.tsx`
+- **What Changed:** Added an ESLint 9 flat config wiring up `typescript-eslint`, `eslint-plugin-react-hooks` and `eslint-plugin-react-refresh`, exposed as `npm run lint`. Changed `npm test` from `vitest` to `vitest run` and moved watch mode to `test:watch`. Dropped one dead import surfaced by the first run.
+- **Why:** There was no linter in the project at all, yet the source already carried four `// eslint-disable-next-line react-hooks/exhaustive-deps` comments — purely decorative, since nothing was reading them. Those suppressions are load-bearing: with the plugin actually installed, the rule reports real violations at each site, which is how the effect-dependency problems behind sections 18 and 22 stayed invisible. Separately, `npm test` ran Vitest in watch mode, so it never exits — any CI job invoking it would hang until it timed out rather than reporting a result. Baseline after this change: 0 errors, 17 warnings.
+
+## 21. Error Boundaries
+- **Files Touched:** `frontend/src/components/ErrorBoundary.tsx` (new), `frontend/src/components/Layout.tsx`, `frontend/src/main.tsx`
+- **What Changed:** Added a class-based boundary with a retry action and installed it at two levels — one inside `Layout` around the `<Outlet />`, keyed on the route path, and one at the root as a backstop.
+- **Why:** The app had no boundary anywhere, so a single render throw anywhere in the tree unmounted everything and left a blank white page with no recovery except a manual reload. For a monitoring console fed by live backend payloads that is a realistic failure — one malformed field in a WebSocket frame could black out the whole dashboard. The per-route placement means a bad payload degrades one view while the sidebar, topbar and alert toasts stay live; keying on the pathname clears the error automatically as soon as the officer navigates elsewhere.
+
+## 22. Threat Feed Search Fired Per Keystroke
+- **Files Touched:** `frontend/src/pages/ThreatFeed.tsx`
+- **What Changed:** The keyword box now holds local draft state, debounced 350 ms before it writes to the URL, and writes with `{ replace: true }`. An effect syncs the draft back when the URL changes from elsewhere.
+- **Why:** `onChange` previously wrote the search param straight through, which meant one backend query *and* one browser history entry per character typed. Typing "ahmedabad" issued nine requests and buried the previous page under nine history entries, so the back button had to be pressed nine times to leave the page. `replace: true` keeps navigation history meaningful while typing; the sync effect preserves the existing flows that set `q` externally (the TopBar global search and the Clear button).
+
+## 23. Detail Drawer Was Not an Accessible Dialog
+- **Files Touched:** `frontend/src/components/DetailDrawer.tsx`
+- **What Changed:** Added `role="dialog"` and `aria-modal="true"`, Escape-to-close, a Tab focus trap, a background scroll lock, focus moved into the panel on open and returned to the triggering element on close. Marked the backdrop `aria-hidden`.
+- **Why:** This drawer is the primary interaction on both the Overview and Threat Feed pages — it is where an officer reads the NLP breakdown and files an escalation — and it was reachable only by mouse. There was no Escape handler, keyboard focus stayed behind on the page underneath so Tab walked through the obscured content, and the body kept scrolling under the overlay. `Reports.tsx` already had the dialog semantics right; this brings the drawer in line with it.
+
+## 24. Audit Findings Left Open (Deliberately)
+- **Files Touched:** N/A (recorded for the next pass)
+- **What Changed:** Nothing yet — logging these so they are not rediscovered from scratch.
+- **Why:** Three dependencies are installed but entirely unused: `@tanstack/react-query` (the `QueryClientProvider` is mounted in `main.tsx` but there is not a single `useQuery` call — every page still uses the hand-rolled `usePolling` hook), `i18next` + `react-i18next` (zero imports, notable for an app whose whole premise is Gujarati/Hindi/code-mixed analysis), and `react-use-websocket` (superseded by the custom `ws.ts`). Section 13's roadmap called for adopting TanStack Query; the dependency landed but the migration never happened. Adopting it properly would also fix a race in `usePolling`, which has no `AbortController` and no request sequencing, so a slow earlier request can overwrite a newer one when filters change. Also outstanding: the Dashboard chunk is **424 KB** of a 1.2 MB bundle because Recharts is bundled into it (needs `manualChunks`); Google Fonts loads render-blocking from a CDN, which also means the "offline-capable" PWA loses its typefaces offline; `Layout.tsx` hardcodes `ml-[220px]` with no breakpoint and `Sidebar.tsx` has no off-canvas mode, so there is no usable mobile layout; `react-virtuoso` virtualizes a list capped at 20 items, paying for the dependency with nothing to show for it; and `qs()` in `api.ts` filters on `v !== 0`, silently dropping any parameter whose legitimate value is zero.
+
+**Verification for 17–23:** `tsc -b` clean · `npm run lint` 0 errors · test suite passes and exits · `npm run build` succeeds with all six icon assets emitted to `dist/` and resolving in the built manifest.
+
