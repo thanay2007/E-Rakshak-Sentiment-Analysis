@@ -8,6 +8,7 @@ from app.crawlers.simulated import SimulatedCollector
 from app.crawlers.telegram import TelegramCollector
 from app.crawlers.twikit_x import TwikitXCollector
 from app.crawlers.twitter import XCollector
+from app.crawlers.youtube import YouTubeCollector
 
 _ALL: list[Collector] = [
     SimulatedCollector(),
@@ -15,6 +16,7 @@ _ALL: list[Collector] = [
     InstagramCollector(),
     RedditCollector(),
     TelegramCollector(),
+    YouTubeCollector(),
     XCollector(),
     TwikitXCollector(),
 ]

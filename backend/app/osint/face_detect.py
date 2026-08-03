@@ -33,6 +33,11 @@ matched against a suspect database. This module fixes both halves:
 Everything degrades gracefully: with `face_recognition` absent or its model
 weights missing, every entry point returns an "unavailable" report instead of
 raising — the house style of this package.
+
+NOTE: Face detection uses dlib via face_recognition, which is CPU-only. For GPU
+acceleration, consider using insightface or PyTorch-based face detection models
+as an alternative backend. The embedding comparisons in face_db (numpy operations)
+are already optimized for CPU and scale well to multiple cores.
 """
 from __future__ import annotations
 

@@ -28,3 +28,7 @@ twikit @ git+https://github.com/d60/twikit.git@refs/pull/432/head
 # Telegram MTProto — optional: without it the Telegram adapter falls back to
 # the keyless t.me/s/<channel> public preview pages.
 telethon>=1.36
+# YouTube Data API v3 for OSINT (video search, comments, channel info)
+google-api-python-client>=2.100
+google-auth-oauthlib>=1.2
+google-auth-httplib2>=0.2

@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 
 from app.config import settings
+from app.ml.device import get_device
 
 log = logging.getLogger("sentinel.ml")
 
@@ -38,14 +39,20 @@ class TransformerEngine:
     def __init__(self) -> None:
         from transformers import pipeline as hf_pipeline  # heavy import, deferred
 
+        device = get_device()
+        self.device = device
+        log.info("Loading transformer models on device: %s", device)
+
         self.fine_tuned = FINE_TUNED_DIR.exists()
         if self.fine_tuned:
             log.info("Loading fine-tuned threat classifier from %s", FINE_TUNED_DIR)
             self.clf = hf_pipeline("text-classification", model=str(FINE_TUNED_DIR),
-                                   tokenizer=str(FINE_TUNED_DIR), top_k=None, truncation=True)
+                                   tokenizer=str(FINE_TUNED_DIR), top_k=None, truncation=True,
+                                   device=device)
         else:
             log.info("Loading zero-shot classifier %s", ZERO_SHOT_MODEL)
-            self.clf = hf_pipeline("zero-shot-classification", model=ZERO_SHOT_MODEL, truncation=True)
+            self.clf = hf_pipeline("zero-shot-classification", model=ZERO_SHOT_MODEL, truncation=True,
+                                   device=device)
 
         # Prefer the MuRIL sentiment head fine-tuned by ml/train_sentiment.py on
         # real en/hi/gu/Hinglish/Gujlish corpora; fall back to the generic
@@ -53,11 +60,14 @@ class TransformerEngine:
         if FINE_TUNED_SENT_DIR.exists():
             log.info("Loading fine-tuned sentiment model from %s", FINE_TUNED_SENT_DIR)
             self.sent = hf_pipeline("text-classification", model=str(FINE_TUNED_SENT_DIR),
-                                    tokenizer=str(FINE_TUNED_SENT_DIR), top_k=None, truncation=True)
+                                    tokenizer=str(FINE_TUNED_SENT_DIR), top_k=None, truncation=True,
+                                    device=device)
         else:
-            self.sent = hf_pipeline("text-classification", model=SENTIMENT_MODEL, top_k=None, truncation=True)
+            self.sent = hf_pipeline("text-classification", model=SENTIMENT_MODEL, top_k=None, truncation=True,
+                                    device=device)
         try:
-            self.tox = hf_pipeline("text-classification", model=TOXICITY_MODEL, top_k=None, truncation=True)
+            self.tox = hf_pipeline("text-classification", model=TOXICITY_MODEL, top_k=None, truncation=True,
+                                   device=device)
         except Exception:  # model optional
             log.warning("Toxicity model unavailable; lite toxicity stays active")
             self.tox = None

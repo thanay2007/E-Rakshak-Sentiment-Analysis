@@ -45,6 +45,9 @@ def main() -> None:
     from transformers import (AutoModelForSequenceClassification, AutoTokenizer,
                               Trainer, TrainingArguments)
 
+    from app.ml.device import get_device
+    device = get_device()
+    print(f"Training on device: {device}\n")
     print("Building corpus from the raw dataset files ...")
     train_rows, test_rows = load_corpus(seed=args.seed)
     summarize(train_rows, test_rows)

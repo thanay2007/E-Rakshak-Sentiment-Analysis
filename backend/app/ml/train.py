@@ -35,6 +35,10 @@ def main() -> None:
     from transformers import (AutoModelForSequenceClassification, AutoTokenizer,
                               Trainer, TrainingArguments)
 
+    from app.ml.device import get_device
+    device = get_device()
+    print(f"Training on device: {device}")
+
     train_rows, test_rows = build()
     label2id = {l: i for i, l in enumerate(THREAT_LABELS)}
     id2label = {i: l for l, i in label2id.items()}
