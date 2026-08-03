@@ -15,6 +15,7 @@ const KEY_ROWS = [
   ["FB_ACCESS_TOKEN / FB_PAGE_IDS", "Facebook Graph API seed pages"],
   ["IG_ACCESS_TOKEN / IG_SEED_USERNAMES", "Instagram Graph API seed accounts"],
   ["TELEGRAM_API_ID / HASH / SESSION_STRING", "Telegram MTProto full channel reads (keyless t.me previews active)"],
+  ["YOUTUBE_API_KEY", "YouTube Data API v3 — video search + comments (10,000 quota units/day)"],
 ];
 
 function fmtUptime(s: number): string {

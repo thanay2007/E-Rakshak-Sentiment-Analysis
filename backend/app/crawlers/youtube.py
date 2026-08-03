@@ -9,23 +9,90 @@ Rate limits: 10,000 quota units per day (shared quota for all operations).
   - channel info: ~2 units per channel
 """
 import logging
+import random
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from app.config import settings
 from app.crawlers.base import Collector
-from app.ml.geo import infer_city
+from app.ml.geo import CITIES, infer_city
 from app.schemas import RawPost
 
 log = logging.getLogger("sentinel.crawlers")
 
+# Documented quota costs (units) for the calls this adapter makes.
+_COST_SEARCH = 100
+_COST_LIST = 1        # videos.list / channels.list / commentThreads.list
+
+# YouTube resets project quota at midnight Pacific, not UTC.
+_QUOTA_TZ = ZoneInfo("America/Los_Angeles")
+
 
 class YouTubeCollector(Collector):
     name = "YouTube"
-    min_interval_seconds = settings.CRAWL_MIN_INTERVAL_SECONDS
+    min_interval_seconds = settings.YOUTUBE_MIN_INTERVAL_SECONDS
 
     def __init__(self) -> None:
         self.youtube = None
+        self._spent = 0
+        self._quota_day = None
+        # Where in the watchlist this instance resumes searching. Randomised so a
+        # restart-heavy deployment doesn't keep re-searching the same first terms
+        # and starving the tail of the list.
+        self._cursor = random.randrange(1024)
         self._load_client()
+
+    # ── quota ledger ───────────────────────────────────────────────────────
+
+    def _roll_day(self) -> None:
+        today = datetime.now(_QUOTA_TZ).date()
+        if self._quota_day != today:
+            if self._quota_day is not None:
+                log.info("YouTube quota window rolled over (spent %d units)", self._spent)
+            self._quota_day = today
+            self._spent = 0
+
+    def _afford(self, units: int) -> bool:
+        """Reserve `units` against today's budget, or refuse if it would overrun."""
+        if self._spent + units > settings.YOUTUBE_DAILY_QUOTA:
+            return False
+        self._spent += units
+        return True
+
+    def _targets(self, watch_terms: list[str]) -> list[tuple[str, str]]:
+        """Every (term, city) pair this deployment cares about.
+
+        YouTube has no geo filter worth using — `location` only applies to videos
+        that carry coordinates, which almost none do, and regionCode=IN is the
+        whole country. So the city is pushed into the query text instead, the
+        same city-anchoring the Reddit and Telegram adapters get from their seed
+        subreddits and channels. A term that already names a city is searched as
+        it stands rather than doubled up into "Surat Ahmedabad".
+        """
+        pairs: list[tuple[str, str]] = []
+        for term in watch_terms:
+            hit = infer_city(term)
+            if hit:
+                pairs.append((term, hit[0]))   # term already names a city
+            else:
+                pairs.extend((term, city) for city in settings.TARGET_CITIES)
+        return pairs
+
+    def _next_targets(self, watch_terms: list[str]) -> list[tuple[str, str]]:
+        """The rotating slice of (term, city) pairs to search this cycle."""
+        pairs = self._targets(watch_terms)
+        if not pairs:
+            return []
+        n = min(settings.YOUTUBE_TERMS_PER_CYCLE, len(pairs))
+        start = self._cursor % len(pairs)
+        self._cursor = start + n
+        # wrap around the end of the list
+        return [pairs[(start + i) % len(pairs)] for i in range(n)]
+
+    def quota_status(self) -> dict:
+        self._roll_day()
+        return {"spent": self._spent, "budget": settings.YOUTUBE_DAILY_QUOTA,
+                "remaining": max(0, settings.YOUTUBE_DAILY_QUOTA - self._spent)}
 
     def _load_client(self) -> None:
         """Lazy-load YouTube API client."""
@@ -47,57 +114,56 @@ class YouTubeCollector(Collector):
         if not self.youtube:
             return []
 
+        self._roll_day()
         posts: list[RawPost] = []
         # Search for recent videos (published in last 7 days)
         search_after = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
 
-        for term in watch_terms:
+        for term, city in self._next_targets(watch_terms):
+            if not self._afford(_COST_SEARCH):
+                log.info("YouTube daily quota budget spent (%d units) — pausing until reset",
+                         self._spent)
+                break
+            query = term if infer_city(term) else f"{term} {city}"
+            lat, lon = CITIES.get(city, (0.0, 0.0))
             try:
                 # Search for videos
                 search_response = self.youtube.search().list(
-                    q=term,
+                    q=query,
                     part="snippet",
                     type="video",
                     maxResults=10,
                     order="relevance",
                     publishedAfter=search_after,
-                    relevanceLanguage="en,hi,gu",
+                    # No relevanceLanguage: the API takes a single ISO-639-1 code,
+                    # and a list is a hard 400. Pinning one of en/hi/gu would bias
+                    # results away from the other two — the multilingual mix is the
+                    # point here. The city in the query anchors the geography.
                     regionCode="IN",
                 ).execute()
 
-                for item in search_response.get("items", []):
+                items = search_response.get("items", [])
+                # videos.list and channels.list both accept up to 50 comma-joined
+                # ids for the same 1 unit, so fetch the whole result page at once
+                # rather than paying per video.
+                stats_by_video = self._batch_stats(
+                    [i["id"]["videoId"] for i in items]
+                )
+                channels = self._batch_channels(
+                    {i["snippet"]["channelId"] for i in items}
+                )
+
+                for item in items:
                     video_id = item["id"]["videoId"]
                     snippet = item["snippet"]
 
-                    # Fetch video details (statistics, view count)
-                    try:
-                        video_details = self.youtube.videos().list(
-                            id=video_id,
-                            part="statistics,contentDetails",
-                        ).execute()
-                        stats = video_details.get("items", [{}])[0].get("statistics", {})
-                        view_count = int(stats.get("viewCount", 0))
-                        like_count = int(stats.get("likeCount", 0))
-                        comment_count = int(stats.get("commentCount", 0))
-                    except Exception as exc:
-                        log.warning("Could not fetch video stats for %s: %s", video_id, exc)
-                        view_count = like_count = comment_count = 0
+                    stats = stats_by_video.get(video_id, {})
+                    view_count = int(stats.get("viewCount", 0))
+                    like_count = int(stats.get("likeCount", 0))
+                    comment_count = int(stats.get("commentCount", 0))
 
-                    # Fetch channel info
                     channel_id = snippet["channelId"]
-                    try:
-                        channel_info = self.youtube.channels().list(
-                            id=channel_id, part="snippet,statistics"
-                        ).execute()
-                        channel_data = channel_info.get("items", [{}])[0]
-                        channel_name = channel_data.get("snippet", {}).get("title", "")
-                        channel_subs = int(
-                            channel_data.get("statistics", {}).get("subscriberCount", 0)
-                        )
-                    except Exception as exc:
-                        log.warning("Could not fetch channel info for %s: %s", channel_id, exc)
-                        channel_name = ""
-                        channel_subs = 0
+                    channel_name, channel_subs = channels.get(channel_id, ("", 0))
 
                     # Create a post for the video itself
                     url = f"https://www.youtube.com/watch?v={video_id}"
@@ -122,18 +188,28 @@ class YouTubeCollector(Collector):
                             },
                             url=url,
                             created_at=created,
+                            location=city,
+                            latitude=lat,
+                            longitude=lon,
                             metadata={"video_id": video_id, "channel_id": channel_id},
                         )
                     )
 
                     # Fetch and process comments
+                    if not self._afford(_COST_LIST):
+                        continue
                     try:
                         comments_response = self.youtube.commentThreads().list(
                             videoId=video_id,
                             part="snippet",
                             maxResults=20,
                             order="relevance",
-                            searchTerms=term,
+                            # No searchTerms: combined with order it is a hard 400,
+                            # and on its own it drops nearly every comment (the term
+                            # that matched the *video* rarely recurs in each comment).
+                            # Keyword-filtering at collection time is also the exact
+                            # evasion route we refuse to open — the NLP pipeline
+                            # scores every comment downstream instead.
                             textFormat="plainText",
                         ).execute()
 
@@ -145,8 +221,13 @@ class YouTubeCollector(Collector):
                                 comment.get("authorChannelId", {}).get("value", "")
                             )
 
-                            # Extract location if possible from comment text
-                            location = infer_city(comment["textDisplay"])
+                            # A comment inherits the city its video was found
+                            # under; if the text names a different one, that wins.
+                            # infer_city returns (city, lat, lon) or None — the
+                            # tuple must not reach RawPost.location, which is str.
+                            c_city, c_lat, c_lon = city, lat, lon
+                            if (hit := infer_city(comment["textDisplay"])):
+                                c_city, c_lat, c_lon = hit
 
                             posts.append(
                                 RawPost(
@@ -166,7 +247,9 @@ class YouTubeCollector(Collector):
                                     created_at=datetime.fromisoformat(
                                         comment["publishedAt"].replace("Z", "+00:00")
                                     ).replace(tzinfo=None),
-                                    location=location,
+                                    location=c_city,
+                                    latitude=c_lat,
+                                    longitude=c_lon,
                                     metadata={
                                         "video_id": video_id,
                                         "channel_id": channel_id,
@@ -187,6 +270,39 @@ class YouTubeCollector(Collector):
 
         return posts
 
+    def _batch_stats(self, video_ids: list[str]) -> dict[str, dict]:
+        """video_id -> statistics, in one call for the whole page."""
+        if not video_ids or not self._afford(_COST_LIST):
+            return {}
+        try:
+            resp = self.youtube.videos().list(
+                id=",".join(video_ids[:50]), part="statistics",
+            ).execute()
+            return {i["id"]: i.get("statistics", {}) for i in resp.get("items", [])}
+        except Exception as exc:
+            log.warning("Could not fetch video stats: %s", exc)
+            return {}
+
+    def _batch_channels(self, channel_ids: set[str]) -> dict[str, tuple[str, int]]:
+        """channel_id -> (title, subscriber_count), in one call."""
+        ids = list(channel_ids)
+        if not ids or not self._afford(_COST_LIST):
+            return {}
+        try:
+            resp = self.youtube.channels().list(
+                id=",".join(ids[:50]), part="snippet,statistics",
+            ).execute()
+            return {
+                i["id"]: (
+                    i.get("snippet", {}).get("title", ""),
+                    int(i.get("statistics", {}).get("subscriberCount", 0)),
+                )
+                for i in resp.get("items", [])
+            }
+        except Exception as exc:
+            log.warning("Could not fetch channel info: %s", exc)
+            return {}
+
     async def lookup_channel(self, channel_handle: str) -> dict:
         """OSINT: Look up a YouTube channel by handle.
 
@@ -194,6 +310,12 @@ class YouTubeCollector(Collector):
         """
         if not self.youtube:
             return {"error": "YouTube API not configured"}
+
+        # Analyst-triggered, so it is charged to the ledger for honest accounting
+        # but never refused — a lookup an investigator asked for outranks the
+        # background sweep, which backs off on its own once the budget is thin.
+        self._roll_day()
+        self._spent += _COST_SEARCH + _COST_LIST
 
         try:
             # Search for channel
