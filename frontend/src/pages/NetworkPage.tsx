@@ -9,6 +9,7 @@ import { useGsapReveal } from "../hooks/useGsapReveal";
 import { usePolling } from "../hooks/usePolling";
 import { api } from "../services/api";
 import type { NetNode } from "../services/api";
+import { safeHref } from "../lib/safeUrl";
 
 const WINDOWS = [
   { label: "24h", hours: 24 },
@@ -167,7 +168,7 @@ export default function NetworkPage() {
                 </div>
                 {profileUrl(selected) && (
                   <a
-                    href={profileUrl(selected)!}
+                    href={safeHref(profileUrl(selected))}
                     target="_blank"
                     rel="noreferrer"
                     className="rounded-lg border border-white/10 p-1.5 text-slate-400 hover:bg-white/[0.06]"

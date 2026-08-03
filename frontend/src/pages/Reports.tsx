@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ArrowUpRight, Download, FilePlus2, FileText, ShieldAlert, X } from "lucide-react";
 import { useState } from "react";
 import { ThreatBadge } from "../components/Badges";
-import GlassCard, { SectionTitle } from "../components/GlassCard";
+import GlassCard from "../components/GlassCard";
 import { SkeletonRow } from "../components/Skeletons";
 import { THREAT_COLORS, THREAT_SHORT } from "../data/constants";
 import { useGsapReveal } from "../hooks/useGsapReveal";
@@ -142,12 +142,12 @@ function ReportModal({ report, onClose }: { report: Report; onClose: () => void 
         )}
 
         {report.has_pdf && (
-          <a
-            href={api.reportDownloadUrl(report.id)}
+          <button
+            onClick={() => void api.downloadReport(report.id)}
             className="glow-accent mt-5 inline-flex items-center gap-2 rounded-xl border border-accent/50 bg-accent/15 px-4 py-2 text-xs font-bold text-accent hover:bg-accent hover:text-base-900"
           >
             <Download size={14} /> Download PDF
-          </a>
+          </button>
         )}
       </motion.div>
     </>

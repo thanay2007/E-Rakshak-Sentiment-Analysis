@@ -1,6 +1,11 @@
 # SENTINEL backend — core dependencies (zero-key lite demo runs on these alone)
 fastapi>=0.110
 uvicorn[standard]>=0.29
+# Auth and encryption. Both currently arrive transitively (PyJWT via twilio,
+# cryptography via telethon) — declared explicitly because a dependency update
+# that drops them would otherwise break authentication, not a side feature.
+PyJWT>=2.8
+cryptography>=42.0
 sqlmodel>=0.0.21
 apscheduler>=3.10
 python-dotenv>=1.0

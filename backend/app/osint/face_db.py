@@ -34,6 +34,7 @@ from sqlmodel import Session, select
 
 from app.models import Suspect
 from app.models.models import utcnow
+from app.security import crypto
 
 log = logging.getLogger(__name__)
 
@@ -94,15 +95,35 @@ def crop_thumb(img, box: dict, *, size: int = 160, pad: float = 0.35) -> str:
 
 # ── matching ───────────────────────────────────────────────────────────────
 
+def template_vector(t: dict) -> list[float]:
+    """Plaintext embedding for one stored template.
+
+    Reads `vector_enc` (sealed) or falls back to `vector` (written before
+    encryption was enabled), so an existing database keeps working and rows
+    upgrade to sealed form as they are re-enrolled.
+    """
+    if t.get("vector_enc"):
+        return crypto.open_vector(t["vector_enc"])
+    return [float(x) for x in (t.get("vector") or [])]
+
+
 def _templates(session: Session) -> tuple[list, list]:
-    """Load (suspect, template) pairs for every active, enrolled record."""
+    """Load (suspect, template, vector) triples for every active enrolled record."""
     rows = session.exec(select(Suspect).where(Suspect.active == True)).all()  # noqa: E712
     pairs = []
     for s in rows:
         for t in (s.face_templates or []):
-            vec = t.get("vector")
+            try:
+                vec = template_vector(t)
+            except RuntimeError:
+                # Undecryptable template: skip it rather than crash the whole
+                # search, but say so — a silently smaller registry means false
+                # negatives on identifications, which nobody would notice.
+                log.error("suspect %s has a template that cannot be decrypted; "
+                          "it is excluded from matching", s.id)
+                continue
             if vec and len(vec) == 128:
-                pairs.append((s, t))
+                pairs.append((s, t, vec))
     return rows, pairs
 
 
@@ -142,11 +163,11 @@ def match_encoding(session: Session, encoding: list[float], *,
                        "photos to enable identification."),
         }
 
-    dists = _distances(np, encoding, [t["vector"] for _s, t in pairs])
+    dists = _distances(np, encoding, [vec for _s, _t, vec in pairs])
 
     # best (smallest) distance per suspect — a record may hold several photos
     best: dict[str, dict] = {}
-    for (suspect, template), d in zip(pairs, dists):
+    for (suspect, template, _vec), d in zip(pairs, dists):
         d = float(d)
         cur = best.get(suspect.id)
         if cur is None or d < cur["distance"]:
@@ -161,7 +182,7 @@ def match_encoding(session: Session, encoding: list[float], *,
         "record_type": r["suspect"].record_type,
         "risk_level": r["suspect"].risk_level,
         "status": r["suspect"].status,
-        "photo_thumb": r["suspect"].photo_thumb,
+        "photo_thumb": thumb_of(r["suspect"].photo_thumb),
         "distance": round(r["distance"], 4),
         "confidence": confidence_for(r["distance"]),
         "band": band_for(r["distance"]),
@@ -217,8 +238,8 @@ def add_template(session: Session, suspect: Suspect, *, encoding: list[float],
     try:
         import numpy as np
 
-        existing = [t["vector"] for t in (suspect.face_templates or [])
-                    if len(t.get("vector") or []) == 128]
+        existing = [v for v in (template_vector(t) for t in (suspect.face_templates or []))
+                    if len(v) == 128]
         if existing:
             d = float(_distances(np, encoding, existing).min())
             if d < 0.2:
@@ -231,16 +252,18 @@ def add_template(session: Session, suspect: Suspect, *, encoding: list[float],
 
     template = {
         "id": _new_template_id(suspect),
-        "vector": encoding,
+        # Sealed at rest. The plaintext `vector` key is deliberately absent so a
+        # dump of the JSON column yields no usable biometric.
+        "vector_enc": crypto.seal_vector(encoding),
         "quality": quality,
         "source": source,
-        "thumb": thumb,
+        "thumb": crypto.seal(thumb),
         "added_at": utcnow().isoformat() + "Z",
     }
     # JSON columns need reassignment for SQLAlchemy to notice the mutation
     suspect.face_templates = list(suspect.face_templates or []) + [template]
     if thumb and not suspect.photo_thumb:
-        suspect.photo_thumb = thumb
+        suspect.photo_thumb = crypto.seal(thumb)
     suspect.updated_at = utcnow()
     session.add(suspect)
     session.commit()
@@ -259,6 +282,20 @@ def remove_template(session: Session, suspect: Suspect, template_id: str) -> boo
     session.add(suspect)
     session.commit()
     return True
+
+
+def thumb_of(value: str) -> str:
+    """Decrypt a stored thumbnail for display; never raises into a response."""
+    try:
+        return crypto.open_(value or "")
+    except RuntimeError:
+        log.error("stored thumbnail could not be decrypted")
+        return ""
+
+
+# Never serialised to a client: the embedding in either form. Ciphertext is
+# still biometric material, and handing it out would defeat sealing it.
+_SECRET_TEMPLATE_KEYS = {"vector", "vector_enc"}
 
 
 def to_dict(s: Suspect, *, include_vectors: bool = False) -> dict:
@@ -283,12 +320,14 @@ def to_dict(s: Suspect, *, include_vectors: bool = False) -> dict:
         "identifying_marks": s.identifying_marks,
         "notes": s.notes,
         "social_handles": s.social_handles or [],
-        "photo_thumb": s.photo_thumb,
+        "photo_thumb": thumb_of(s.photo_thumb),
         "source": s.source,
         "active": s.active,
         "enrolled_faces": len(s.face_templates or []),
         "face_templates": [
-            {k: v for k, v in t.items() if include_vectors or k != "vector"}
+            {**{k: v for k, v in t.items() if k not in _SECRET_TEMPLATE_KEYS},
+             "thumb": thumb_of(t.get("thumb", "")),
+             **({"vector": template_vector(t)} if include_vectors else {})}
             for t in (s.face_templates or [])
         ],
         "created_at": s.created_at.isoformat() + "Z",

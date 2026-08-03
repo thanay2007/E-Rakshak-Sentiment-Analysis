@@ -147,12 +147,12 @@ export default function Watchlist() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <a
-            href={api.watchlistExportUrl()}
+          <button
+            onClick={() => void api.downloadWatchlist()}
             className="inline-flex items-center gap-1.5 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-300 hover:border-accent/40 hover:text-accent"
           >
             <Download size={13} /> Export CSV
-          </a>
+          </button>
           <button
             onClick={() => setShowBulk((v) => !v)}
             className="inline-flex items-center gap-1.5 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-300 hover:border-accent/40 hover:text-accent"

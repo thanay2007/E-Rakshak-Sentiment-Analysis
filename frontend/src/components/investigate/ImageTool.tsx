@@ -7,6 +7,7 @@ import GlassCard, { SectionTitle } from "../GlassCard";
 import { api } from "../../services/api";
 import type { Appearance, ImageAnalysis, ImageSource, PersonFind, ReverseImage } from "../../services/api";
 import { AccountChip, EmptyHint, FindingRow, KV, Meter, Pill, RunButton, Spinner, TextInput } from "./shared";
+import { safeHref } from "../../lib/safeUrl";
 
 type Mode = "upload" | "url" | "feed";
 interface Result {
@@ -162,7 +163,7 @@ export default function ImageTool() {
             <span>Fetched from post URL</span>
           )}
           <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-500">via {src.via}</span>
-          {src.image_url && <a href={src.image_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent hover:underline">source image <ExternalLink size={11} /></a>}
+          {src.image_url && <a href={safeHref(src.image_url)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent hover:underline">source image <ExternalLink size={11} /></a>}
         </GlassCard>
       )}
 
@@ -247,7 +248,7 @@ export default function ImageTool() {
                   </div>
                 )}
                 {a.gps && (
-                  <a href={a.gps.maps_url} target="_blank" rel="noreferrer"
+                  <a href={safeHref(a.gps.maps_url)} target="_blank" rel="noreferrer"
                     className="flex items-center gap-2 rounded-lg border border-accent/20 bg-accent/[0.06] px-3 py-2 text-[13px] text-accent hover:bg-accent/10">
                     <MapPin size={14} /> GPS: {a.gps.latitude}, {a.gps.longitude} <ExternalLink size={12} className="ml-auto" />
                   </a>
@@ -312,7 +313,7 @@ export default function ImageTool() {
                   <div className="mb-1.5 text-[11px] uppercase tracking-wide text-slate-500">Continue on external engines</div>
                   <div className="flex flex-wrap gap-2">
                     {rev?.external_engines.map((e) => (
-                      <a key={e.name} href={e.url} target="_blank" rel="noreferrer"
+                      <a key={e.name} href={safeHref(e.url)} target="_blank" rel="noreferrer"
                         className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1.5 text-[12px] text-slate-300 hover:border-accent/40 hover:text-accent">
                         {e.name} <ExternalLink size={11} />
                       </a>

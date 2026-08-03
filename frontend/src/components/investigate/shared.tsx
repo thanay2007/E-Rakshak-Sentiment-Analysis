@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Loader2 } from "lucide-react";
+import { safeHref } from "../../lib/safeUrl";
 
 /** Severity colour used across every investigation finding. */
 export const LEVEL_COLORS: Record<string, string> = {
@@ -141,5 +142,5 @@ export function AccountChip({
       )}
     </div>
   );
-  return url ? <a href={url} target="_blank" rel="noreferrer">{inner}</a> : inner;
+  return url ? <a href={safeHref(url)} target="_blank" rel="noreferrer">{inner}</a> : inner;
 }

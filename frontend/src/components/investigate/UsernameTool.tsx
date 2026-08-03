@@ -4,6 +4,7 @@ import GlassCard, { SectionTitle } from "../GlassCard";
 import { api } from "../../services/api";
 import type { UsernameReport } from "../../services/api";
 import { EmptyHint, RunButton, Spinner, TextInput } from "./shared";
+import { safeHref } from "../../lib/safeUrl";
 
 const STATUS_META: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
   found: { color: "#10B981", icon: <CheckCircle2 size={14} />, label: "Found" },
@@ -64,7 +65,7 @@ export default function UsernameTool() {
               {data.results.map((r) => {
                 const m = STATUS_META[r.status] ?? STATUS_META.unknown;
                 return (
-                  <a key={r.site} href={r.url} target="_blank" rel="noreferrer"
+                  <a key={r.site} href={safeHref(r.url)} target="_blank" rel="noreferrer"
                     className="flex items-center justify-between gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 hover:border-white/[0.15]">
                     <div className="min-w-0">
                       <div className="truncate text-[13px] text-slate-200">{r.site}</div>

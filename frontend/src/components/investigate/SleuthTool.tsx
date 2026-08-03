@@ -5,6 +5,7 @@ import { api } from "../../services/api";
 import type { Dossier } from "../../services/api";
 import { THREAT_COLORS } from "../../data/constants";
 import { BOT_COLORS, EmptyHint, KV, Meter, Pill, RunButton, Spinner, TextInput } from "./shared";
+import { safeHref } from "../../lib/safeUrl";
 
 export default function SleuthTool() {
   const [handle, setHandle] = useState("");
@@ -107,7 +108,7 @@ export default function SleuthTool() {
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {data.cross_platform.results.filter((r) => r.status === "found").map((r) => (
-                  <a key={r.site} href={r.url} target="_blank" rel="noreferrer"
+                  <a key={r.site} href={safeHref(r.url)} target="_blank" rel="noreferrer"
                     className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[12px] text-emerald-400 hover:bg-emerald-500/20">
                     {r.site}
                   </a>

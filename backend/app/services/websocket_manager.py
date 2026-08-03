@@ -13,8 +13,14 @@ class WSManager:
         self.active: list[WebSocket] = []
         self._lock = asyncio.Lock()
 
-    async def connect(self, ws: WebSocket) -> None:
-        await ws.accept()
+    async def register(self, ws: WebSocket) -> None:
+        """Join the broadcast pool.
+
+        Separate from accept() on purpose: the socket has to be accepted before
+        the auth frame can be read, but it must not receive any broadcast until
+        that frame has been verified. Accepting and enrolling in one step is
+        what let unauthenticated clients read the live stream.
+        """
         async with self._lock:
             self.active.append(ws)
 

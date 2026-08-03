@@ -13,6 +13,47 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str = f"sqlite:///{BASE_DIR / 'sentinel.db'}"
     INGEST_INTERVAL_SECONDS: int = 4
+
+    # ── security ────────────────────────────────────────────────────────────
+    # Signing key for session tokens. MUST be set in production; when empty the
+    # process generates a random key at boot (sessions die on every restart and
+    # multi-worker deployments break outright — loud by design).
+    #   python -c "import secrets; print(secrets.token_urlsafe(48))"
+    SECRET_KEY: str = ""
+    ACCESS_TOKEN_TTL_MINUTES: int = 8 * 60      # one shift
+
+    # Browser origins allowed to call the API. A wildcard is rejected at startup:
+    # this API serves criminal records, so "any website may drive it with the
+    # officer's credentials" is never an acceptable configuration.
+    CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+    # Brute-force lockout on the login endpoint.
+    LOGIN_MAX_ATTEMPTS: int = 5
+    LOGIN_LOCKOUT_MINUTES: int = 15
+
+    # First-boot administrator. Created only when the user table is empty, and
+    # flagged must_change_password so the bootstrap credential cannot become the
+    # permanent one. Leave the password blank to have a random one generated and
+    # printed to the server log exactly once.
+    BOOTSTRAP_ADMIN_USERNAME: str = "admin"
+    BOOTSTRAP_ADMIN_PASSWORD: str = ""
+
+    # Fernet key encrypting face templates and mugshots at rest. Generate with:
+    #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # Unset means biometrics are stored in the clear — allowed for local demos,
+    # refused when SIMULATION_ENABLED is false (i.e. a real deployment).
+    BIOMETRIC_ENCRYPTION_KEY: str = ""
+
+    # Trust X-Forwarded-For for client IPs in the audit log. Enable ONLY when a
+    # reverse proxy you control sets that header, otherwise callers can forge it.
+    TRUST_PROXY_HEADERS: bool = False
+
+    # Per-identity request budgets (requests per window, window in seconds).
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_DEFAULT: str = "300/60"      # ordinary reads
+    RATE_LIMIT_LOGIN: str = "10/300"        # unauthenticated, per client IP
+    RATE_LIMIT_EXPENSIVE: str = "20/60"     # face search, OSINT fetches, LLM calls
+
     NLP_MODE: str = "full"  # full | lite
     ALERT_THRESHOLD: int = 65
     CRITICAL_THRESHOLD: int = 74
@@ -204,5 +245,12 @@ class Settings(BaseSettings):
 
 settings = Settings()
 settings.REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+if "*" in settings.CORS_ORIGINS:
+    raise RuntimeError(
+        "CORS_ORIGINS contains '*'. With credentialed requests that lets any "
+        "site an officer visits drive this API as them. List the dashboard "
+        "origins explicitly, e.g. CORS_ORIGINS=[\"https://sentinel.gujarat.gov.in\"]."
+    )
 
 THREAT_LABELS = ["Incitement to Violence", "Inflammatory", "Fake News", "Neutral"]
