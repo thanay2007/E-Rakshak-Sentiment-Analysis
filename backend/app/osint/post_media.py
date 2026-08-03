@@ -15,16 +15,19 @@ Both return the same shape as the manual upload endpoint (analysis / reverse_ima
 """
 from __future__ import annotations
 
+import logging
 import re
 from urllib.parse import urljoin
 
-import httpx
 from sqlmodel import col, select
 
 from app.database import session_scope
 from app.models import Post
 from app.osint import media_intel
 from app.osint.image_analysis import analyze_image, analyze_video
+from app.security import ssrf
+
+log = logging.getLogger("sentinel.osint")
 
 _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
@@ -53,28 +56,43 @@ def _extract_og_image(html: str, base_url: str) -> str | None:
     return _extract_og(html, base_url, _IMG_META_KEYS)
 
 
-async def _download_image(client: httpx.AsyncClient, url: str) -> tuple[bytes, str] | None:
-    r = await client.get(url, headers={"User-Agent": _UA})
-    ctype = r.headers.get("content-type", "")
-    if r.status_code != 200 or not ctype.startswith("image/"):
+async def _fetch(url: str, *, max_bytes: int = _MAX_BYTES) -> ssrf.SafeResponse | None:
+    """Guarded GET, redirects revalidated at every hop.
+
+    Returns None on any refusal or transport error — callers here all treat a
+    failed fetch as "no media found", and leaking the reason would tell whoever
+    supplied the URL what the server can and cannot reach.
+    """
+    try:
+        _chain, final = await ssrf.safe_chain(
+            url, timeout=15.0, headers={"User-Agent": _UA}, max_bytes=max_bytes)
+        return final
+    except ssrf.BlockedRequest:
+        log.info("blocked SSRF attempt to %s", url[:200])
         return None
-    data = r.content[:_MAX_BYTES]
+    except Exception:
+        return None
+
+
+async def _download_image(url: str) -> tuple[bytes, str] | None:
+    r = await _fetch(url)
+    if r is None or r.status_code != 200 or not r.content_type.startswith("image/"):
+        return None
     name = url.split("/")[-1].split("?")[0] or "post-image"
-    return data, name
+    return r.content, name
 
 
-async def _download_video(client: httpx.AsyncClient, url: str) -> tuple[bytes, str, bool] | None:
+async def _download_video(url: str) -> tuple[bytes, str, bool] | None:
     """Returns (bytes, name, truncated). Accepts video/* or octet-stream."""
-    r = await client.get(url, headers={"User-Agent": _UA})
-    ctype = r.headers.get("content-type", "")
-    if r.status_code != 200:
+    r = await _fetch(url)
+    if r is None or r.status_code != 200:
         return None
+    ctype = r.content_type
     if not (ctype.startswith("video/") or ctype in ("application/octet-stream", "binary/octet-stream")
             or url.lower().split("?")[0].endswith(_VID_EXT)):
         return None
-    truncated = len(r.content) > _MAX_BYTES
     name = url.split("/")[-1].split("?")[0] or "post-video"
-    return r.content[:_MAX_BYTES], name, truncated
+    return r.content, name, r.truncated
 
 
 def _candidate_video_urls(url: str) -> list[str]:
@@ -93,69 +111,73 @@ async def _resolve_and_analyze(url: str) -> dict:
     """Resolve `url` to its media (image OR video), download it and run the
     full forensic pipeline. For videos the page's preview image (og:image) is
     also analyzed so the perceptual-hash reverse trace still works."""
-    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-        image_url, video_url, via = None, None, ""
-        page_html = ""
+    image_url, video_url, via = None, None, ""
+    page_html = ""
 
-        for cand in _candidate_video_urls(url):
-            dl = await _download_video(client, cand)
-            if dl:
-                video_url, via = cand, "direct video link"
-                data, name, truncated = dl
-                break
+    for cand in _candidate_video_urls(url):
+        dl = await _download_video(cand)
+        if dl:
+            video_url, via = cand, "direct video link"
+            data, name, truncated = dl
+            break
+    else:
+        low = url.lower().split("?")[0]
+        if low.endswith(_IMG_EXT):
+            image_url, via = url, "direct image link"
         else:
-            low = url.lower().split("?")[0]
-            if low.endswith(_IMG_EXT):
-                image_url, via = url, "direct image link"
-            else:
-                page = await client.get(url, headers={"User-Agent": _UA})
-                ctype = page.headers.get("content-type", "")
-                if ctype.startswith("image/"):
-                    image_url, via = str(page.url), "direct image link"
-                elif ctype.startswith("video/"):
-                    video_url, via = str(page.url), "direct video link"
-                    dl = await _download_video(client, video_url)
-                    if not dl:
-                        return {"ok": False, "reason": "Could not download the video."}
-                    data, name, truncated = dl
-                elif "text/html" in ctype or "<meta" in page.text[:5000].lower():
-                    page_html = page.text
-                    vid_meta = _extract_og(page_html, str(page.url), _VID_META_KEYS)
-                    if vid_meta:
-                        dl = await _download_video(client, vid_meta)
-                        if dl:
-                            video_url, via = vid_meta, "og:video tag"
-                            data, name, truncated = dl
-                    if not video_url:
-                        image_url = _extract_og_image(page_html, str(page.url))
-                        via = "og:image / preview tag"
+            page = await _fetch(url)
+            if page is None:
+                return {"ok": False,
+                        "reason": "That URL could not be fetched. It may be "
+                                  "unreachable, or it points into a private "
+                                  "network, which is refused."}
+            ctype = page.content_type
+            if ctype.startswith("image/"):
+                image_url, via = page.url, "direct image link"
+            elif ctype.startswith("video/"):
+                video_url, via = page.url, "direct video link"
+                dl = await _download_video(video_url)
+                if not dl:
+                    return {"ok": False, "reason": "Could not download the video."}
+                data, name, truncated = dl
+            elif "text/html" in ctype or "<meta" in page.text[:5000].lower():
+                page_html = page.text
+                vid_meta = _extract_og(page_html, page.url, _VID_META_KEYS)
+                if vid_meta:
+                    dl = await _download_video(vid_meta)
+                    if dl:
+                        video_url, via = vid_meta, "og:video tag"
+                        data, name, truncated = dl
+                if not video_url:
+                    image_url = _extract_og_image(page_html, page.url)
+                    via = "og:image / preview tag"
 
-        # ── video path: container forensics + thumbnail-based reverse trace ──
-        if video_url:
-            analysis = analyze_video(data, filename=name, truncated=truncated)
-            thumb, thumb_hash = None, ""
-            thumb_url = _extract_og_image(page_html, url) if page_html else None
-            if thumb_url:
-                tdl = await _download_image(client, thumb_url)
-                if tdl:
-                    thumb = analyze_image(tdl[0], filename=tdl[1])
-                    thumb_hash = thumb.get("perceptual_hash") or ""
-            return {"ok": True, "image_url": video_url, "via": via,
-                    "analysis": analysis, "thumbnail": thumb,
-                    **media_intel.report_for_hash(thumb_hash, image_url=video_url)}
+    # ── video path: container forensics + thumbnail-based reverse trace ──
+    if video_url:
+        analysis = analyze_video(data, filename=name, truncated=truncated)
+        thumb, thumb_hash = None, ""
+        thumb_url = _extract_og_image(page_html, url) if page_html else None
+        if thumb_url:
+            tdl = await _download_image(thumb_url)
+            if tdl:
+                thumb = analyze_image(tdl[0], filename=tdl[1])
+                thumb_hash = thumb.get("perceptual_hash") or ""
+        return {"ok": True, "image_url": video_url, "via": via,
+                "analysis": analysis, "thumbnail": thumb,
+                **media_intel.report_for_hash(thumb_hash, image_url=video_url)}
 
-        if not image_url:
-            return {"ok": False,
-                    "reason": "No image or video found on the post (no og:image/og:video "
-                              "tag). The page may require login or block automated fetches."}
-        dl = await _download_image(client, image_url)
-        if not dl:
-            return {"ok": False, "reason": f"Could not download the post image ({image_url})."}
-        data, name = dl
-        analysis = analyze_image(data, filename=name)
-        phash = analysis.get("perceptual_hash")
-        return {"ok": True, "image_url": image_url, "via": via, "analysis": analysis,
-                **media_intel.report_for_hash(phash or "", image_url=image_url)}
+    if not image_url:
+        return {"ok": False,
+                "reason": "No image or video found on the post (no og:image/og:video "
+                          "tag). The page may require login or block automated fetches."}
+    dl = await _download_image(image_url)
+    if not dl:
+        return {"ok": False, "reason": f"Could not download the post image ({image_url})."}
+    data, name = dl
+    analysis = analyze_image(data, filename=name)
+    phash = analysis.get("perceptual_hash")
+    return {"ok": True, "image_url": image_url, "via": via, "analysis": analysis,
+            **media_intel.report_for_hash(phash or "", image_url=image_url)}
 
 
 async def analyze_from_url(url: str) -> dict:

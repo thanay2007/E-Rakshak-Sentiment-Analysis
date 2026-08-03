@@ -3,6 +3,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import AlertToasts from "./AlertToasts";
 import BackgroundFX from "./BackgroundFX";
+import ErrorBoundary from "./ErrorBoundary";
 import Sidebar from "./Sidebar";
 import TopBar from "./TopBar";
 
@@ -33,7 +34,10 @@ export default function Layout() {
       >
         <TopBar />
         <main ref={mainRef} className="mx-auto max-w-[1500px] p-4 lg:p-6">
-          <Outlet />
+          {/* keyed on the route so navigating away clears a crashed view */}
+          <ErrorBoundary resetKey={location.pathname}>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
       <AlertToasts />

@@ -15,7 +15,8 @@ from pydantic import BaseModel
 from sqlmodel import Session, col, func, select
 
 from app.database import get_session
-from app.models import Post, WatchlistItem
+from app.security.deps import require_supervisor
+from app.models import Post, WatchlistItem, User
 from app.schemas import WatchlistCreate, WatchlistUpdate
 from app.services.serializers import iso
 
@@ -165,9 +166,15 @@ def update_item(item_id: str, patch: WatchlistUpdate, session: Session = Depends
 
 
 @router.delete("/watchlist/{item_id}", status_code=204)
-def delete_item(item_id: str, session: Session = Depends(get_session)) -> None:
+def delete_item(item_id: str, session: Session = Depends(get_session),
+                _: User = Depends(require_supervisor)) -> None:
+    """Supervisor+. Removing a watchlist term silently stops detection for it,
+    so the deletion is restricted and recorded."""
+    from app.services.audit import log_action
+
     w = session.get(WatchlistItem, item_id)
     if not w:
         raise HTTPException(404, "Watchlist item not found")
+    log_action(session, "watchlist_delete", w.id, {"kind": w.kind, "value": w.value})
     session.delete(w)
     session.commit()

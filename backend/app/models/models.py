@@ -166,10 +166,64 @@ class FaceSearchLog(SQLModel, table=True):
 
 
 class AuditLog(SQLModel, table=True):
-    """Immutable log of analyst actions for chain-of-custody compliance."""
+    """Append-only log of analyst actions for chain-of-custody compliance.
+
+    Every row names the officer who performed the action. An entry without an
+    actor is worthless in court — "a face search happened" answers nothing if
+    it cannot answer "who ran it". UPDATE and DELETE are blocked on this table
+    by database triggers installed in database.py, so history cannot be
+    rewritten through the ORM or by anyone holding a SQL connection.
+    """
     id: str = Field(default_factory=_uuid, primary_key=True)
     action: str = Field(index=True)                    # e.g., "alert_escalated", "report_generated", "osint_lookup"
     target_id: str = Field(default="")                 # the ID of the affected resource
+
+    # Who did it. Denormalised on purpose: the username/role/badge are copied in
+    # at write time so the record still reads correctly after the user account
+    # is renamed, demoted or deactivated.
+    actor_id: str = Field(default="", index=True)
+    actor_username: str = Field(default="", index=True)
+    actor_role: str = Field(default="")
+    actor_badge: str = Field(default="")
+    # Where from. Both are attacker-influenced (proxy headers, UA string) and are
+    # recorded as corroborating detail, never as an authentication signal.
+    ip: str = Field(default="")
+    user_agent: str = Field(default="")
+
     details: dict = Field(default_factory=dict, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=utcnow, index=True)
+
+
+class User(SQLModel, table=True):
+    """An officer with access to the system.
+
+    Passwords are stored as scrypt hashes (services/security.py) — never
+    reversible, never logged. `token_version` is the revocation lever: bumping
+    it invalidates every JWT already issued to this user, which is what makes
+    "force logout" and "deactivate account" take effect immediately rather than
+    whenever the current token happens to expire.
+    """
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    username: str = Field(index=True, unique=True)
+    full_name: str = ""
+    badge_number: str = ""
+    unit: str = ""                                     # police station / district
+
+    # analyst | supervisor | admin — hierarchy defined in app/security/roles.py
+    role: str = Field(default="analyst", index=True)
+
+    password_hash: str = ""
+    password_changed_at: datetime = Field(default_factory=utcnow)
+    must_change_password: bool = False
+
+    active: bool = Field(default=True, index=True)
+    # Lockout counters — cleared on any successful login.
+    failed_attempts: int = 0
+    locked_until: datetime | None = Field(default=None)
+    last_login_at: datetime | None = Field(default=None)
+    last_login_ip: str = ""
+
+    token_version: int = 0
+    created_at: datetime = Field(default_factory=utcnow, index=True)
+    updated_at: datetime = Field(default_factory=utcnow)
 

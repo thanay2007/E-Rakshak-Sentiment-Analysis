@@ -12,6 +12,7 @@ from sqlmodel import select
 
 from app.config import settings
 from app.crawlers import get_active_collectors
+from app.security.context import SYSTEM, reset_actor, set_actor
 from app.database import session_scope
 from app.models import WatchlistItem
 from app.services.ingestion import ingest
@@ -34,6 +35,19 @@ def _watch_terms() -> list[str]:
 
 
 async def crawl_tick() -> None:
+    # Tag everything this tick writes as system activity. Without it a
+    # background ingest inherits whatever actor happened to be set on the task
+    # that triggered it — an officer's name against work they did not do.
+    # /admin/crawl-now runs this same function, so the reset in `finally`
+    # matters: it must not leave the request context stamped as `system`.
+    token = set_actor(SYSTEM)
+    try:
+        await _crawl_tick_inner()
+    finally:
+        reset_actor(token)
+
+
+async def _crawl_tick_inner() -> None:
     terms = _watch_terms()
     raws = []
     now = time.monotonic()

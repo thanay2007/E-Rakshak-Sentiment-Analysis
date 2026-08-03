@@ -443,6 +443,7 @@ export interface PostImageReport {
   ok: boolean; error?: string; source?: ImageSource;
   analysis?: ImageAnalysis; thumbnail?: ImageAnalysis | null;
   reverse_image?: ReverseImage; person?: PersonFind;
+  identification?: Identification;
   post?: { post_id: string; platform: string; author_handle: string; text: string; threat_label: string; url: string };
 }
 export interface Appearance {
@@ -466,7 +467,10 @@ export interface PersonFind {
   public_figures?: Appearance[]; impersonators?: Appearance[]; other_accounts?: Appearance[];
   summary?: string; reason?: string; external_engines?: { name: string; url: string }[];
 }
-export interface ImageReport { analysis: ImageAnalysis; reverse_image: ReverseImage; person: PersonFind }
+export interface ImageReport {
+  analysis: ImageAnalysis; reverse_image: ReverseImage; person: PersonFind;
+  identification?: Identification;
+}
 
 export interface UsernameHit { site: string; category: string; url: string; status: string; http: number | null }
 export interface UsernameReport {
@@ -519,14 +523,93 @@ export interface Dossier {
 
 // ── HTTP helpers ───────────────────────────────────────────────────────
 
+/** Raised on 401 so callers can distinguish "signed out" from a real failure. */
+export class UnauthorizedError extends Error {
+  constructor(message = "Your session has ended. Please sign in again.") {
+    super(message);
+    this.name = "UnauthorizedError";
+  }
+}
+
+/** Called when the server rejects our token — wired up in AuthProvider to
+ *  clear the session and bounce to the sign-in screen. Kept as a hook rather
+ *  than importing the router here, so this module stays free of React. */
+let onUnauthorized: () => void = () => {};
+export function setUnauthorizedHandler(fn: () => void) {
+  onUnauthorized = fn;
+}
+
+function authHeaders(extra?: HeadersInit): HeadersInit {
+  const token = sessionStorage.getItem("sentinel.token");
+  return { ...(extra || {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+}
+
+async function describeError(res: Response, path: string): Promise<string> {
+  // FastAPI returns {"detail": "..."} — surface that instead of a bare status,
+  // so the analyst sees "Rate limit reached for this tool" rather than "429".
+  try {
+    const body = await res.json();
+    if (body?.detail) return String(body.detail);
+  } catch {
+    /* non-JSON body */
+  }
+  return `${res.status} ${res.statusText} — ${path}`;
+}
+
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...init,
+    headers: authHeaders({ "Content-Type": "application/json", ...(init?.headers || {}) }),
   });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText} — ${path}`);
+  if (res.status === 401) {
+    onUnauthorized();
+    throw new UnauthorizedError(await describeError(res, path));
+  }
+  if (!res.ok) throw new Error(await describeError(res, path));
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
+}
+
+/** Upload helper for multipart bodies.
+ *  Content-Type is deliberately NOT set — the browser has to generate it
+ *  itself to include the multipart boundary. */
+async function upload<T>(path: string, fd: FormData): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    body: fd,
+    headers: authHeaders(),
+  });
+  if (res.status === 401) {
+    onUnauthorized();
+    throw new UnauthorizedError(await describeError(res, path));
+  }
+  if (!res.ok) throw new Error(await describeError(res, path));
+  return res.json() as Promise<T>;
+}
+
+/** Authenticated file download.
+ *
+ *  A plain <a href> cannot carry an Authorization header, so protected exports
+ *  and PDFs are fetched with the token, turned into a blob and handed to a
+ *  synthetic link. The alternative — putting a token in the query string —
+ *  would write the credential into server logs and browser history.
+ */
+export async function downloadFile(path: string, filename: string): Promise<void> {
+  const res = await fetch(`${API_BASE}${path}`, { headers: authHeaders() });
+  if (res.status === 401) {
+    onUnauthorized();
+    throw new UnauthorizedError();
+  }
+  if (!res.ok) throw new Error(await describeError(res, path));
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 function qs(params: Record<string, unknown>): string {
@@ -540,7 +623,9 @@ function qs(params: Record<string, unknown>): string {
 // ── API surface ────────────────────────────────────────────────────────
 
 export const api = {
-  health: () => http<{ status: string; nlp_mode: string; simulation: boolean }>("/api/health"),
+  // Public liveness probe. nlp_mode/simulation moved to /api/admin/system —
+  // an unauthenticated endpoint should not describe the deployment.
+  health: () => http<{ status: string }>("/api/health"),
   stats: () => http<Stats>("/api/stats"),
   models: () => http<ModelsInfo>("/api/models"),
   emerging: (hours = 24) => http<EmergingData>(`/api/emerging?hours=${hours}`),
@@ -561,7 +646,8 @@ export const api = {
   report: (id: string) => http<Report>(`/api/reports/${id}`),
   generateReport: (body: { title?: string; period_hours?: number; kind?: string }) =>
     http<Report>("/api/reports/generate", { method: "POST", body: JSON.stringify(body) }),
-  reportDownloadUrl: (id: string) => `${API_BASE}/api/reports/${id}/download`,
+  downloadReport: (id: string) =>
+    downloadFile(`/api/reports/${id}/download`, `SENTINEL_report_${id}.pdf`),
   watchlist: () => http<WatchItem[]>("/api/watchlist"),
   addWatch: (body: { kind: string; value: string; note?: string; priority?: string; category?: string }) =>
     http<WatchItem>("/api/watchlist", { method: "POST", body: JSON.stringify(body) }),
@@ -570,7 +656,7 @@ export const api = {
   watchPresets: () => http<WatchPreset[]>("/api/watchlist/presets"),
   applyWatchPreset: (slug: string) =>
     http<{ pack: string; added: number; skipped: number }>(`/api/watchlist/presets/${slug}`, { method: "POST" }),
-  watchlistExportUrl: () => `${API_BASE}/api/watchlist/export`,
+  downloadWatchlist: () => downloadFile("/api/watchlist/export", "watchlist.csv"),
   updateWatch: (id: string, body: Partial<Pick<WatchItem, "value" | "note" | "active" | "priority" | "category">>) =>
     http<WatchItem>(`/api/watchlist/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteWatch: (id: string) => http<void>(`/api/watchlist/${id}`, { method: "DELETE" }),
@@ -583,7 +669,8 @@ export const api = {
     http<{ translated: number; remaining_candidates: number }>(`/api/admin/translate-missing?limit=${limit}`, { method: "POST" }),
   relabelLanguages: () => http<{ relabeled: number }>("/api/admin/relabel-languages", { method: "POST" }),
   purgePosts: (days: number) => http<{ deleted: number }>(`/api/admin/purge?days=${days}`, { method: "POST" }),
-  exportPostsUrl: (hours: number) => `${API_BASE}/api/admin/export/posts.csv?hours=${hours}`,
+  downloadPostsCsv: (hours: number) =>
+    downloadFile(`/api/admin/export/posts.csv?hours=${hours}`, `posts_last_${hours}h.csv`),
   retrainBaseline: () => http<{ started: boolean }>("/api/admin/retrain-baseline", { method: "POST" }),
   retrainStatus: () =>
     http<{ state: "idle" | "running" | "done" | "failed"; elapsed_seconds?: number; exit_code?: number }>("/api/admin/retrain-baseline/status"),
@@ -592,11 +679,7 @@ export const api = {
   investigateImage: (file: File) => {
     const fd = new FormData();
     fd.append("file", file);
-    return fetch(`${API_BASE}/api/investigate/image`, { method: "POST", body: fd })
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-        return r.json() as Promise<ImageReport>;
-      });
+    return upload<ImageReport>("/api/investigate/image", fd);
   },
   investigateImageFromUrl: (url: string) =>
     http<PostImageReport>("/api/investigate/image-from-url", { method: "POST", body: JSON.stringify({ url }) }),

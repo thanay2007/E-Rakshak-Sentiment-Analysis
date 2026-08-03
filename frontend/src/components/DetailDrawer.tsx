@@ -2,12 +2,13 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle, ExternalLink, Flag, Languages, ShieldCheck, UserRound, X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { SENTIMENT_COLORS, THREAT_COLORS, THREAT_SHORT } from "../data/constants";
 import type { EvidenceReport, Post } from "../services/api";
 import { api, API_BASE } from "../services/api";
 import { BotChip, LanguageChip, PlatformIcon, ThreatBadge } from "./Badges";
+import { safeHref } from "../lib/safeUrl";
 
 /** Right slide-in drawer with the full NLP breakdown + Escalate action. */
 export default function DetailDrawer({
@@ -31,6 +32,52 @@ export default function DetailDrawer({
     setDossier(null);
     setDossierError(false);
   }, [post?.id]);
+
+  const asideRef = useRef<HTMLElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  // Modal behaviour: Escape to close, Tab trapped inside, background scroll
+  // locked, and focus returned to whatever opened the drawer.
+  const open = !!post;
+  useEffect(() => {
+    if (!open) return;
+    const restoreTo = document.activeElement as HTMLElement | null;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const focusables = asideRef.current?.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (!focusables?.length) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    // wait for the slide-in to mount the panel before moving focus into it
+    const raf = window.requestAnimationFrame(() => asideRef.current?.focus());
+
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = prevOverflow;
+      window.cancelAnimationFrame(raf);
+      restoreTo?.focus?.();
+    };
+  }, [open]);
 
   const report = dossier ?? (post?.evidence_report?.summary ? post.evidence_report : undefined);
 
@@ -91,14 +138,19 @@ export default function DetailDrawer({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
+            aria-hidden="true"
           />
           <motion.aside
-            className="fixed right-0 top-0 z-50 h-full w-full max-w-md overflow-y-auto border-l border-white/10 bg-base-800/95 p-5 backdrop-blur-2xl"
+            ref={asideRef}
+            className="fixed right-0 top-0 z-50 h-full w-full max-w-md overflow-y-auto border-l border-white/10 bg-base-800/95 p-5 backdrop-blur-2xl focus:outline-none"
             initial={{ x: "100%" }}
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
             transition={{ type: "spring", damping: 28, stiffness: 260 }}
+            role="dialog"
+            aria-modal="true"
             aria-label="Post detail"
+            tabIndex={-1}
           >
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-300">
@@ -152,7 +204,7 @@ export default function DetailDrawer({
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {post.media_urls!.map((m) => (
-                      <a key={m} href={m} target="_blank" rel="noreferrer">
+                      <a key={m} href={safeHref(m)} target="_blank" rel="noreferrer">
                         <img
                           src={m}
                           alt="post media"
@@ -411,7 +463,7 @@ export default function DetailDrawer({
                     {fc.matches!.map((m) => (
                       <a
                         key={m.link}
-                        href={m.link}
+                        href={safeHref(m.link)}
                         target="_blank"
                         rel="noreferrer"
                         className="block truncate text-[11px] text-sky-400 hover:underline"
@@ -523,7 +575,7 @@ export default function DetailDrawer({
                         {report.corroboration.citations!.map((m) => (
                           <a
                             key={m.link}
-                            href={m.link}
+                            href={safeHref(m.link)}
                             target="_blank"
                             rel="noreferrer"
                             className="block truncate text-[10.5px] text-sky-400 hover:underline"
@@ -587,7 +639,7 @@ export default function DetailDrawer({
             <div className="mt-4 flex items-center gap-2">
               {post.url && (
                 <a
-                  href={post.url}
+                  href={safeHref(post.url)}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-white/[0.06]"

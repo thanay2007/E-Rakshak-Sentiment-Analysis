@@ -20,10 +20,27 @@ from app.osint.pr_analysis import detect_pr_campaigns
 from app.osint.sleuth import build_dossier
 from app.osint.url_analysis import analyze_url
 from app.osint.username_lookup import lookup_username
+from app.security.ratelimit import Expensive
 
 router = APIRouter(prefix="/investigate")
 
 _MAX_IMAGE_BYTES = 25 * 1024 * 1024
+_MAX_AUDIO_BYTES = 100 * 1024 * 1024
+# Read uploads in chunks so an oversized body is rejected mid-stream. Reading
+# first and checking the length afterwards means the process has already
+# allocated whatever the client chose to send.
+_CHUNK = 1024 * 1024
+
+
+async def _read_capped(file: UploadFile, limit: int, label: str) -> bytes:
+    buf = bytearray()
+    while chunk := await file.read(_CHUNK):
+        buf.extend(chunk)
+        if len(buf) > limit:
+            raise HTTPException(413, f"File too large (max {limit // (1024 * 1024)} MB {label}).")
+    if not buf:
+        raise HTTPException(400, "Empty file.")
+    return bytes(buf)
 
 
 class UrlRequest(BaseModel):
@@ -48,14 +65,10 @@ class CommentsRequest(BaseModel):
     comments: list[CommentItem]
 
 
-@router.post("/image")
+@router.post("/image", dependencies=[Expensive])
 async def investigate_image(file: UploadFile = File(...), deep_faces: bool = False,
                             session: Session = Depends(get_session)) -> dict:
-    data = await file.read()
-    if not data:
-        raise HTTPException(400, "Empty file.")
-    if len(data) > _MAX_IMAGE_BYTES:
-        raise HTTPException(413, "File too large (max 25 MB).")
+    data = await _read_capped(file, _MAX_IMAGE_BYTES, "image")
     analysis = analyze_image(data, filename=file.filename or "", deep_faces=deep_faces)
     phash = analysis.get("perceptual_hash")
     reverse = reverse_lookup(phash)
@@ -69,7 +82,7 @@ async def investigate_image(file: UploadFile = File(...), deep_faces: bool = Fal
             "identification": identification}
 
 
-@router.post("/image-from-url")
+@router.post("/image-from-url", dependencies=[Expensive])
 async def investigate_image_from_url(req: PostImageRequest, session: Session = Depends(get_session)) -> dict:
     """Pull the image from a post/image URL and analyze it (no manual upload)."""
     from app.services.audit import log_action
@@ -78,30 +91,37 @@ async def investigate_image_from_url(req: PostImageRequest, session: Session = D
     report["identification"] = await identify_media(session, report, filename=req.url)
     return report
 
-@router.post("/audio")
+@router.post("/audio", dependencies=[Expensive])
 async def investigate_audio(file: UploadFile = File(...), session: Session = Depends(get_session)) -> dict:
+    """Transcribe an audio/video file with local Whisper.
+
+    Capped and rate-limited: this endpoint buffers the upload, writes it to
+    disk and then runs a transformer over it, so it is by far the cheapest way
+    to exhaust the server and previously had no size limit at all.
+    """
     from app.services.audit import log_action
     from app.osint.audio_analysis import transcribe_audio
-    import tempfile
     import os
-    
-    log_action(session, "osint_audio_transcribe", file.filename)
-    
+    import tempfile
+
+    content = await _read_capped(file, _MAX_AUDIO_BYTES, "audio")
+    log_action(session, "osint_audio_transcribe", file.filename or "",
+               {"bytes": len(content)})
+
     with tempfile.NamedTemporaryFile(delete=False, suffix=".m4a") as tmp:
-        content = await file.read()
         tmp.write(content)
         tmp_path = tmp.name
-        
+
     try:
         result = transcribe_audio(tmp_path)
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
-            
+
     return result
 
 
-@router.get("/post-media/{post_id}")
+@router.get("/post-media/{post_id}", dependencies=[Expensive])
 async def investigate_post_media(post_id: str, session: Session = Depends(get_session)) -> dict:
     """Resolve and analyze the media attached to a feed post (or the latest post
     with media when post_id is 'top')."""
@@ -110,21 +130,21 @@ async def investigate_post_media(post_id: str, session: Session = Depends(get_se
     return report
 
 
-@router.get("/username")
+@router.get("/username", dependencies=[Expensive])
 async def investigate_username(u: str, session: Session = Depends(get_session)) -> dict:
     from app.services.audit import log_action
     log_action(session, "osint_username_lookup", u)
     return await lookup_username(u)
 
 
-@router.post("/url")
+@router.post("/url", dependencies=[Expensive])
 async def investigate_url(req: UrlRequest, session: Session = Depends(get_session)) -> dict:
     from app.services.audit import log_action
     log_action(session, "osint_url_lookup", req.url)
     return await analyze_url(req.url, resolve=req.resolve)
 
 
-@router.get("/comments/{post_id}")
+@router.get("/comments/{post_id}", dependencies=[Expensive])
 def investigate_post_comments(post_id: str, session: Session = Depends(get_session)) -> dict:
     from app.services.audit import log_action
     log_action(session, "osint_post_comments", post_id)
@@ -147,7 +167,7 @@ def investigate_pr_campaigns(hours: int = 48, session: Session = Depends(get_ses
     return detect_pr_campaigns(hours=max(1, min(hours, 168)))
 
 
-@router.get("/sleuth")
+@router.get("/sleuth", dependencies=[Expensive])
 async def investigate_sleuth(handle: str, lookup: bool = True, session: Session = Depends(get_session)) -> dict:
     from app.services.audit import log_action
     log_action(session, "osint_sleuth", handle)

@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlmodel import Session, col, or_, select
 
 from app.database import get_session
-from app.models import FaceSearchLog, Suspect
+from app.models import FaceSearchLog, Suspect, User
 from app.models.models import utcnow
 from app.osint import face_db
 from app.osint.face_db import RECORD_TYPES, RISK_LEVELS, STATUSES
@@ -28,7 +28,9 @@ from app.osint.face_detect import encode_reference, engine_status
 from app.osint.face_intel import build_identity_dossier, identify_faces
 from app.osint.image_analysis import analyze_image
 from app.schemas import SuspectCreate, SuspectUpdate
-from app.services.audit import log_action
+from app.security.deps import require_supervisor
+from app.security.ratelimit import Expensive
+from app.services.audit import log_action, log_action_strict
 from app.services.serializers import iso
 
 router = APIRouter(prefix="/faces")
@@ -96,7 +98,7 @@ def face_engine(session: Session = Depends(get_session)) -> dict:
 
 # ── search ─────────────────────────────────────────────────────────────────
 
-@router.post("/search")
+@router.post("/search", dependencies=[Expensive])
 async def face_search(file: UploadFile = File(...), deep: bool = False,
                       dossier: bool = True,
                       session: Session = Depends(get_session)) -> dict:
@@ -114,10 +116,12 @@ async def face_search(file: UploadFile = File(...), deep: bool = False,
 
     identification = await identify_faces(session, analysis, deep=dossier,
                                           filename=file.filename or "")
-    log_action(session, "face_search", analysis.get("sha256", "")[:16],
-               {"faces": identification["faces_detected"],
-                "identified": identification["identified"],
-                "filename": file.filename})
+    # Strict: a biometric search that ran without leaving a record is worse than
+    # one that failed. If the log cannot be written, the caller gets the error.
+    log_action_strict(session, "face_search", analysis.get("sha256", "")[:16],
+                      {"faces": identification["faces_detected"],
+                       "identified": identification["identified"],
+                       "filename": file.filename})
     return {"analysis": analysis, "identification": identification}
 
 
@@ -202,9 +206,14 @@ def update_suspect(suspect_id: str, patch: SuspectUpdate,
 
 
 @router.delete("/suspects/{suspect_id}", status_code=204)
-def delete_suspect(suspect_id: str, session: Session = Depends(get_session)) -> None:
+def delete_suspect(suspect_id: str, session: Session = Depends(get_session),
+                   _: User = Depends(require_supervisor)) -> None:
+    """Supervisor+. Destroys a criminal record and its biometric templates —
+    irreversible, and logged strictly so the deletion itself is on record."""
     s = _get(session, suspect_id)
-    log_action(session, "face_registry_delete", s.id, {"name": s.full_name})
+    log_action_strict(session, "face_registry_delete", s.id,
+                      {"name": s.full_name, "case_ids": s.case_ids,
+                       "templates": len(s.face_templates or [])})
     session.delete(s)
     session.commit()
 
@@ -246,11 +255,13 @@ async def enroll_photo(suspect_id: str, file: UploadFile = File(...),
 
 @router.delete("/suspects/{suspect_id}/photo/{template_id}", status_code=204)
 def delete_photo(suspect_id: str, template_id: str,
-                 session: Session = Depends(get_session)) -> None:
+                 session: Session = Depends(get_session),
+                 _: User = Depends(require_supervisor)) -> None:
+    """Supervisor+. Removing the last template makes the record unmatchable."""
     s = _get(session, suspect_id)
     if not face_db.remove_template(session, s, template_id):
         raise HTTPException(404, "No such reference photo on this record.")
-    log_action(session, "face_registry_unenroll", s.id, {"template": template_id})
+    log_action_strict(session, "face_registry_unenroll", s.id, {"template": template_id})
 
 
 @router.post("/enroll", status_code=201)
@@ -309,7 +320,7 @@ async def enroll_new(file: UploadFile = File(...), full_name: str = Form(...),
 
 # ── dossier ────────────────────────────────────────────────────────────────
 
-@router.get("/suspects/{suspect_id}/dossier")
+@router.get("/suspects/{suspect_id}/dossier", dependencies=[Expensive])
 async def suspect_dossier(suspect_id: str, deep: bool = True,
                           session: Session = Depends(get_session)) -> dict:
     """Everything the system knows about a person: record, socials, posts,

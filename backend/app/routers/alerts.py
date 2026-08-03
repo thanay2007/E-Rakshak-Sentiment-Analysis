@@ -7,7 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, col, select
 
 from app.database import get_session
-from app.models import Alert, Post, Report
+from app.security.deps import require_supervisor
+from app.models import Alert, Post, Report, User
 from app.services.report_service import escalation_template
 from app.services.serializers import alert_to_dict
 
@@ -70,6 +71,9 @@ def acknowledge(alert_id: str, session: Session = Depends(get_session)) -> dict:
 
 
 @router.post("/alerts/{alert_id}/escalate")
-def escalate(alert_id: str, session: Session = Depends(get_session)) -> dict:
+def escalate(alert_id: str, session: Session = Depends(get_session),
+             _: User = Depends(require_supervisor)) -> dict:
+    """Supervisor+. Escalation generates an official report and is the point at
+    which this system's output becomes an action taken in someone's name."""
     return _set_status(alert_id, "escalated", session)
 

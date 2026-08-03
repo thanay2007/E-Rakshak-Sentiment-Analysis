@@ -2,6 +2,7 @@
  *  the live feed, alert toasts and the LIVE status dot. */
 import { WS_URL } from "./api";
 import type { Alert, Post } from "./api";
+import { getToken } from "./auth";
 
 export type LiveMessage =
   | { type: "post"; data: Post }
@@ -16,14 +17,42 @@ class LiveSocket {
   private statusListeners = new Set<StatusListener>();
   private retry = 0;
   private pingTimer: number | undefined;
+  private reconnectTimer: number | undefined;
+  private stopped = false;
   connected = false;
 
   start() {
-    if (this.ws) return;
+    // `ws` is null while a reconnect is merely *scheduled*, so checking it
+    // alone would let a component mounting during backoff open a second
+    // socket alongside the pending one — duplicating every post and alert.
+    if (this.ws || this.reconnectTimer !== undefined) return;
+    if (!getToken()) return;   // nothing to authenticate with yet
     this.open();
   }
 
+  /** Drop the connection on sign-out. Without this the socket keeps streaming
+   *  live threat data to a browser whose user has just signed off. */
+  stop() {
+    this.stopped = true;
+    if (this.reconnectTimer !== undefined) {
+      window.clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = undefined;
+    }
+    window.clearInterval(this.pingTimer);
+    this.ws?.close();
+    this.ws = null;
+    this.setConnected(false);
+  }
+
+  /** Called after a successful sign-in to allow reconnects again. */
+  resume() {
+    this.stopped = false;
+    this.retry = 0;
+    this.start();
+  }
+
   private open() {
+    this.reconnectTimer = undefined;
     try {
       this.ws = new WebSocket(WS_URL);
     } catch {
@@ -32,14 +61,27 @@ class LiveSocket {
     }
     this.ws.onopen = () => {
       this.retry = 0;
-      this.setConnected(true);
-      // server expects occasional client text as keepalive
-      this.pingTimer = window.setInterval(() => this.ws?.send("ping"), 25000);
+      // The socket is open but NOT yet authenticated: the server sends nothing
+      // until it has verified the first frame, and closes with 1008 if it does
+      // not arrive. Sent as a frame rather than a query parameter so the token
+      // stays out of access logs and browser history.
+      const token = getToken();
+      if (!token) {
+        this.ws?.close();
+        return;
+      }
+      this.ws?.send(JSON.stringify({ type: "auth", token }));
+      // Keepalive only starts once the server confirms the session below.
     };
     this.ws.onmessage = (ev) => {
       try {
-        const msg = JSON.parse(ev.data) as LiveMessage;
-        this.listeners.forEach((l) => l(msg));
+        const msg = JSON.parse(ev.data) as LiveMessage | { type: "auth_ok"; user: string };
+        if (msg.type === "auth_ok") {
+          this.setConnected(true);
+          this.pingTimer = window.setInterval(() => this.ws?.send("ping"), 25000);
+          return;
+        }
+        this.listeners.forEach((l) => l(msg as LiveMessage));
       } catch {
         /* ignore malformed frames */
       }
@@ -54,8 +96,12 @@ class LiveSocket {
   }
 
   private scheduleReconnect() {
+    if (this.reconnectTimer !== undefined) return;
+    // No token means the session ended; reconnecting would just loop against a
+    // server that will refuse the handshake every time.
+    if (this.stopped || !getToken()) return;
     const delay = Math.min(15000, 1000 * 2 ** this.retry++);
-    window.setTimeout(() => this.open(), delay);
+    this.reconnectTimer = window.setTimeout(() => this.open(), delay);
   }
 
   private setConnected(v: boolean) {

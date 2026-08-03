@@ -18,7 +18,7 @@ import re
 from collections import Counter
 from urllib.parse import urlparse, parse_qs
 
-import httpx
+from app.security import ssrf
 
 _SHORTENERS = {
     "bit.ly", "tinyurl.com", "t.co", "goo.gl", "ow.ly", "is.gd", "buff.ly",
@@ -117,25 +117,30 @@ def _static_findings(url: str) -> tuple[list[dict], dict]:
 
 
 async def _resolve_chain(url: str, *, max_hops: int = 8, timeout: float = 6.0) -> dict:
-    chain: list[dict] = []
-    current = url if "://" in url else "http://" + url
+    """Unwrap the redirect chain through the SSRF guard.
+
+    Every hop is revalidated against the blocked-range table (security/ssrf.py),
+    so a shortener that points at 169.254.169.254 or an internal admin panel is
+    refused rather than fetched. A refusal is surfaced to the analyst as a
+    finding — a link that tries to make the server hit its own network is
+    itself a strong signal about the link.
+    """
     try:
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
-            for _ in range(max_hops):
-                r = await client.get(current, headers={"User-Agent": _UA})
-                chain.append({"url": current, "status": r.status_code})
-                if r.status_code in (301, 302, 303, 307, 308) and "location" in r.headers:
-                    nxt = str(httpx.URL(current).join(r.headers["location"]))
-                    if nxt == current:
-                        break
-                    current = nxt
-                    continue
-                break
+        chain, _final = await ssrf.safe_chain(
+            url, max_hops=max_hops, timeout=timeout,
+            headers={"User-Agent": _UA},
+            # Only headers and status codes matter here; the body is never shown.
+            max_bytes=64 * 1024)
         return {"resolved": True, "hops": len(chain), "chain": chain,
-                "final_url": chain[-1]["url"] if chain else current}
+                "final_url": chain[-1]["url"] if chain else url}
+    except ssrf.BlockedRequest as exc:
+        return {"resolved": False, "blocked": True, "reason": str(exc),
+                "hops": 0, "chain": [], "final_url": None}
     except Exception as exc:
+        # Type name only — never the exception text, which can echo internal
+        # hostnames and addresses back to the caller.
         return {"resolved": False, "reason": f"Could not reach host ({type(exc).__name__}).",
-                "hops": len(chain), "chain": chain, "final_url": None}
+                "hops": 0, "chain": [], "final_url": None}
 
 
 _LEVEL_WEIGHT = {"high": 34, "medium": 18, "low": 7, "info": 1, "ok": 0}
@@ -171,6 +176,13 @@ async def analyze_url(url: str, *, resolve: bool = True) -> dict:
 
     all_findings = findings + [{**f, "on": "destination"} for f in dest_findings
                                if f["level"] != "ok"]
+    if chain.get("blocked"):
+        all_findings.append({
+            "level": "high",
+            "text": "This link points into a private or internal network rather "
+                    "than the public internet. Resolution was refused. Links "
+                    "like this are used to make a server attack its own network.",
+        })
     score, level = _risk(all_findings, chain)
     return {
         "url": url, "valid": True, "risk_score": score, "risk_level": level,

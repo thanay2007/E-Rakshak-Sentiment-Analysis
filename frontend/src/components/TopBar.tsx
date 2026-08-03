@@ -1,11 +1,13 @@
-import { Bell, Moon, Search, Sun, UserRound } from "lucide-react";
+import { Bell, LogOut, Moon, Search, Sun, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { LANGUAGES } from "../data/constants";
+import { useAuth } from "../hooks/useAuth";
 import { useLiveAlerts, useLiveStatus } from "../hooks/useLive";
 
 export default function TopBar() {
   const navigate = useNavigate();
+  const { user, signOut } = useAuth();
   const connected = useLiveStatus();
   const liveAlerts = useLiveAlerts();
   const [q, setQ] = useState("");
@@ -112,9 +114,26 @@ export default function TopBar() {
             <UserRound size={15} />
           </span>
           <div className="hidden leading-tight lg:block">
-            <div className="text-xs font-semibold text-slate-300">Inspector K. Sharma</div>
-            <div className="font-mono text-[10px] text-slate-600">CYBER CELL HQ</div>
+            {/* The signed-in officer, not a placeholder — this is the identity
+                every audit entry in this session is being written against. */}
+            <div className="text-xs font-semibold text-slate-300">
+              {user?.full_name || user?.username || "—"}
+            </div>
+            <div className="font-mono text-[10px] uppercase text-slate-600">
+              {[user?.role, user?.badge_number || user?.unit].filter(Boolean).join(" · ") || "—"}
+            </div>
           </div>
+          <button
+            onClick={async () => {
+              await signOut();
+              navigate("/login", { replace: true });
+            }}
+            className="rounded-xl p-2 text-slate-400 hover:bg-white/[0.06] hover:text-red-300"
+            aria-label="Sign out"
+            title="Sign out"
+          >
+            <LogOut size={16} />
+          </button>
         </div>
       </div>
     </header>

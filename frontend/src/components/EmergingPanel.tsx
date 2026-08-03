@@ -3,6 +3,7 @@ import GlassCard, { SectionTitle } from "./GlassCard";
 import { PlatformIcon } from "./Badges";
 import { usePolling } from "../hooks/usePolling";
 import { api } from "../services/api";
+import { safeHref } from "../lib/safeUrl";
 
 /** "Emerging but unverified" watch-list: posts spreading fast from a single,
  *  uncorroborated source — the window to catch a rumour before it goes viral. */
@@ -45,7 +46,7 @@ export default function EmergingPanel() {
                 ))}
               </ul>
               {it.url && (
-                <a href={it.url} target="_blank" rel="noreferrer"
+                <a href={safeHref(it.url)} target="_blank" rel="noreferrer"
                   className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-accent hover:underline">
                   view source <ExternalLink size={10} />
                 </a>
