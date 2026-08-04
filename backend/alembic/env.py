@@ -1,73 +1,106 @@
+"""Alembic environment.
+
+The schema this project runs on is defined by the migrations in `versions/`,
+not by `SQLModel.metadata.create_all()`. That distinction is the whole point:
+create_all() silently does nothing to a table that already exists, so a column
+added to a model after the first boot never reaches an existing database and
+the app dies on "no such column" somewhere far away from the cause.
+
+Two deliberate choices:
+
+  • The URL comes from `app.config.settings`, never from alembic.ini. One
+    DATABASE_URL drives the API and the migrations, so `alembic upgrade head`
+    cannot quietly migrate a different database than the one being served —
+    which, when the two are SQLite-on-disk and Supabase, is a very easy mistake
+    to make and a very confusing one to debug.
+
+  • `render_as_batch` is on for SQLite. SQLite cannot ALTER a column or drop a
+    constraint; batch mode rewrites the table instead. Without it every
+    migration beyond "add a nullable column" fails on the default database.
+"""
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-
 from alembic import context
+from sqlalchemy import engine_from_config, pool
+from sqlmodel import SQLModel
 
-# this is the Alembic Config object, which provides
-# access to the values within the .ini file in use.
+# Importing the package registers every table on SQLModel.metadata. Import the
+# package rather than a hand-listed set of classes: a model added later is then
+# picked up automatically instead of being silently missing from autogenerate.
+from app import models  # noqa: F401
+from app.config import settings
+
 config = context.config
 
-# Interpret the config file for Python logging.
-# This line sets up loggers basically.
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# add your model's MetaData object here
-# for 'autogenerate' support
-from sqlmodel import SQLModel
-from app.models import Post, Alert, WatchlistItem, Report
+def _ini_safe(url: str) -> str:
+    """Escape % for configparser, which owns alembic.ini.
+
+    A password containing a reserved URL character has to be percent-encoded
+    ("@" -> "%40"), and configparser then reads that % as the start of its own
+    `%(name)s` interpolation and raises. Doubling it means "a literal %", and
+    configparser un-doubles it on read, so the URL SQLAlchemy finally receives
+    is unchanged. Without this, any password with @ : / ? # in it breaks every
+    alembic command while the app itself connects fine — a confusing split.
+    """
+    return url.replace("%", "%%")
+
+
+config.set_main_option("sqlalchemy.url", _ini_safe(settings.DATABASE_URL))
+
 target_metadata = SQLModel.metadata
 
-# other values from the config, defined by the needs of env.py,
-# can be acquired:
-# my_important_option = config.get_main_option("my_important_option")
-# ... etc.
+IS_SQLITE = settings.DATABASE_URL.startswith("sqlite")
+
+
+def _options() -> dict:
+    return {
+        "target_metadata": target_metadata,
+        "compare_type": True,
+        "compare_server_default": True,
+        "render_as_batch": IS_SQLITE,
+    }
 
 
 def run_migrations_offline() -> None:
-    """Run migrations in 'offline' mode.
+    """Emit SQL to stdout instead of running it — `alembic upgrade head --sql`.
 
-    This configures the context with just a URL
-    and not an Engine, though an Engine is acceptable
-    here as well.  By skipping the Engine creation
-    we don't even need a DBAPI to be available.
-
-    Calls to context.execute() here emit the given string to the
-    script output.
-
+    Useful when a DBA has to review the DDL before it touches a production
+    database, which is the normal arrangement for anything holding case data.
     """
-    url = config.get_main_option("sqlalchemy.url")
+    # The raw URL here, not the ini-escaped one — this goes straight to
+    # SQLAlchemy rather than through configparser.
     context.configure(
-        url=url,
-        target_metadata=target_metadata,
+        url=settings.DATABASE_URL,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        **_options(),
     )
-
     with context.begin_transaction():
         context.run_migrations()
 
 
 def run_migrations_online() -> None:
-    """Run migrations in 'online' mode.
+    connectable = context.config.attributes.get("connection", None)
 
-    In this scenario we need to create an Engine
-    and associate a connection with the context.
+    if connectable is not None:
+        # Reusing a connection handed in by the caller — this is how
+        # app/database.py runs migrations at boot without opening a second
+        # engine against the same database.
+        context.configure(connection=connectable, **_options())
+        with context.begin_transaction():
+            context.run_migrations()
+        return
 
-    """
-    connectable = engine_from_config(
+    engine = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
-
-    with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
-
+    with engine.connect() as connection:
+        context.configure(connection=connection, **_options())
         with context.begin_transaction():
             context.run_migrations()
 

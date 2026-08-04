@@ -1,9 +1,13 @@
 import {
   Bell, ChevronsLeft, Eye, FileText, LayoutDashboard, Radar, ScanSearch, Settings,
-  Share2, TrendingUp,
+  Share2, ShieldCheck, TrendingUp,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
+import { useAuth } from "../hooks/useAuth";
+
+/** `minimum` hides an entry from ranks that cannot use it. Hiding is tidiness,
+ *  not security — the route guard and, decisively, the server both re-check. */
 const NAV = [
   { to: "/app", label: "Overview", icon: LayoutDashboard, end: true },
   { to: "/app/feed", label: "Threat Feed", icon: Radar },
@@ -14,6 +18,7 @@ const NAV = [
   { to: "/app/reports", label: "Reports", icon: FileText },
   { to: "/app/watchlist", label: "Watchlist", icon: Eye },
   { to: "/app/settings", label: "Settings", icon: Settings },
+  { to: "/app/admin", label: "Admin Panel", icon: ShieldCheck, minimum: "admin" as const },
 ];
 
 export function Logo({ size = 30 }: { size?: number }) {
@@ -45,6 +50,9 @@ export default function Sidebar({
   collapsed: boolean;
   onToggle: () => void;
 }) {
+  const { can } = useAuth();
+  const visible = NAV.filter((item) => !item.minimum || can(item.minimum));
+
   return (
     <aside
       className={`fixed left-0 top-0 z-30 flex h-full flex-col border-r border-white/[0.06] bg-base-800/80 backdrop-blur-xl transition-[width] duration-300 ${
@@ -61,7 +69,7 @@ export default function Sidebar({
       </div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto p-2.5" aria-label="Primary">
-        {NAV.map(({ to, label, icon: Icon, end }) => (
+        {visible.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
             to={to}

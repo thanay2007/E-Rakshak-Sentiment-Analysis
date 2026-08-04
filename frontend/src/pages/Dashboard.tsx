@@ -31,8 +31,8 @@ const TOOLTIP_STYLE = {
 };
 
 export default function Dashboard() {
-  const { data: stats, loading } = usePolling(() => api.stats(), 15000);
-  const { data: trends } = usePolling(() => api.trends(24), 60000);
+  const { data: stats, error: statsError, loading, refresh: refreshStats } = usePolling(() => api.stats(), 15000);
+  const { data: trends, error: trendsError } = usePolling(() => api.trends(24), 60000);
   const livePosts = useLivePosts(30);
   const [initialFeed, setInitialFeed] = useState<Post[]>([]);
   const [selected, setSelected] = useState<Post | null>(null);
@@ -71,6 +71,19 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-4">
+      {statsError && !stats && (
+        <GlassCard className="space-y-3 p-5 text-sm text-slate-400">
+          <div className="font-semibold text-red-300">Could not load dashboard data</div>
+          <div className="text-xs text-slate-500">{statsError}</div>
+          <button
+            onClick={() => void refreshStats()}
+            className="rounded-xl border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent"
+          >
+            Retry
+          </button>
+        </GlassCard>
+      )}
+
       {/* KPI row */}
       {loading || !stats ? (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
@@ -141,7 +154,9 @@ export default function Dashboard() {
           {/* trending hashtags */}
           <GlassCard className="p-4">
             <SectionTitle title="Trending Hashtags" sub="spike detection (z-score)" />
-            {!trends ? (
+            {trendsError && !trends ? (
+              <div className="py-8 text-xs text-slate-500">{trendsError}</div>
+            ) : !trends ? (
               <SkeletonChart h={180} />
             ) : (
               <div className="space-y-2">

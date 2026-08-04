@@ -11,15 +11,17 @@ Run:  uvicorn app.main:app --reload --port 8000  (from backend/)
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import JSONResponse
 from sqlmodel import select
 
 from app.database import init_db, session_scope
 from app.models import WatchlistItem
 from app.routers import (
-    admin, alerts, auth, faces, feed, investigate, network, reports, stats,
-    trends, watchlist, ws,
+    admin, alerts, assistant, auth, faces, feed, investigate, network, reports,
+    stats, trends, watchlist, ws,
 )
 from app.data.suspect_seed import seed_suspects_if_empty
 from app.security.bootstrap import ensure_admin_exists
@@ -108,9 +110,31 @@ app.add_middleware(
     max_age=600,
 )
 
+# Rejects a forged Host header before routing. Without it a request claiming
+# `Host: evil.example` is served normally, and anything that echoes the host
+# into a link — a password flow, an emailed report URL — points at the attacker.
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.ALLOWED_HOSTS)
+
 
 @app.middleware("http")
-async def security_headers(request, call_next):
+async def limit_body_size(request: Request, call_next):
+    """Refuse oversized bodies on the declared length, before reading them.
+
+    Only the image/face tools legitimately send large bodies. Without a ceiling
+    a single request can pin the worker's memory for as long as it takes to
+    stream — a cheap denial of service against a system that is supposed to be
+    watching for one.
+    """
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > settings.MAX_REQUEST_BYTES:
+        return JSONResponse(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            content={"detail": "Request body too large."})
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
     """Baseline response hardening.
 
     The API serves JSON and PDFs, never HTML, so a restrictive CSP costs
@@ -124,7 +148,31 @@ async def security_headers(request, call_next):
     response.headers.setdefault("Content-Security-Policy",
                                 "default-src 'none'; frame-ancestors 'none'")
     response.headers.setdefault("Cache-Control", "no-store")
+    # This API needs none of the powerful browser features, and a response that
+    # says so cannot be used to reach them from an embedded context.
+    response.headers.setdefault(
+        "Permissions-Policy",
+        "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
+    response.headers.setdefault("Cross-Origin-Resource-Policy", "same-site")
+    response.headers.setdefault("X-Permitted-Cross-Domain-Policies", "none")
+    if settings.ENABLE_HSTS:
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return response
+
+
+@app.exception_handler(Exception)
+async def unhandled_error(request: Request, exc: Exception):
+    """Log the detail, return none of it.
+
+    A stack trace or driver message in a 500 body is free reconnaissance —
+    table names, file paths, library versions. The full exception goes to the
+    server log where the operator can read it and the caller cannot.
+    """
+    log.exception("unhandled error on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "An internal error occurred. It has been logged."})
 
 
 # Every router is authenticated at the router level rather than per endpoint:
@@ -145,6 +193,10 @@ app.include_router(reports.router, prefix="/api", tags=["reports"], dependencies
 app.include_router(watchlist.router, prefix="/api", tags=["watchlist"], dependencies=_PROTECTED)
 app.include_router(investigate.router, prefix="/api", tags=["investigate"], dependencies=_PROTECTED)
 app.include_router(faces.router, prefix="/api", tags=["faces"], dependencies=_PROTECTED)
+# The voice assistant. Authenticated like everything else and read-only by
+# construction — see routers/assistant.py for what it is and is not allowed to
+# reach, which is the whole security story for a feature driven by a hot mic.
+app.include_router(assistant.router, prefix="/api", tags=["assistant"], dependencies=_PROTECTED)
 # The operations toolkit purges data, exports in bulk and spawns processes.
 app.include_router(admin.router, prefix="/api", tags=["admin"], dependencies=_ADMIN_ONLY)
 app.include_router(ws.router, tags=["websocket"])          # authenticates in-handshake
