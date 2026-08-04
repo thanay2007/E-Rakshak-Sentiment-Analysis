@@ -1,4 +1,4 @@
 from app.routers import (  # noqa: F401
-    admin, alerts, auth, faces, feed, investigate, network, reports, stats,
-    trends, watchlist, ws,
+    admin, alerts, assistant, auth, faces, feed, investigate, network, reports,
+    stats, trends, watchlist, ws,
 )

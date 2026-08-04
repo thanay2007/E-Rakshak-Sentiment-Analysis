@@ -21,7 +21,7 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
-from sqlmodel import Session, col, select
+from sqlmodel import Session, col, func, select
 
 from app.config import settings
 from app.database import get_session
@@ -346,6 +346,118 @@ def deactivate_user(user_id: str, session: Session = Depends(get_session),
     session.commit()
     log_action(session, "user_deactivated", u.id,
                {"username": u.username, "by": admin.username})
+
+
+# ── security posture (admin only) ───────────────────────────────────────────
+
+@router.get("/security-posture")
+def security_posture(session: Session = Depends(get_session),
+                     _: User = Depends(require_admin)) -> dict:
+    """A checklist of the settings that decide how hard this instance is to
+    break into, evaluated live rather than documented in a README nobody opens.
+
+    Admin-only because it is a map of the weak points. `severity` is what the
+    panel sorts on: "critical" means fix before this holds real case data.
+    """
+    from app.database import IS_SQLITE
+
+    checks: list[dict] = []
+
+    def add(key: str, ok: bool, severity: str, title: str, detail: str) -> None:
+        checks.append({"key": key, "ok": ok, "severity": severity,
+                       "title": title, "detail": detail})
+
+    # Is anyone still signing in with the credential published in config.py?
+    default_pw = settings.BOOTSTRAP_ADMIN_PASSWORD
+    using_default = []
+    if default_pw:
+        for u in session.exec(select(User).where(col(User.active) == True)).all():  # noqa: E712
+            if verify_password(default_pw, u.password_hash):
+                using_default.append(u.username)
+    add("default_password", not using_default, "critical",
+        "Shipped default password",
+        f"In use by: {', '.join(using_default)}. That value is published with "
+        f"the source code. Change it here or set BOOTSTRAP_ADMIN_PASSWORD."
+        if using_default else
+        "No account is using the password that ships in config.py.")
+
+    add("secret_key", bool(settings.SECRET_KEY), "critical",
+        "Token signing key",
+        "SECRET_KEY is set, so sessions survive a restart and multiple workers "
+        "agree on who is signed in."
+        if settings.SECRET_KEY else
+        "SECRET_KEY is unset — a random key is generated at boot. Every restart "
+        "signs everyone out, and more than one worker will reject each other's "
+        "tokens outright.")
+
+    add("transport", settings.ENABLE_HSTS, "high", "HTTPS enforcement",
+        "HSTS is being sent." if settings.ENABLE_HSTS else
+        "HSTS is off. Correct for local HTTP; turn ENABLE_HSTS on the moment "
+        "this sits behind TLS, or credentials travel in clear text.")
+
+    add("biometric_encryption", bool(settings.BIOMETRIC_ENCRYPTION_KEY), "high",
+        "Biometrics encrypted at rest",
+        "Face templates and mugshots are encrypted."
+        if settings.BIOMETRIC_ENCRYPTION_KEY else
+        "BIOMETRIC_ENCRYPTION_KEY is unset — face templates are stored in the "
+        "clear. Allowed for a demo, refused on a live deployment.")
+
+    add("durable_storage", not IS_SQLITE, "medium", "Durable shared database",
+        "Postgres — the record is shared, backed up and survives this host."
+        if not IS_SQLITE else
+        "SQLite. Everything lives in one file on this machine; there is no "
+        "replication and no point-in-time restore. Point DATABASE_URL at "
+        "Supabase for a durable corpus.")
+
+    add("rate_limiting", settings.RATE_LIMIT_ENABLED, "high", "Rate limiting",
+        f"On — {settings.RATE_LIMIT_DEFAULT} general, "
+        f"{settings.RATE_LIMIT_LOGIN} on sign-in."
+        if settings.RATE_LIMIT_ENABLED else
+        "Disabled. Brute-force protection is down to the account lockout alone.")
+
+    add("cors", "*" not in settings.CORS_ORIGINS, "critical", "Browser origins",
+        f"Restricted to {len(settings.CORS_ORIGINS)} origin(s).")
+
+    add("allowed_hosts", "*" not in settings.ALLOWED_HOSTS, "medium",
+        "Host header allowlist",
+        f"Restricted to {len(settings.ALLOWED_HOSTS)} host(s)."
+        if "*" not in settings.ALLOWED_HOSTS else
+        "Any Host header is accepted. Fine for a demo, not for a deployment.")
+
+    add("proxy_headers", not settings.TRUST_PROXY_HEADERS
+        or not settings.SIMULATION_ENABLED, "medium", "Proxy header trust",
+        "X-Forwarded-For is ignored, so audit-log addresses cannot be forged."
+        if not settings.TRUST_PROXY_HEADERS else
+        "X-Forwarded-For is trusted. Only correct when a reverse proxy you "
+        "control sets it — otherwise callers choose what the audit log records.")
+
+    add("assistant_scope", True, "info", "Voice assistant scope",
+        "Sentinel is read-only and refuses accounts, credentials, the audit "
+        "trail, biometrics and every write. Its budget is "
+        f"{settings.RATE_LIMIT_ASSISTANT} requests." if settings.ASSISTANT_ENABLED
+        else "The voice assistant is disabled on this instance.")
+
+    # Accounts worth an admin's attention regardless of configuration.
+    stale = session.exec(select(User).where(col(User.active) == True,  # noqa: E712
+                                            col(User.must_change_password) == True)).all()  # noqa: E712
+    locked = session.exec(select(User).where(
+        col(User.locked_until) != None)).all()  # noqa: E711
+
+    return {
+        "checks": checks,
+        "failing": sum(1 for c in checks if not c["ok"]),
+        "accounts": {
+            "total": session.exec(select(func.count()).select_from(User)).one(),
+            "active": session.exec(select(func.count()).select_from(User)
+                                   .where(col(User.active) == True)).one(),  # noqa: E712
+            "admins": session.exec(select(func.count()).select_from(User)
+                                   .where(col(User.role) == roles.ADMIN,
+                                          col(User.active) == True)).one(),  # noqa: E712
+            "pending_password_change": [u.username for u in stale],
+            "locked_out": [u.username for u in locked
+                           if u.locked_until and u.locked_until > utcnow()],
+        },
+    }
 
 
 # ── audit trail (supervisor+) ───────────────────────────────────────────────

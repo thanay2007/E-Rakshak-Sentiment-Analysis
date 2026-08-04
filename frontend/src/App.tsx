@@ -2,8 +2,10 @@ import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import Layout from "./components/Layout";
 import RequireAuth from "./components/RequireAuth";
+import RequireRole from "./components/RequireRole";
 import { AuthProvider } from "./hooks/useAuth";
 
+const AdminPanel = lazy(() => import("./pages/AdminPanel"));
 const Alerts = lazy(() => import("./pages/Alerts"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Investigate = lazy(() => import("./pages/Investigate"));
@@ -42,6 +44,12 @@ export default function App() {
               <Route path="reports" element={<Reports />} />
               <Route path="watchlist" element={<Watchlist />} />
               <Route path="settings" element={<Settings />} />
+              {/* Officer accounts, the audit trail and the security posture.
+                  The server enforces the rank on every one of these calls;
+                  this guard only decides what is worth rendering. */}
+              <Route element={<RequireRole minimum="admin" />}>
+                <Route path="admin" element={<AdminPanel />} />
+              </Route>
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

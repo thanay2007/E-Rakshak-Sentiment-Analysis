@@ -32,7 +32,19 @@ python -m app.ml.bootstrap        # ⬅ THE one command: deps + all 22 datasets 
 cd .. && .\run.ps1                # or ./run.sh — starts backend + frontend
 ```
 
-Open **http://localhost:5173** → *Enter Dashboard*. API docs: http://localhost:8000/docs.
+Open **http://localhost:5173** → *Enter Dashboard* → sign in. API docs: http://localhost:8000/docs.
+
+| | |
+|---|---|
+| Username | `suratpolice` |
+| Password | `Suratpolice@1234` |
+
+That account is provisioned on first boot with the **admin** role, which is what
+unlocks the **Admin Panel** in the sidebar. It is a *known* credential — it lives
+in `backend/app/config.py`, which lives in this repository — so the server warns
+about it at every boot and Admin Panel → Security Posture flags it until you
+change it. Set `BOOTSTRAP_ADMIN_PASSWORD` in `backend/.env` before this instance
+holds real case data, or change the password from Admin Panel → Officers.
 
 Full walkthrough (where `.env` goes, which keys, what bootstrap does):
 [§ You just cloned the repo](#-you-just-cloned-the-repo--do-exactly-this).
@@ -403,6 +415,64 @@ key the layer is a no-op, and any API failure degrades to "unverified".
 | `GET /api/reports` · `POST /api/reports/generate` · `GET /api/reports/{id}/download` | JSON + PDF reports |
 | `GET/POST/PATCH/DELETE /api/watchlist` | keywords/hashtags/accounts/locations steering the crawlers |
 | `WS /ws/live` | real-time posts + alerts |
+| `POST /api/auth/login` · `/logout` · `/change-password` | session lifecycle (scrypt, per-IP rate limit, per-account lockout) |
+| `GET/POST/PATCH/DELETE /api/auth/users` | officer accounts — **admin only** |
+| `GET /api/auth/audit` · `/security-posture` | chain-of-custody log · live hardening checklist — **admin only** |
+| `POST /api/assistant/ask` · `GET /api/assistant/capabilities` | Sentinel voice assistant (read-only) |
+
+Every router except `/api/health` is authenticated at the *router* level, so a
+route added later is protected by default rather than public until someone
+remembers a decorator.
+
+---
+
+## 🎙️ Sentinel — the voice assistant
+
+Say **“Hey Sentinel, tell me the trends in Surat”** (or click the orb, bottom
+right, and just talk). It briefs the last 24 hours, reads out critical alerts as
+they arrive, gives per-city threat levels, names the highest-scoring post, breaks
+activity down by platform, and navigates the dashboard.
+
+A microphone is live in a room full of people and cannot tell who is speaking,
+so the boundary is structural rather than a prompt asking a model to behave
+(`backend/app/routers/assistant.py`):
+
+- **Read-only by construction.** Every answer comes from a fixed query in that
+  module. No handler writes. Acknowledging alerts, editing the watchlist,
+  resetting passwords and purging data are not reachable from the router at all.
+- **Protected subjects are refused before intent matching** — officer accounts,
+  credentials, the audit trail, biometrics and the suspect registry — so a mixed
+  request (“show alerts *and* list all officers”) refuses whole rather than
+  answering the half it liked. Refusals are audit-logged.
+- **The LLM never sees crawled post text.** Post text is authored by the accounts
+  under investigation; feeding it to an instruction-following model an officer
+  then trusts is a prompt-injection channel. The fallback model gets aggregate
+  counts only, and cannot trigger navigation or any action.
+- Its own rate-limit budget, separate from the analyst's.
+
+Wake-word mode is **off by default**: in Chrome and Edge the Web Speech API
+streams audio to the vendor's cloud, which the UI says out loud rather than
+burying. Typing works identically with no microphone at all.
+
+---
+
+## 🔒 Security posture
+
+Admin Panel → **Security Posture** evaluates the live configuration and tells you
+what is still weak — default password in use, unset `SECRET_KEY`, HSTS off,
+biometrics unencrypted, SQLite instead of a durable database. What is already in
+place:
+
+| Layer | Control |
+|---|---|
+| Passwords | scrypt (memory-hard, stdlib), self-describing hashes, transparent rehash on login |
+| Sign-in | one generic error for every failure, dummy-hash verify so timing does not leak either, per-IP rate limit **and** per-account lockout |
+| Sessions | short-lived bearer tokens, `token_version` revokes every issued token at once (logout, role change, deactivation), sessionStorage so a shared terminal does not keep a session, idle auto-logout with a warning |
+| Authorisation | three ranks, "at least this rank" checks, enforced server-side on every call |
+| Audit | append-only in the *database* — `BEFORE UPDATE OR DELETE` triggers on SQLite and Postgres — with actor, badge, IP and user-agent denormalised at write time |
+| Transport | strict CORS allowlist (`*` refused at startup), Host-header allowlist, CSP generated per-deployment, `nosniff` / `DENY` / `no-referrer` / `Permissions-Policy`, optional HSTS |
+| Abuse | sliding-window rate limits in three separate budgets (default, expensive, assistant), request body ceiling, SSRF guard on outbound OSINT fetches |
+| Leakage | unhandled errors log the trace and return a generic 500; `/api/health` describes nothing about the deployment |
 
 ---
 
@@ -441,9 +511,12 @@ RSS_FEEDS=https://example.com/feed.xml,...   # local news outlets
 Restart — each configured adapter activates automatically and its posts flow
 through the identical NLP → scoring → alerting → reporting pipeline. The
 watchlist (editable in the UI) becomes the live crawl query. Set
-`SIMULATION_ENABLED=false` to go fully live. Swap SQLite for Postgres with one
-`DATABASE_URL`. Advanced knobs (alert thresholds, politeness gaps, Groq tuning)
-all have defaults in `backend/app/config.py`.
+`SIMULATION_ENABLED=false` to go fully live. Swap SQLite for **Supabase** (or any
+Postgres) with one `DATABASE_URL` — tables, migrations and the append-only audit
+triggers are all created on boot: [docs/SUPABASE.md](docs/SUPABASE.md), which
+also covers migrating an existing SQLite corpus across. Every setting worth
+overriding is annotated in [backend/.env.example](backend/.env.example); the
+rest have defaults in `backend/app/config.py`.
 
 **API etiquette (important):** the scheduler enforces a per-platform politeness
 gap — no live API is queried more often than `CRAWL_MIN_INTERVAL_SECONDS`

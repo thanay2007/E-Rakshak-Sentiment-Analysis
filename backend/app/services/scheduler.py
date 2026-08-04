@@ -6,6 +6,7 @@ adapter additionally has a per-collector politeness gap (min_interval_seconds)
 so real APIs are only queried in well-spaced batches, never hammered."""
 import logging
 import time
+from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlmodel import select
@@ -69,9 +70,13 @@ async def _crawl_tick_inner() -> None:
 def start_scheduler() -> None:
     scheduler.add_job(crawl_tick, "interval",
                       seconds=settings.INGEST_INTERVAL_SECONDS,
+                      next_run_time=datetime.now(timezone.utc) + timedelta(
+                          seconds=max(0, settings.SCHEDULER_START_DELAY_SECONDS)),
                       max_instances=1, coalesce=True)
     scheduler.start()
-    log.info("Ingestion loop started (every %ss)", settings.INGEST_INTERVAL_SECONDS)
+    log.info("Ingestion loop started (every %ss, first run in %ss)",
+             settings.INGEST_INTERVAL_SECONDS,
+             settings.SCHEDULER_START_DELAY_SECONDS)
 
 
 def stop_scheduler() -> None:

@@ -9,6 +9,11 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+# Imported unconditionally: autogenerate renders SQLModel string columns as
+# `sqlmodel.sql.sqltypes.AutoString()` but does not always add the import for
+# it, and the resulting migration then dies on NameError the first time it runs.
+# An unused import in a migration that needs none costs nothing.
+import sqlmodel
 ${imports if imports else ""}
 
 # revision identifiers, used by Alembic.

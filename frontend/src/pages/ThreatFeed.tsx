@@ -98,7 +98,7 @@ export default function ThreatFeed() {
     [params, page] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  const { data, loading } = usePolling(() => api.feed(filters), 20000, [JSON.stringify(filters)]);
+  const { data, error, loading, refresh } = usePolling(() => api.feed(filters), 20000, [JSON.stringify(filters)]);
   const revealRef = useGsapReveal<HTMLDivElement>(data?.items[0]?.id ?? "");
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / PAGE_SIZE));
 
@@ -181,7 +181,18 @@ export default function ThreatFeed() {
         </div>
       </div>
 
-      {loading && !data ? (
+      {error && !data ? (
+        <GlassCard className="space-y-3 p-6 text-sm text-slate-400">
+          <div className="font-semibold text-red-300">Could not load posts</div>
+          <div className="text-xs text-slate-500">{error}</div>
+          <button
+            onClick={() => void refresh()}
+            className="rounded-xl border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent"
+          >
+            Retry
+          </button>
+        </GlassCard>
+      ) : loading && !data ? (
         <SkeletonRow n={8} />
       ) : (
         <div ref={revealRef} className="h-[70vh] w-full">

@@ -11,9 +11,40 @@ APP_DIR = Path(__file__).resolve().parent          # backend/app/
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=str(BASE_DIR / ".env"), env_file_encoding="utf-8", extra="ignore")
 
+    # Where every post, alert, report, watchlist entry and audit row is kept.
+    #
+    # SQLite by default (zero-setup demo). Point this at Supabase — or any
+    # Postgres — to make the corpus durable and shared instead of a file on one
+    # laptop; database.py detects the dialect and applies the right migrations
+    # and append-only triggers either way. Supabase gives you the string under
+    # Project Settings → Database → Connection string; use the *session pooler*
+    # (port 5432) or transaction pooler (6543) URI and rewrite the scheme:
+    #
+    #   DATABASE_URL=postgresql+psycopg://postgres.<ref>:<pw>@aws-0-<region>.pooler.supabase.com:5432/postgres?sslmode=require
+    #
+    # Nothing in this application deletes history on its own — retention is an
+    # explicit admin action — so a Postgres target simply accumulates the full
+    # record rather than only what the current process has seen.
     DATABASE_URL: str = f"sqlite:///{BASE_DIR / 'sentinel.db'}"
-    INGEST_INTERVAL_SECONDS: int = 4
+    # Connection recycling for hosted Postgres. Supabase's pooler drops idle
+    # connections; without pre-ping the first query after an idle period fails
+    # with a stale-connection error instead of transparently reconnecting.
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 10
+    DB_POOL_RECYCLE_SECONDS: int = 1800
+    DB_ECHO: bool = False
 
+    # Run `alembic upgrade head` at boot. On by default so a fresh clone and a
+    # fresh Supabase project both just work. Turn it off where migrations are a
+    # reviewed, deliberate step run ahead of the deploy — with more than one
+    # worker you want exactly one process applying them, not a race.
+    AUTO_MIGRATE: bool = True
+
+    INGEST_INTERVAL_SECONDS: int = 4
+    # Delay the first background crawl after API startup. Live collectors and
+    # full NLP can be expensive; the login screen and dashboard should become
+    # reachable before that work starts.
+    SCHEDULER_START_DELAY_SECONDS: int = 60
     # ── security ────────────────────────────────────────────────────────────
     # Signing key for session tokens. MUST be set in production; when empty the
     # process generates a random key at boot (sessions die on every restart and
@@ -27,16 +58,41 @@ class Settings(BaseSettings):
     # officer's credentials" is never an acceptable configuration.
     CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
+    # Host names this API will answer to. Anything else gets a 400 before the
+    # request reaches a route: a forged Host header otherwise poisons absolute
+    # URLs in generated links and password-style flows. "*" is allowed only
+    # while SIMULATION_ENABLED (the demo posture) — see the check below.
+    ALLOWED_HOSTS: list[str] = ["localhost", "127.0.0.1", "[::1]", "testserver"]
+
+    # Hard ceiling on a request body, enforced before parsing. Uploads to the
+    # image/face tools are the only large bodies this API legitimately sees.
+    MAX_REQUEST_BYTES: int = 25 * 1024 * 1024
+
+    # Emit HSTS. Off by default because it is actively harmful over plain HTTP
+    # on localhost (the browser pins the host to https for a year). Turn it on
+    # the moment this sits behind TLS.
+    ENABLE_HSTS: bool = False
+
     # Brute-force lockout on the login endpoint.
     LOGIN_MAX_ATTEMPTS: int = 5
     LOGIN_LOCKOUT_MINUTES: int = 15
 
-    # First-boot administrator. Created only when the user table is empty, and
-    # flagged must_change_password so the bootstrap credential cannot become the
-    # permanent one. Leave the password blank to have a random one generated and
-    # printed to the server log exactly once.
-    BOOTSTRAP_ADMIN_USERNAME: str = "admin"
-    BOOTSTRAP_ADMIN_PASSWORD: str = ""
+    # Provisioned console administrator (security/bootstrap.py). Created if it
+    # does not exist and then left alone forever — a password changed in the
+    # Admin Panel is never reverted to this value on the next restart.
+    #
+    # The built-in default is a KNOWN credential: it ships in this file, so it
+    # is public. It exists so the Surat deployment has a working sign-in out of
+    # the box, and the server logs a loud warning at every boot while it is
+    # still in use. Set BOOTSTRAP_ADMIN_PASSWORD in .env before this instance
+    # holds real case data.
+    BOOTSTRAP_ADMIN_USERNAME: str = "suratpolice"
+    BOOTSTRAP_ADMIN_PASSWORD: str = "Suratpolice@1234"
+    BOOTSTRAP_ADMIN_FULL_NAME: str = "Surat City Police — Administrator"
+    BOOTSTRAP_ADMIN_UNIT: str = "Surat City Police Commissionerate"
+    # Force a password change at first sign-in. False for the shipped default so
+    # the documented credential works as documented; set true for real rollouts.
+    BOOTSTRAP_ADMIN_FORCE_CHANGE: bool = False
 
     # Fernet key encrypting face templates and mugshots at rest. Generate with:
     #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
@@ -53,6 +109,19 @@ class Settings(BaseSettings):
     RATE_LIMIT_DEFAULT: str = "300/60"      # ordinary reads
     RATE_LIMIT_LOGIN: str = "10/300"        # unauthenticated, per client IP
     RATE_LIMIT_EXPENSIVE: str = "20/60"     # face search, OSINT fetches, LLM calls
+    # The voice assistant. Its own budget, deliberately tighter than the general
+    # read budget: a hot microphone in a noisy control room can fire a lot of
+    # requests, and that must not consume the analyst's own quota.
+    RATE_LIMIT_ASSISTANT: str = "40/60"
+
+    # SENTINEL voice assistant (routers/assistant.py).
+    ASSISTANT_ENABLED: bool = True
+    ASSISTANT_MAX_QUERY_CHARS: int = 280
+    # Let the LLM phrase answers the deterministic intent layer could not match.
+    # It is given aggregate counts only — never crawled post text — because post
+    # text is authored by the accounts under investigation and would otherwise
+    # be a prompt-injection channel straight into the officer's assistant.
+    ASSISTANT_LLM_FALLBACK: bool = True
 
     NLP_MODE: str = "full"  # full | lite
     ALERT_THRESHOLD: int = 65
@@ -252,5 +321,20 @@ if "*" in settings.CORS_ORIGINS:
         "site an officer visits drive this API as them. List the dashboard "
         "origins explicitly, e.g. CORS_ORIGINS=[\"https://sentinel.gujarat.gov.in\"]."
     )
+
+# A wildcard Host is tolerable while this is a demo against simulated data; on
+# a real deployment it re-opens Host-header injection, so it is refused there.
+if "*" in settings.ALLOWED_HOSTS and not settings.SIMULATION_ENABLED:
+    raise RuntimeError(
+        "ALLOWED_HOSTS contains '*' on a live deployment. Name the hostnames "
+        "this API is reached by, e.g. ALLOWED_HOSTS=[\"sentinel.gujarat.gov.in\"]."
+    )
+
+# The origins the dashboard is served from are, by definition, hosts this API is
+# addressed as in a same-host deployment. Folding them in keeps one list to edit.
+for _origin in settings.CORS_ORIGINS:
+    _host = _origin.split("://")[-1].split("/")[0].split(":")[0]
+    if _host and _host not in settings.ALLOWED_HOSTS:
+        settings.ALLOWED_HOSTS.append(_host)
 
 THREAT_LABELS = ["Incitement to Violence", "Inflammatory", "Fake News", "Neutral"]

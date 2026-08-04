@@ -521,6 +521,93 @@ export interface Dossier {
   cross_platform?: UsernameReport;
 }
 
+// ── Administration ─────────────────────────────────────────────────────
+
+/** An officer account as the server is willing to describe it. Note what is
+ *  absent: password_hash and token_version never leave the backend. */
+export interface Officer {
+  id: string;
+  username: string;
+  full_name: string;
+  badge_number: string;
+  unit: string;
+  role: "analyst" | "supervisor" | "admin";
+  active: boolean;
+  must_change_password: boolean;
+  last_login_at: string | null;
+  created_at: string;
+}
+
+export interface AuditEntry {
+  id: string;
+  action: string;
+  target_id: string;
+  actor_id: string;
+  actor_username: string;
+  actor_role: string;
+  actor_badge: string;
+  ip: string;
+  user_agent: string;
+  details: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface PostureCheck {
+  key: string;
+  ok: boolean;
+  severity: "critical" | "high" | "medium" | "info";
+  title: string;
+  detail: string;
+}
+
+export interface SecurityPosture {
+  checks: PostureCheck[];
+  failing: number;
+  accounts: {
+    total: number;
+    active: number;
+    admins: number;
+    pending_password_change: string[];
+    locked_out: string[];
+  };
+}
+
+export interface NewOfficer {
+  username: string;
+  password: string;
+  full_name?: string;
+  badge_number?: string;
+  unit?: string;
+  role?: string;
+}
+
+// ── Sentinel voice assistant ───────────────────────────────────────────
+
+export interface AssistantAnswer {
+  intent: string;
+  /** Shown in the panel. */
+  reply: string;
+  /** Read aloud — deliberately separate from `reply`, which may carry detail
+   *  that is fine on screen but tedious in audio. */
+  speech: string;
+  /** In-app path the answer wants to open. Only ever set by the backend's
+   *  deterministic layer, never by the LLM — see routers/assistant.py. */
+  navigate: string | null;
+  data: Record<string, unknown>;
+  source: "rules" | "llm" | "refusal";
+}
+
+export interface AssistantCapabilities {
+  enabled: boolean;
+  name: string;
+  wake_words: string[];
+  read_only: boolean;
+  capabilities: { intent: string; description: string }[];
+  refuses: string[];
+  cities: string[];
+  examples: string[];
+}
+
 // ── HTTP helpers ───────────────────────────────────────────────────────
 
 /** Raised on 401 so callers can distinguish "signed out" from a real failure. */
@@ -674,6 +761,30 @@ export const api = {
   retrainBaseline: () => http<{ started: boolean }>("/api/admin/retrain-baseline", { method: "POST" }),
   retrainStatus: () =>
     http<{ state: "idle" | "running" | "done" | "failed"; elapsed_seconds?: number; exit_code?: number }>("/api/admin/retrain-baseline/status"),
+
+  // ── officer administration (admin only, enforced server-side) ──────────
+  officers: () => http<Officer[]>("/api/auth/users"),
+  createOfficer: (body: NewOfficer) =>
+    http<Officer>("/api/auth/users", { method: "POST", body: JSON.stringify(body) }),
+  updateOfficer: (id: string, body: Partial<Pick<Officer, "full_name" | "badge_number" | "unit" | "role" | "active">>) =>
+    http<Officer>(`/api/auth/users/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  resetOfficerPassword: (id: string, newPassword: string) =>
+    http<{ ok: boolean }>(`/api/auth/users/${id}/reset-password`, {
+      method: "POST",
+      body: JSON.stringify({ new_password: newPassword }),
+    }),
+  deactivateOfficer: (id: string) => http<void>(`/api/auth/users/${id}`, { method: "DELETE" }),
+  auditLog: (params: { limit?: number; action?: string; actor?: string } = {}) =>
+    http<AuditEntry[]>(`/api/auth/audit${qs(params)}`),
+  securityPosture: () => http<SecurityPosture>("/api/auth/security-posture"),
+
+  // ── Sentinel voice assistant ───────────────────────────────────────────
+  assistantCapabilities: () => http<AssistantCapabilities>("/api/assistant/capabilities"),
+  ask: (query: string, page = "") =>
+    http<AssistantAnswer>("/api/assistant/ask", {
+      method: "POST",
+      body: JSON.stringify({ query, page }),
+    }),
 
   // ── investigation / OSINT toolkit ──────────────────────────────────────
   investigateImage: (file: File) => {

@@ -38,7 +38,11 @@ def system_status(session: Session = Depends(get_session)) -> dict:
     from app.services.groq_client import status as groq_status
     from app.services.scheduler import scheduler
 
-    db_path = Path(settings.DATABASE_URL.replace("sqlite:///", ""))
+    from app.database import IS_SQLITE
+
+    # Only a file-backed database has a size on disk; on Postgres the number
+    # that matters lives on the server, not here.
+    db_path = Path(settings.DATABASE_URL.replace("sqlite:///", "")) if IS_SQLITE else None
     counts = {
         "posts": session.exec(select(func.count()).select_from(Post)).one(),
         "alerts": session.exec(select(func.count()).select_from(Alert)).one(),
@@ -58,8 +62,10 @@ def system_status(session: Session = Depends(get_session)) -> dict:
         "ingest_interval_seconds": settings.INGEST_INTERVAL_SECONDS,
         "scheduler_running": scheduler.running,
         "database": {
-            "url": settings.DATABASE_URL.split("///")[0] + "///…",
-            "size_mb": round(db_path.stat().st_size / 1e6, 2) if db_path.exists() else None,
+            # Dialect only — the URL carries the Supabase password.
+            "url": "sqlite (local file)" if IS_SQLITE else "postgres (hosted)",
+            "size_mb": (round(db_path.stat().st_size / 1e6, 2)
+                        if db_path and db_path.exists() else None),
             "counts": counts,
             "oldest_post": oldest.isoformat() if oldest else None,
             "newest_post": newest.isoformat() if newest else None,
