@@ -21,14 +21,16 @@ from app.database import init_db, session_scope
 from app.models import WatchlistItem
 from app.routers import (
     admin, alerts, assistant, auth, faces, feed, investigate, network, reports,
-    stats, trends, watchlist, ws,
+    stats, trends, voice, watchlist, ws,
 )
 from app.data.suspect_seed import seed_suspects_if_empty
 from app.security.bootstrap import ensure_admin_exists
 from app.security.deps import password_not_expired, require_admin
 from app.security.ratelimit import default_rate_limit
+from app.services.assistant.sandbox import ensure_views as ensure_assistant_views
 from app.services.ingestion import seed_if_empty
 from app.services.scheduler import start_scheduler, stop_scheduler
+from app.services.voice.transformer.tts import warm_local_voice
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("sentinel")
@@ -82,6 +84,11 @@ def _seed_watchlist() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    # After init_db, because these are views over tables Alembic owns. They are
+    # the assistant's read-only window — see services/assistant/sandbox.py for
+    # why the projection is part of the security boundary rather than a
+    # migration. Failure is logged there and leaves the SQL tool unavailable.
+    ensure_assistant_views()
     ensure_admin_exists()
     _seed_watchlist()
     seed_if_empty()
@@ -89,6 +96,7 @@ async def lifespan(app: FastAPI):
     # accounts that actually exist in the corpus, so they need it populated
     seed_suspects_if_empty()
     start_scheduler()
+    warm_local_voice()
     log.info("SENTINEL online")
     yield
     stop_scheduler()
@@ -200,6 +208,10 @@ app.include_router(assistant.router, prefix="/api", tags=["assistant"], dependen
 # The operations toolkit purges data, exports in bulk and spawns processes.
 app.include_router(admin.router, prefix="/api", tags=["admin"], dependencies=_ADMIN_ONLY)
 app.include_router(ws.router, tags=["websocket"])          # authenticates in-handshake
+# The real-time voice channel. Authenticates in-handshake like /ws/live, and
+# runs every spoken question through the same assistant guard the typed
+# endpoint uses — voice is a transport, not a wider permission.
+app.include_router(voice.router, tags=["voice"])
 
 
 @app.get("/api/health")

@@ -10,6 +10,9 @@ class RawPost(BaseModel):
 
     platform: str
     author_handle: str
+    # Platform-side numeric/opaque account id. Handles get renamed — this does
+    # not — so it is what ties a burner's posts together across a rename.
+    author_id: str = ""
     author_name: str = ""
     author_followers: int = 0
     author_verified: bool = False

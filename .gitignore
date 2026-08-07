@@ -4,12 +4,16 @@ __pycache__/
 venv/
 backend/.env
 backend/sentinel.db
-# Telegram/X login state — these are full account access, same as a password
+# Telegram/X/Instagram login state — these are full account access, same as a password
 backend/*.session
 backend/*.session-journal
 backend/x_cookies.json
+backend/ig_session.json
 backend/reports/*.pdf
 backend/app/ml/models/
+# local neural voice weights (~336 MB) — one command brings them back:
+#   cd backend && python -m app.services.voice.bootstrap
+backend/models/
 backend/app/ml/eval_report.json
 backend/app/ml/sentiment_eval_report.json
 backend/app/ml/baseline_report.json
@@ -17,6 +21,18 @@ backend/app/ml/baseline_report.json
 #   cd backend && python -m app.ml.bootstrap
 backend/app/data/datasets/**
 !backend/app/data/datasets/README.md
+# Third-party projects read while building the voice stack — ~190 MB of other
+# people's repositories, downloaded for reference and vendored into nothing.
+# What was actually taken from them lives in our own files and is credited in
+# their docstrings (pipecat's Kokoro/Piper services, Rapida's streamer, Leon's
+# local-intent-first design). Committing the sources themselves would put their
+# licences and their history into this repo for no benefit.
+agenticSeek-main/
+leon-develop/
+pipecat-main/
+voice-ai-main/
+instagram-user-feed-master/
+
 node_modules/
 frontend/dist/
 frontend/.env.local

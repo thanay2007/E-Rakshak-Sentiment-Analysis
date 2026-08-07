@@ -3,6 +3,7 @@
 Also owns first-boot seeding so a fresh clone shows a fully populated
 dashboard (SEED_HISTORY_HOURS of simulated multilingual history).
 """
+import asyncio
 import hashlib
 import logging
 
@@ -46,7 +47,8 @@ def _make_post(raw: RawPost, nlp: dict, chash: str) -> Post:
     post = Post(
         content_hash=chash,
         platform=raw.platform,
-        author_handle=raw.author_handle, author_name=raw.author_name,
+        author_handle=raw.author_handle, author_id=raw.author_id,
+        author_name=raw.author_name,
         author_followers=raw.author_followers, author_verified=raw.author_verified,
         author_account_age_days=raw.author_account_age_days,
         text=raw.text,
@@ -107,33 +109,24 @@ def _maybe_alert(post: Post) -> Alert | None:
     )
 
 
-async def ingest(raws: list[RawPost]) -> int:
-    """Process a batch of raw posts. Returns number of new posts stored."""
-    if not raws:
-        return 0
-    hashes = {content_hash(r): r for r in raws}  # in-batch dedupe too
-
-    new_posts: list[Post] = []
-    new_alerts: list[Alert] = []
+def _unseen(hashes: dict[str, RawPost]) -> dict[str, RawPost]:
+    """Which of these have we not stored before? One short read."""
     with session_scope() as s:
         existing = set(s.exec(
             select(Post.content_hash).where(Post.content_hash.in_(list(hashes)))
         ).all())
-        fresh = {h: r for h, r in hashes.items() if h not in existing}
-        if not fresh:
-            return 0
+    return {h: r for h, r in hashes.items() if h not in existing}
 
-        fresh_raws = list(fresh.values())
-        enriched = get_pipeline().enrich_batch(fresh_raws)
-        # LLM second opinion on the risky subset BEFORE alerts fire (no-op
-        # without GROQ_API_KEY) — see services/groq_verifier.py
-        from app.services.groq_verifier import translate_enriched, verify_enriched
-        await verify_enriched([r.text for r in fresh_raws], enriched)
-        # English gloss for every non-English post (Groq MT)
-        await translate_enriched([r.text for r in fresh_raws], enriched)
-        # Cross-source corroboration of suspected fake news (Google News RSS)
-        from app.services.fact_check import corroborate_enriched
-        await corroborate_enriched([r.text for r in fresh_raws], enriched)
+
+def _store(fresh: dict[str, RawPost], enriched: list[dict]) -> tuple[list, list]:
+    """Write the batch and return what the websocket should broadcast.
+
+    The dicts are built inside the session on purpose: the objects are detached
+    when it closes, and touching a lazy attribute afterwards raises.
+    """
+    new_posts: list[Post] = []
+    new_alerts: list[Alert] = []
+    with session_scope() as s:
         for (chash, raw), nlp in zip(fresh.items(), enriched):
             post = _make_post(raw, nlp, chash)
             s.add(post)
@@ -147,9 +140,54 @@ async def ingest(raws: list[RawPost]) -> int:
             s.refresh(p)
         for a in new_alerts:
             s.refresh(a)
+        return ([post_to_dict(p, full=True) for p in new_posts],
+                [alert_to_dict(a) for a in new_alerts])
 
-        post_msgs = [post_to_dict(p, full=True) for p in new_posts]
-        alert_msgs = [alert_to_dict(a) for a in new_alerts]
+
+async def ingest(raws: list[RawPost]) -> int:
+    """Process a batch of raw posts. Returns number of new posts stored.
+
+    Two rules shape the structure here, and both were learned from this running
+    against a database in another continent on a four-second timer:
+
+    **Nothing blocking happens on the event loop.** Classification is model
+    inference and the database is a network hop; both used to run inline, so
+    every tick froze the whole API — the scheduler is an `AsyncIOScheduler` and
+    shares its loop with every request FastAPI is serving. Dashboard endpoints
+    that should answer in a few hundred milliseconds took twenty seconds
+    because they spent most of that waiting for this function to yield.
+
+    **A database connection is never held across a network call.** The session
+    used to stay open through three LLM round trips, so a pooled connection was
+    held for seconds per tick against a pool of five. Read, release, enrich,
+    then reopen to write.
+    """
+    if not raws:
+        return 0
+    hashes = {content_hash(r): r for r in raws}  # in-batch dedupe too
+
+    fresh = await asyncio.to_thread(_unseen, hashes)
+    if not fresh:
+        return 0
+
+    fresh_raws = list(fresh.values())
+    texts = [r.text for r in fresh_raws]
+
+    # Model inference: CPU-bound, so off the loop.
+    enriched = await asyncio.to_thread(get_pipeline().enrich_batch, fresh_raws)
+
+    # Network enrichment, with no database connection held.
+    # LLM second opinion on the risky subset BEFORE alerts fire (no-op
+    # without GROQ_API_KEY) — see services/groq_verifier.py
+    from app.services.groq_verifier import translate_enriched, verify_enriched
+    await verify_enriched(texts, enriched)
+    # English gloss for every non-English post (Groq MT)
+    await translate_enriched(texts, enriched)
+    # Cross-source corroboration of suspected fake news (Google News RSS)
+    from app.services.fact_check import corroborate_enriched
+    await corroborate_enriched(texts, enriched)
+
+    post_msgs, alert_msgs = await asyncio.to_thread(_store, fresh, enriched)
 
     for msg in post_msgs:
         await manager.broadcast({"type": "post", "data": msg})

@@ -53,7 +53,15 @@ def detect_emerging(hours: int = 24) -> dict:
     since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=hours)
     with session_scope() as s:
         posts = s.exec(
-            select(Post).where(Post.created_at >= since)
+            # The dozen columns this actually reads, not all thirty-eight.
+            # Six hundred posts × the unread remainder — class probability
+            # vectors, evidence reports, LLM verification blobs — is a lot of
+            # payload to drag across the network to compute a spread score.
+            select(Post.id, Post.platform, Post.author_handle, Post.author_name,
+                   Post.author_followers, Post.author_verified, Post.text,
+                   Post.translation, Post.threat_label, Post.threat_score,
+                   Post.engagement, Post.fact_check, Post.url, Post.created_at)
+            .where(Post.created_at >= since)
             .order_by(Post.threat_score.desc()).limit(MAX_SCAN)
         ).all()
     if not posts:

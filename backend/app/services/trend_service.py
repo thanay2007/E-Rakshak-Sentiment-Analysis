@@ -81,7 +81,17 @@ def _term_stats(posts: list[Post], hours: int, getter, kind: str) -> list[dict]:
 def get_trends(hours: int = 24) -> dict:
     since = _now() - timedelta(hours=hours)
     with session_scope() as s:
-        posts = s.exec(select(Post).where(Post.created_at >= since)).all()
+        # Seven of thirty-eight columns. The rest — post text, its translation,
+        # the class probability vector, evidence reports — are never read here
+        # and every one of them would cross the network from a database that
+        # may be in another region. Rows still support attribute access, so
+        # nothing below changes.
+        posts = s.exec(
+            select(Post.created_at, Post.language, Post.location,
+                   Post.hashtags, Post.keywords, Post.threat_label,
+                   Post.threat_score)
+            .where(Post.created_at >= since)
+        ).all()
 
     lang_counts = Counter(p.language for p in posts)
     total = len(posts) or 1

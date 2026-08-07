@@ -428,10 +428,18 @@ remembers a decorator.
 
 ## 🎙️ Sentinel — the voice assistant
 
-Say **“Hey Sentinel, tell me the trends in Surat”** (or click the orb, bottom
-right, and just talk). It briefs the last 24 hours, reads out critical alerts as
-they arrive, gives per-city threat levels, names the highest-scoring post, breaks
-activity down by platform, and navigates the dashboard.
+Sign in and **just talk** — “tell me the trends in Surat”. There is no wake word
+and nothing to switch on: the channel opens when the dashboard loads, reopens
+itself if it drops, and the orb bottom right is for reading the transcript or
+cutting an answer short. It briefs the last 24 hours, reads out critical alerts
+as they arrive, gives per-city threat levels, names the highest-scoring post,
+breaks activity down by platform, and navigates the dashboard.
+
+Talking over an answer stops it mid-sentence. It does not hear itself: while the
+assistant is audible not one microphone frame is sent, and the browser tells the
+server exactly when its speakers go quiet — which is not when the server
+finished *sending* audio, and mistaking the two is what makes a voice agent
+transcribe its own reply and answer it (`services/voice/state.py`).
 
 A microphone is live in a room full of people and cannot tell who is speaking,
 so the boundary is structural rather than a prompt asking a model to behave
@@ -507,6 +515,55 @@ X_BEARER_TOKEN=...        # X API v2 recent search
 YOUTUBE_API_KEY=...       # YouTube Data API v3
 RSS_FEEDS=https://example.com/feed.xml,...   # local news outlets
 ```
+
+### Instagram without a Meta app review
+
+Instagram business discovery needs a reviewed Meta app, which not every
+deployment has. The **`Instagram (instagrapi)`** adapter is the fallback: it
+drives Instagram's private mobile API with a real account session, and it runs
+only while `IG_ACCESS_TOKEN` is unset — dropping a Graph token into `.env`
+upgrades the source in place, with no duplicate ingestion and nothing else to
+change.
+
+```env
+IG_USERNAME=...          # a dedicated burner account, never a personal one
+IG_PASSWORD=...
+IG_SESSIONID=...         # preferred: the sessionid cookie from a logged-in browser
+```
+
+```bash
+cd backend && python -m app.crawlers.instagrapi_login            # one-time login
+cd backend && python -m app.crawlers.instagrapi_login --verify   # prove it works
+```
+
+The login handshake lives in that command rather than in the crawl loop because
+Instagram answers a fresh login from an unfamiliar IP with a checkpoint, and
+answering one needs a console. The resulting session is saved to
+`backend/ig_session.json` (gitignored — it is full account access) and reused
+unattended afterwards. If Instagram insists on its *native* challenge flow, no
+Python client can clear it: log in once in a normal browser, complete the
+prompt there, and copy that tab's `sessionid` cookie into `IG_SESSIONID` —
+that route skips the login handshake entirely and is the least likely to be
+challenged.
+
+Four things are fetched per cycle, each answering a different question:
+
+| leg | what it reads | why |
+|---|---|---|
+| **posts** | recent media from `IG_SEED_USERNAMES` | what the city is announcing |
+| **hashtags** | media matching watchlist tags | what the city is saying |
+| **users** | media from watchlist `account` rows, plus the real profile behind an author found via a hashtag | a watched handle was otherwise monitored only by accident; hashtag media carries no follower count at all, so a viral stranger was scored as having zero reach |
+| **comments** | the thread under the most-commented media | on a municipal page the caption is a press release and the grievance is thirty comments down |
+
+Every leg is budgeted and rotates: `IG_HASHTAGS_PER_CYCLE`,
+`IG_WATCHED_ACCOUNTS_PER_CYCLE`, `IG_PROFILE_LOOKUPS_PER_CYCLE` and
+`IG_COMMENTS_MAX_MEDIA_PER_CYCLE` cap the private-API calls per cycle, and each
+cycle resumes where the last stopped so the whole watchlist gets covered over
+the day rather than the first few entries every time. Private-API reads get an
+account blocked far faster than Graph calls do, hence the wider
+`IG_MIN_INTERVAL_SECONDS` (default 1800 s) — keep volumes low and leave the
+
+politeness gaps alone.
 
 Restart — each configured adapter activates automatically and its posts flow
 through the identical NLP → scoring → alerting → reporting pipeline. The

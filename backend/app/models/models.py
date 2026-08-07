@@ -19,6 +19,10 @@ class Post(SQLModel, table=True):
     content_hash: str = Field(index=True, unique=True)
     platform: str = Field(index=True)                 # X | Facebook | Instagram | Reddit | Telegram
     author_handle: str = Field(index=True)
+    # Platform-side account id, when the adapter can get one ("" otherwise).
+    # Indexed because the OSINT question is "everything this account posted",
+    # and a handle can be renamed out from under that query while the id cannot.
+    author_id: str = Field(default="", index=True)
     author_name: str = ""
     author_followers: int = 0
     author_verified: bool = False

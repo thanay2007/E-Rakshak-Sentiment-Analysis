@@ -7,15 +7,17 @@ upgrades the source in place, with no duplicate ingestion and nothing else to
 change; pulling the key back out falls straight back to the keyless path.
 
 Reddit and Telegram handle that switch internally (OAuth vs Atom feeds, MTProto
-vs t.me previews), so they appear once. X needs it here, because the official
-v2 adapter and the twikit session-cookie adapter are separate classes that both
-emit platform="X" — running both would ingest every post twice.
+vs t.me previews), so they appear once. X and Instagram need it here, because
+their official adapters (v2 / Graph API) and their session-based fallbacks
+(twikit / instagrapi) are separate classes emitting the same platform name —
+running both would ingest every post twice.
 
 Adding a platform = one new file + one line here.
 """
 from app.crawlers.base import Collector
 from app.crawlers.facebook import FacebookCollector
 from app.crawlers.instagram import InstagramCollector
+from app.crawlers.instagrapi_ig import InstagrapiCollector
 from app.crawlers.reddit import RedditCollector
 from app.crawlers.simulated import SimulatedCollector
 from app.crawlers.telegram import TelegramCollector
@@ -30,7 +32,7 @@ _PLATFORMS: list[tuple[str, list[Collector]]] = [
     ("Telegram", [TelegramCollector()]),
     ("YouTube", [YouTubeCollector()]),
     ("Facebook", [FacebookCollector()]),
-    ("Instagram", [InstagramCollector()]),
+    ("Instagram", [InstagramCollector(), InstagrapiCollector()]),
 ]
 
 # Not a real platform — the demo generator. It only appears at all when
@@ -59,9 +61,15 @@ def platform_status() -> list[dict]:
     rows = []
     for name, adapters in _PLATFORMS:
         c = _preferred(adapters)
+        # An offline platform still has something to say. When no adapter is
+        # usable, the reason comes from whichever one has credentials and
+        # could not use them — that is the row an operator can actually fix,
+        # as opposed to the adapters that were simply never configured.
+        detail = c.status_detail() if c else next(
+            (d for a in adapters if (d := a.status_detail())), "")
         rows.append({"name": name, "online": c is not None,
-                     "adapter": c.name if c else ""})
+                     "adapter": c.name if c else "", "detail": detail})
     if _SIMULATED.is_configured():
         rows.append({"name": _SIMULATED.name, "online": True,
-                     "adapter": _SIMULATED.name})
+                     "adapter": _SIMULATED.name, "detail": ""})
     return rows

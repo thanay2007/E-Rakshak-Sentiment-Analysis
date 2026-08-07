@@ -1,15 +1,21 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  AlertTriangle, Ear, Loader2, Mic, MicOff, ShieldCheck, Volume2, VolumeX, X,
+  AlertTriangle, Database, Loader2, Mic, MicOff, ShieldCheck,
+  Volume2, VolumeX, X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { useLiveAlerts } from "../hooks/useLive";
-import { extractCommand, speechSupport, useListener, useSpeaker } from "../hooks/useSpeech";
+import { useListener, useSpeaker } from "../hooks/useSpeech";
+import { useVoiceSession } from "../hooks/useVoiceSession";
 import { safeInternalPath } from "../lib/safeUrl";
+import { getToken } from "../services/auth";
 import { api } from "../services/api";
-import type { AssistantAnswer, AssistantCapabilities } from "../services/api";
+import type {
+  AssistantAnswer, AssistantCapabilities, AssistantPostRow, AssistantSqlResult,
+  AssistantStep,
+} from "../services/api";
 
 interface Turn {
   id: number;
@@ -17,11 +23,39 @@ interface Turn {
   text: string;
   intent?: string;
   refused?: boolean;
+  /** Which lookups produced this answer — shown so the officer can tell a
+   *  figure that came from the database from one the model phrased. */
+  trace?: AssistantStep[];
+  /** Per-tool detail. Rendered on screen rather than spoken: a post's own
+   *  words belong in front of the officer, not read aloud by the system. */
+  data?: Record<string, unknown>;
 }
 
-const WAKE_KEY = "sentinel.voice.wake";
+/** Tool names are an implementation detail; these are what an officer reads. */
+const TOOL_LABELS: Record<string, string> = {
+  situation_brief: "situation brief",
+  count_posts: "post counts",
+  breakdown: "breakdown",
+  timeseries: "trend over time",
+  trending_hashtags: "trending hashtags",
+  top_posts: "top posts",
+  list_alerts: "alerts",
+  city_comparison: "city comparison",
+  coordination_check: "coordination check",
+  watchlist_status: "watchlist",
+  emerging_claims: "emerging claims",
+  model_status: "model status",
+  explain_project: "documentation",
+  run_sql: "database query",
+  navigate: "navigation",
+};
+
 const READ_KEY = "sentinel.voice.readAlerts";
 const MUTE_KEY = "sentinel.voice.muted";
+/** The one microphone control there is: stand it down for a sensitive
+ *  briefing. Not a wake word and not a mode — the assistant is on by default
+ *  and this is how an officer turns it off, not how they turn it on. */
+const MIC_KEY = "sentinel.voice.microphone";
 
 const flag = (key: string, fallback = false): boolean => {
   const raw = localStorage.getItem(key);
@@ -34,17 +68,17 @@ export default function Sentinel() {
   const navigate = useNavigate();
   const location = useLocation();
   const liveAlerts = useLiveAlerts();
-  const support = useRef(speechSupport()).current;
 
   const [open, setOpen] = useState(false);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [thinking, setThinking] = useState(false);
   const [caps, setCaps] = useState<AssistantCapabilities | null>(null);
 
-  // Wake-word mode is off by default and deliberately so: it holds the
-  // microphone open, and in Chrome that streams audio to Google's speech
-  // service. That is a decision for the officer at the terminal, not a default.
-  const [wake, setWake] = useState(() => flag(WAKE_KEY));
+  // The assistant listens from sign-in. There is no mode to arm and no wake
+  // word to remember: an officer who wants to ask something asks it. The one
+  // control is the opposite of the old one — a way to stand the microphone
+  // *down*, which persists so a terminal left muted stays muted.
+  const [micOn, setMicOn] = useState(() => flag(MIC_KEY, true));
   const [readAlerts, setReadAlerts] = useState(() => flag(READ_KEY, true));
   const [muted, setMuted] = useState(() => flag(MUTE_KEY));
 
@@ -79,6 +113,8 @@ export default function Sentinel() {
           text: answer.reply,
           intent: answer.intent,
           refused: answer.intent === "refused",
+          trace: answer.trace,
+          data: answer.data,
         });
         await say(answer.speech);
         // Navigation targets only ever come from the backend's deterministic
@@ -98,41 +134,57 @@ export default function Sentinel() {
     [location.pathname, navigate, push, say, thinking]
   );
 
-  // ── microphone ───────────────────────────────────────────────────────
-  const handleUtterance = useCallback(
-    (transcript: string) => {
-      if (wake) {
-        // In wake-word mode everything is transcribed but only an utterance
-        // that names Sentinel is acted on — otherwise the assistant answers
-        // half of the room's conversation.
-        const command = extractCommand(transcript);
-        if (command === null) return;
-        if (!command) {
-          void say("Yes?");
-          return;
-        }
-        void ask(command);
-        return;
-      }
-      // Push-to-talk: the click was the wake word. Strip it anyway in case the
-      // officer said it out of habit.
-      void ask(extractCommand(transcript) ?? transcript);
-    },
-    [ask, say, wake]
-  );
-
-  const { listening, interim, error, start, stop, clearError } = useListener({
-    onUtterance: handleUtterance,
-    continuous: wake,
-    paused: speaking,
+  // ── the live channel ─────────────────────────────────────────────────
+  // Always on. `Sentinel` renders inside the authenticated shell, so mounting
+  // *is* signing in — the session opens here and reopens itself if it drops.
+  // Its turns are mirrored into the same transcript as the typed path so the
+  // panel renders one conversation rather than two.
+  const mirrored = useRef(new Set<string>());
+  const token = getToken() ?? "";
+  const voice = useVoiceSession({
+    token,
+    page: location.pathname,
+    enabled: micOn && Boolean(token),
+    muted,
+    onNavigate: (path) => navigate(safeInternalPath(path, "/app")),
+    speakLocally: say,
+    cancelLocalSpeech: cancel,
   });
 
-  // Wake-word mode owns the microphone; push-to-talk opens it per question.
   useEffect(() => {
-    if (wake) start();
+    voice.turns.forEach((turn) => {
+      if (mirrored.current.has(turn.id)) return;
+      mirrored.current.add(turn.id);
+      push({ role: turn.role, text: turn.text, intent: "live" });
+    });
+  }, [voice.turns, push]);
+
+  // ── keyless fallback recogniser ──────────────────────────────────────
+  // Only when the server negotiated `browser` speech-to-text, meaning this
+  // deployment has no recognition key. Otherwise the pipeline owns the
+  // microphone and this stays shut: two recognisers on one microphone means
+  // every question is asked twice.
+  const needsBrowserStt = voice.providers?.stt === "browser";
+
+  const {
+    listening: browserListening, interim: browserInterim, error: browserError,
+    start, stop, clearError,
+  } = useListener({
+    onUtterance: (transcript) => voice.ask(transcript),
+    continuous: true,
+    paused: speaking || voice.speaking || !needsBrowserStt,
+  });
+
+  useEffect(() => {
+    if (needsBrowserStt && micOn) start();
     else stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wake]);
+  }, [needsBrowserStt, micOn]);
+
+  const listening =
+    micOn && (needsBrowserStt ? browserListening : voice.connected && !voice.speaking);
+  const interim = voice.interim || browserInterim;
+  const error = voice.error ?? browserError;
 
   const persist = (key: string, value: boolean) =>
     localStorage.setItem(key, value ? "1" : "0");
@@ -175,27 +227,58 @@ export default function Sentinel() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [turns, thinking]);
 
-  /** One button, one meaning: open up and start talking; press again to stop.
-   *
-   *  In wake-word mode the microphone is not this button's to close — killing
-   *  the session directly would leave the "Hey Sentinel" toggle showing on
-   *  while nothing was listening. Flip the mode instead, and the effect that
-   *  owns the microphone follows.
-   */
-  const toggleMic = () => {
+  /** The orb. The microphone is already open, so this cannot mean "start
+   *  listening" — it means the two things an officer actually wants mid-answer:
+   *  stop talking, or show me the transcript. */
+  const orbClick = () => {
     clearError();
-    setOpen(true);
-    if (!support.listen) return;
-    if (wake) {
-      setWake(false);
-      persist(WAKE_KEY, false);
+    voice.clearError();
+    if (voice.speaking) {
+      voice.interrupt();
       return;
     }
-    if (listening) stop();
-    else start();
+    setOpen((current) => !current);
   };
 
-  const busy = thinking || speaking;
+  // One entry point for a typed question, so the input does not have to know
+  // which transport is carrying it. The channel is preferred when it is up,
+  // because a question asked there is spoken back; the HTTP endpoint is what
+  // answers while it is reconnecting.
+  const submit = useCallback(
+    (text: string) => {
+      setOpen(true);
+      if (voice.connected) voice.ask(text);
+      else void ask(text);
+    },
+    [ask, voice]
+  );
+
+  const busy = thinking || speaking || voice.state === "thinking";
+
+  /** One line describing what the assistant is doing, in the officer's terms
+   *  rather than the pipeline's. "Standing by" and not "connected", because
+   *  the interesting question is whether it is listening. */
+  const status = !micOn
+    ? "microphone off"
+    : voice.micBlocked
+      ? "microphone blocked — typing still works"
+      : voice.needsGesture
+        ? "click anywhere to enable audio"
+        : voice.speaking || speaking
+          ? "speaking — talk over me to interrupt"
+          : busy
+            ? "checking…"
+            : voice.connected
+              // The microphone being open is not the same as the console
+              // being addressed. An officer who is not told the difference
+              // reads a filtered utterance as a broken microphone — so the
+              // line says which of the two states it is actually in.
+              ? voice.wake.required && !voice.wake.listening
+                ? "say “Sentinel” to ask"
+                : `listening${voice.providers?.stt ? ` · ${voice.providers.stt}` : ""}`
+              : needsBrowserStt && browserListening
+                ? "listening"
+                : "connecting…";
 
   return (
     <>
@@ -220,17 +303,7 @@ export default function Sentinel() {
               </span>
               <div className="min-w-0 flex-1">
                 <div className="text-xs font-bold tracking-wide text-slate-100">SENTINEL</div>
-                <div className="text-[10px] text-slate-500">
-                  {listening
-                    ? wake
-                      ? "listening for “Hey Sentinel”"
-                      : "listening…"
-                    : speaking
-                      ? "speaking…"
-                      : thinking
-                        ? "checking…"
-                        : "read-only assistant"}
-                </div>
+                <div className="text-[10px] text-slate-500">{status}</div>
               </div>
 
               <button
@@ -262,21 +335,23 @@ export default function Sentinel() {
               {turns.length === 0 && (
                 <div className="space-y-3">
                   <p className="text-[11px] leading-relaxed text-slate-500">
-                    Ask me about what’s being monitored. I read the live picture
-                    and open pages — I can’t change, action or export anything,
-                    and I won’t discuss accounts, credentials, the audit trail or
-                    biometrics over a microphone.
+                    Ask me anything about what’s being monitored, or about how
+                    SENTINEL itself works. I query the live data
+                    {caps?.sql_enabled ? " directly" : ""} and answer from the
+                    product’s own documentation — I can’t change, action or
+                    export anything, and I won’t discuss accounts, credentials,
+                    the audit trail or biometrics over a microphone.
                   </p>
                   <div className="flex flex-wrap gap-1.5">
                     {(caps?.examples ?? [
                       "Brief me",
-                      "Trends in Surat",
+                      "How is the threat score calculated?",
+                      "Which city is worst this week?",
                       "Any critical alerts?",
-                      "Highest threat post today",
                     ]).map((example) => (
                       <button
                         key={example}
-                        onClick={() => void ask(example)}
+                        onClick={() => submit(example)}
                         className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 text-[10px] text-slate-400 hover:border-accent/30 hover:text-accent"
                       >
                         {example}
@@ -287,23 +362,26 @@ export default function Sentinel() {
               )}
 
               {turns.map((turn) => (
-                <div
-                  key={turn.id}
-                  className={turn.role === "officer" ? "flex justify-end" : "flex justify-start"}
-                >
+                <div key={turn.id} className="space-y-1.5">
                   <div
-                    className={`max-w-[85%] rounded-xl px-3 py-2 text-[11px] leading-relaxed ${
-                      turn.role === "officer"
-                        ? "border border-white/[0.08] bg-white/[0.05] text-slate-300"
-                        : turn.refused
-                          ? "border border-amber-500/25 bg-amber-500/10 text-amber-200"
-                          : turn.intent === "alert"
-                            ? "border border-red-500/25 bg-red-500/10 text-red-200"
-                            : "border border-accent/20 bg-accent/[0.07] text-slate-200"
-                    }`}
+                    className={turn.role === "officer" ? "flex justify-end" : "flex justify-start"}
                   >
-                    {turn.text}
+                    <div
+                      className={`max-w-[85%] rounded-xl px-3 py-2 text-[11px] leading-relaxed ${
+                        turn.role === "officer"
+                          ? "border border-white/[0.08] bg-white/[0.05] text-slate-300"
+                          : turn.refused
+                            ? "border border-amber-500/25 bg-amber-500/10 text-amber-200"
+                            : turn.intent === "alert"
+                              ? "border border-red-500/25 bg-red-500/10 text-red-200"
+                              : "border border-accent/20 bg-accent/[0.07] text-slate-200"
+                      }`}
+                    >
+                      {turn.text}
+                    </div>
                   </div>
+                  {turn.role === "sentinel" && <Working trace={turn.trace} />}
+                  {turn.role === "sentinel" && <Evidence data={turn.data} />}
                 </div>
               ))}
 
@@ -318,7 +396,7 @@ export default function Sentinel() {
               {thinking && (
                 <div className="flex items-center gap-2 text-[11px] text-slate-500">
                   <Loader2 size={12} className="animate-spin" />
-                  checking the live picture…
+                  querying the live picture…
                 </div>
               )}
 
@@ -332,22 +410,18 @@ export default function Sentinel() {
 
             {/* controls */}
             <div className="space-y-2.5 border-t border-white/[0.06] px-4 py-3">
-              <TypedAsk onAsk={ask} disabled={busy} />
+              <TypedAsk onAsk={submit} disabled={busy} />
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                 <Toggle
-                  on={wake}
-                  disabled={!support.listen}
+                  on={micOn}
                   onChange={(v) => {
-                    setWake(v);
-                    persist(WAKE_KEY, v);
+                    setMicOn(v);
+                    persist(MIC_KEY, v);
+                    if (!v) cancel();
                   }}
-                  icon={Ear}
-                  label="“Hey Sentinel”"
-                  title={
-                    support.listen
-                      ? "Keeps the microphone open. In Chrome, audio is sent to Google’s speech service."
-                      : "This browser has no speech recognition."
-                  }
+                  icon={micOn ? Mic : MicOff}
+                  label="Microphone"
+                  title="Sentinel listens from sign-in but only answers when addressed by name. Turn this off to stand the microphone down for a sensitive briefing — it stays off on this terminal until turned back on."
                 />
                 <Toggle
                   on={readAlerts}
@@ -360,46 +434,180 @@ export default function Sentinel() {
                   title="Speak new critical alerts as they arrive."
                 />
               </div>
-              {wake && (
-                <p className="text-[9px] leading-relaxed text-slate-600">
-                  Microphone open. Chrome and Edge process speech in the cloud,
-                  not on this machine — turn this off for sensitive briefings.
-                </p>
-              )}
+              <p className="text-[9px] leading-relaxed text-slate-600">
+                {micOn
+                  ? voice.micBlocked
+                    ? voice.micBlocked
+                    : needsBrowserStt
+                    ? "Listening. This deployment has no recognition key, so speech is transcribed by the browser — Chrome and Edge do that in the cloud, not on this machine."
+                    : voice.wake.required
+                    ? "Say “Sentinel” and then your question — follow-ups need no name for a few seconds after an answer, so the rest of the room's conversation is ignored. Speech is recognised on the SENTINEL server and never sent to a browser vendor. Talk over an answer to interrupt it."
+                    : "Listening. Speech is recognised on the SENTINEL server and never sent to a browser vendor. Talk over an answer to interrupt it."
+                  : "The microphone is off. Typed questions still work."}
+              </p>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* the orb */}
+      {/* the orb — it reports, it does not arm. The microphone is already on. */}
       <button
-        onClick={toggleMic}
-        aria-label={listening ? "Stop listening" : "Ask Sentinel"}
+        onClick={orbClick}
+        aria-label={
+          voice.speaking ? "Stop Sentinel speaking" : open ? "Hide Sentinel" : "Show Sentinel"
+        }
         title={
-          support.listen
-            ? "Ask Sentinel — click to talk, click again to stop"
-            : "Ask Sentinel (typing only — this browser has no speech recognition)"
+          voice.speaking
+            ? "Speaking — click to stop, or just talk over it"
+            : micOn
+              ? "Sentinel is listening. Click to show the transcript."
+              : "Microphone off — click to open and turn it back on"
         }
         className={`glow-accent fixed bottom-5 right-5 z-40 grid h-14 w-14 place-items-center rounded-full border transition-all duration-300 ${
-          listening
-            ? "border-red-400/50 bg-red-500/20 text-red-300"
-            : "border-accent/50 bg-accent/15 text-accent hover:bg-accent hover:text-base-900"
+          voice.speaking
+            ? "border-sky-400/50 bg-sky-500/20 text-sky-300"
+            : listening
+              ? "border-red-400/50 bg-red-500/20 text-red-300"
+              : "border-accent/50 bg-accent/15 text-accent hover:bg-accent hover:text-base-900"
         }`}
       >
+        {/* The ring tracks the microphone rather than pulsing on a timer: an
+            always-open microphone should look like one, and an officer can see
+            at a glance that it is hearing them. */}
         {listening && (
-          <span className="absolute inset-0 animate-ping rounded-full border border-red-400/40" />
+          <span
+            className="absolute inset-0 rounded-full border border-red-400/40 transition-transform duration-100"
+            style={{ transform: `scale(${1 + Math.min(voice.level * 4, 0.45)})` }}
+          />
         )}
-        {thinking ? (
+        {voice.speaking && (
+          <span className="absolute inset-0 animate-ping rounded-full border border-sky-400/40" />
+        )}
+        {thinking || voice.state === "thinking" ? (
           <Loader2 size={20} className="animate-spin" />
+        ) : !micOn ? (
+          <MicOff size={20} />
         ) : listening ? (
           <Mic size={20} />
-        ) : support.listen ? (
-          <ShieldCheck size={20} />
         ) : (
-          <MicOff size={20} />
+          <ShieldCheck size={20} />
         )}
       </button>
     </>
+  );
+}
+
+/** What the assistant looked at, in the order it looked.
+ *
+ *  Present for a reason beyond decoration: it is how an officer distinguishes
+ *  a number that came out of the database from a sentence the model phrased.
+ *  An answer with no chips beneath it was not grounded in a lookup, and should
+ *  be read as such.
+ */
+function Working({ trace }: { trace?: AssistantStep[] }) {
+  if (!trace?.length) return null;
+  const seen = new Set<string>();
+  const unique = trace.filter((s) => !seen.has(s.tool) && seen.add(s.tool));
+  return (
+    <div className="flex flex-wrap items-center gap-1 pl-0.5">
+      <span className="text-[9px] uppercase tracking-wide text-slate-600">checked</span>
+      {unique.map((step) => (
+        <span
+          key={step.tool}
+          title={JSON.stringify(step.arguments)}
+          className="rounded-md border border-white/[0.07] bg-white/[0.03] px-1.5 py-0.5 text-[9px] text-slate-500"
+        >
+          {TOOL_LABELS[step.tool] ?? step.tool}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** The detail behind an answer, shown but never spoken.
+ *
+ *  Two things land here. Post wording, because it is written by the accounts
+ *  under investigation and belongs in front of an officer verbatim rather than
+ *  paraphrased into audio by a model. And the SQL the assistant ran, because a
+ *  figure an officer may act on should be traceable to the query that produced
+ *  it without opening the audit trail.
+ */
+function Evidence({ data }: { data?: Record<string, unknown> }) {
+  if (!data) return null;
+  const posts = (data.top_posts as { posts?: AssistantPostRow[] } | undefined)?.posts;
+  const sql = data.run_sql as AssistantSqlResult | undefined;
+  if (!posts?.length && !sql?.columns?.length) return null;
+
+  return (
+    <div className="space-y-1.5 pl-0.5">
+      {posts?.slice(0, 3).map((post) => (
+        <div
+          key={post.post_id}
+          className="rounded-lg border border-white/[0.07] bg-white/[0.02] px-2.5 py-2"
+        >
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[9px] text-slate-500">
+            <span className="font-semibold text-slate-400">{post.platform}</span>
+            <span>{post.author_handle}</span>
+            {post.location && <span>· {post.location}</span>}
+            <span
+              className={`ml-auto rounded px-1 py-px font-semibold ${
+                post.threat_score >= 74
+                  ? "bg-red-500/15 text-red-300"
+                  : post.threat_score >= 65
+                    ? "bg-amber-500/15 text-amber-300"
+                    : "bg-white/[0.06] text-slate-400"
+              }`}
+            >
+              {Math.round(post.threat_score)} · {post.threat_label}
+            </span>
+          </div>
+          {post.text_excerpt && (
+            <p className="mt-1 text-[10px] leading-relaxed text-slate-400">
+              {post.text_excerpt}
+            </p>
+          )}
+        </div>
+      ))}
+
+      {sql?.columns?.length ? (
+        <details className="rounded-lg border border-white/[0.07] bg-white/[0.02]">
+          <summary className="flex cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-[9px] text-slate-500 hover:text-slate-300">
+            <Database size={10} />
+            {sql.rows.length} row{sql.rows.length === 1 ? "" : "s"} from a read-only
+            query · {sql.elapsed_ms}ms
+          </summary>
+          <div className="max-h-40 overflow-auto border-t border-white/[0.05] px-2.5 py-2">
+            <table className="w-full text-left text-[9px]">
+              <thead>
+                <tr className="text-slate-600">
+                  {sql.columns.map((column) => (
+                    <th key={column} className="pr-3 pb-1 font-semibold">
+                      {column}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="text-slate-400">
+                {sql.rows.slice(0, 20).map((row, i) => (
+                  // eslint-disable-next-line react/no-array-index-key
+                  <tr key={i}>
+                    {row.map((cell, j) => (
+                      // eslint-disable-next-line react/no-array-index-key
+                      <td key={j} className="pr-3 py-px">
+                        {cell === null ? "—" : String(cell)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <pre className="mt-2 whitespace-pre-wrap break-words border-t border-white/[0.05] pt-2 text-[8px] leading-relaxed text-slate-600">
+              {sql.sql}
+            </pre>
+          </div>
+        </details>
+      ) : null}
+    </div>
   );
 }
 
@@ -424,7 +632,7 @@ function TypedAsk({
       <input
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        maxLength={280}
+        maxLength={600}
         placeholder="or type a question…"
         aria-label="Ask Sentinel"
         className="w-full rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-[11px] text-slate-100 placeholder-slate-600 outline-none focus:border-accent/50"
@@ -450,7 +658,7 @@ function Toggle({
 }: {
   on: boolean;
   onChange: (v: boolean) => void;
-  icon: typeof Ear;
+  icon: typeof Mic;
   label: string;
   title: string;
   disabled?: boolean;

@@ -137,7 +137,17 @@ def _score_cluster(group: list[Post]) -> tuple[float, list[str]]:
 def get_network(hours: int = 24, platform: str = "") -> dict:
     since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=hours)
     with session_scope() as s:
-        all_posts = s.exec(select(Post).where(Post.created_at >= since)).all()
+        # Nine of thirty-eight columns — what clustering and scoring read, and
+        # nothing else. This is the widest window in the product (it can be
+        # asked for a week), so it is also where fetching whole rows from a
+        # remote database costs the most.
+        all_posts = s.exec(
+            select(Post.platform, Post.author_handle, Post.author_name,
+                   Post.author_followers, Post.author_account_age_days,
+                   Post.text, Post.hashtags, Post.threat_label,
+                   Post.threat_score, Post.created_at)
+            .where(Post.created_at >= since)
+        ).all()
     # tab badges always reflect the whole window; the graph uses the active filter
     platform_counts = dict(Counter(p.platform for p in all_posts))
     posts = [p for p in all_posts if not platform or p.platform == platform]
