@@ -1,5 +1,18 @@
 /** Web Speech API wrappers for the Sentinel assistant.
  *
+ *  Two halves, and they are used in quite different circumstances.
+ *
+ *  **`useSpeaker` is the assistant's voice** whenever no server-side
+ *  synthesiser is configured. Which voice it finds is the difference between
+ *  an assistant that sounds like a product and one that sounds like a 2013
+ *  screen reader, so `pickVoice` ranks rather than takes the first match.
+ *
+ *  **`useListener` is a fallback recogniser**, used only when the server
+ *  negotiated `browser` speech-to-text — that is, when the deployment has no
+ *  recognition key at all. Normally the microphone belongs to the live
+ *  pipeline in `useVoiceSession` and this stays closed; running both is two
+ *  recognisers on one microphone, and every question gets asked twice.
+ *
  *  Two things in here are not obvious and both are load-bearing:
  *
  *  1. **The assistant must not hear itself.** Speech synthesis comes out of the
@@ -9,14 +22,14 @@
  *     high for the whole duration of an utterance.
  *
  *  2. **Continuous recognition is not continuous.** Chrome ends a session after
- *     a stretch of silence and fires `onend` with no error, so wake-word mode
- *     has to restart it — but only when it was not stopped deliberately, or
- *     turning the microphone off would immediately turn it back on.
+ *     a stretch of silence and fires `onend` with no error, so it has to be
+ *     restarted — but only when it was not stopped deliberately, or turning the
+ *     microphone off would immediately turn it back on.
  *
  *  Privacy, stated plainly because this ships to a police deployment: in
- *  Chrome and Edge this API streams audio to the browser vendor's speech
- *  service. It is not local. That is why wake-word mode is opt-in, off by
- *  default, and announced in the UI rather than buried here.
+ *  Chrome and Edge the recognition API streams audio to the browser vendor's
+ *  speech service. It is not local, which is a further reason it is only the
+ *  keyless fallback.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -78,25 +91,71 @@ export function speechSupport(): { listen: boolean; speak: boolean } {
 
 // ── speaking ───────────────────────────────────────────────────────────
 
-const VOICE_PREFERENCE = [
-  // Indian English first: the content is Indian place names and handles, and a
-  // en-IN voice pronounces "Vadodara" and "Rajkot" correctly where en-US does not.
-  /en[-_]IN/i,
-  /en[-_]GB/i,
-  /en[-_]/i,
-];
+/** Choosing the voice, in the order the qualities actually matter.
+ *
+ *  The installed set is wildly uneven — Edge on Windows exposes Microsoft's
+ *  neural voices, which are the same engine a paid speech API sells; Chrome on
+ *  the same machine exposes local SAPI voices from 2013 plus a few of Google's
+ *  network ones. Taking `voices[0]`, or the first thing tagged en-IN, is how
+ *  you end up with Microsoft David reading threat assessments.
+ *
+ *  So rank rather than filter, and rank on three things in this order:
+ *
+ *  1. **Neural.** "Natural"/"Online" in the name marks Microsoft's neural
+ *     voices; Google's network voices are the next tier. The gap between a
+ *     neural voice and a concatenative one is not subtle.
+ *  2. **Female**, because that is what this deployment asked for, and named
+ *     explicitly since the API exposes no gender field — only a name.
+ *  3. **Indian or British English**, because the content is Gujarati place
+ *     names and handles: en-IN says "Vadodara" and "Rajkot" correctly, en-US
+ *     does not.
+ */
+const NEURAL_MARKERS = /natural|online|neural/i;
+const GOOGLE_NETWORK = /^google/i;
+const FEMALE_NAMES =
+  /aria|ava|emma|jenny|michelle|sonia|libby|maisie|neerja|kavya|ananya|swara|zira|heera|female|samantha|karen|moira|tessa|fiona|serena|allison|susan|nicky|joanna|salli|kimberly/i;
+const MALE_NAMES = /david|mark|guy|andrew|brian|christopher|eric|roger|steffan|ryan|thomas|george|prabhat|madhur|daniel|alex|fred|male/i;
+
+function scoreVoice(voice: SpeechSynthesisVoice): number {
+  let score = 0;
+  const name = voice.name;
+
+  if (NEURAL_MARKERS.test(name)) score += 100;
+  else if (GOOGLE_NETWORK.test(name)) score += 60;
+
+  if (FEMALE_NAMES.test(name)) score += 40;
+  if (MALE_NAMES.test(name)) score -= 60;
+
+  if (/en[-_]IN/i.test(voice.lang)) score += 20;
+  else if (/en[-_]GB/i.test(voice.lang)) score += 12;
+  else if (/en[-_]AU/i.test(voice.lang)) score += 8;
+  else if (/^en/i.test(voice.lang)) score += 6;
+  else score -= 40;                 // a non-English voice reading English is unusable
+
+  // A tie between an equal local and remote voice goes to the local one: it
+  // starts instantly and the text never leaves the machine.
+  if (voice.localService) score += 2;
+  return score;
+}
 
 function pickVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
-  for (const pattern of VOICE_PREFERENCE) {
-    const hit = voices.find((v) => pattern.test(v.lang));
-    if (hit) return hit;
-  }
-  return voices[0] ?? null;
+  if (!voices.length) return null;
+  return voices
+    .slice()
+    .sort((a, b) => scoreVoice(b) - scoreVoice(a))[0] ?? null;
 }
 
 export function useSpeaker() {
   const [speaking, setSpeaking] = useState(false);
   const voiceRef = useRef<SpeechSynthesisVoice | null>(null);
+  /** Utterances started and not yet finished. A reply arrives as a stream of
+   *  sentences, so several are in flight at once and "am I still speaking" is
+   *  a count, not a flag — the microphone gate downstream depends on getting
+   *  this exactly right. */
+  const outstanding = useRef(0);
+  /** Bumped by `cancel`, so an utterance that ends after being cancelled
+   *  cannot resolve into the state of the reply that replaced it. */
+  const generation = useRef(0);
 
   useEffect(() => {
     if (!("speechSynthesis" in window)) return;
@@ -111,6 +170,8 @@ export function useSpeaker() {
 
   const cancel = useCallback(() => {
     if (!("speechSynthesis" in window)) return;
+    generation.current += 1;
+    outstanding.current = 0;
     window.speechSynthesis.cancel();
     setSpeaking(false);
   }, []);
@@ -122,32 +183,39 @@ export function useSpeaker() {
           resolve();
           return;
         }
-        // Cancel anything queued: a burst of alerts should read the newest, not
-        // narrate a backlog the officer has already dealt with.
-        window.speechSynthesis.cancel();
+        // Queued, not cancelled. A reply is delivered a sentence at a time as
+        // the model produces it, and cancelling on each one would leave the
+        // officer hearing only the last sentence of every answer.
+        const mine = generation.current;
 
         const utterance = new SpeechSynthesisUtterance(text);
         if (voiceRef.current) utterance.voice = voiceRef.current;
-        utterance.rate = 1.05;
-        utterance.pitch = 1;
+        // Slightly under conversational pace and a touch low: this reads out
+        // threat scores and place names, and both survive being read calmly.
+        utterance.rate = 1.0;
+        utterance.pitch = 0.95;
 
         let settled = false;
         const finish = () => {
           if (settled) return;
           settled = true;
-          setSpeaking(false);
+          if (mine === generation.current) {
+            outstanding.current = Math.max(0, outstanding.current - 1);
+            if (outstanding.current === 0) setSpeaking(false);
+          }
           resolve();
         };
         utterance.onend = finish;
         utterance.onerror = finish;
 
+        outstanding.current += 1;
         setSpeaking(true);
         window.speechSynthesis.speak(utterance);
 
         // Chrome drops long utterances silently and never fires onend, which
-        // would leave the listener paused forever. Release on a generous
+        // would leave the microphone gated forever. Release on a generous
         // estimate of the reading time as a backstop.
-        window.setTimeout(finish, 2000 + text.length * 90);
+        window.setTimeout(finish, 2500 + text.length * 90);
       }),
     []
   );
@@ -324,16 +392,7 @@ export function useListener({ onUtterance, continuous, paused, lang = "en-IN" }:
   return { listening, interim, error, start, stop, clearError: () => setError(null) };
 }
 
-/** Strip a leading wake word and return the command, or null if none was said.
- *
- *  Matched loosely on purpose: "sentinel" is not a word dictation engines
- *  expect, and they routinely return "sentinal", "central" or "sentinelle".
- *  Being strict here means the assistant simply never answers.
- */
-const WAKE = /\b(hey|hi|ok|okay|hello)?\s*(sentinel|sentinal|sentinelle|centinel|sentinels|central)\b[\s,.!?-]*/i;
-
-export function extractCommand(transcript: string): string | null {
-  const match = WAKE.exec(transcript);
-  if (!match) return null;
-  return transcript.slice(match.index + match[0].length).trim();
-}
+/* A wake word used to live here. It is gone with the toggle that armed it:
+ * the assistant now listens from sign-in, and requiring an officer to say
+ * "Hey Sentinel" before every question was friction in exchange for nothing —
+ * the same microphone was open either way. */

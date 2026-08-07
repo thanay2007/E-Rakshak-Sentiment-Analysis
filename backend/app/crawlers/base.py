@@ -23,3 +23,15 @@ class Collector(ABC):
     @abstractmethod
     async def collect(self, watch_terms: list[str]) -> list[RawPost]:
         """Fetch new items matching the watchlist terms."""
+
+    def status_detail(self) -> str:
+        """Why this adapter is not usable right now, in words an operator can
+        act on — empty when there is nothing to say.
+
+        `is_configured()` answers yes/no and that is all the scheduler needs,
+        but "Instagram: offline" with no reason is indistinguishable from
+        "Instagram: never set up", and the two have completely different
+        fixes. Adapters that can fail *after* being configured (an expired
+        session, a revoked token) should say so here.
+        """
+        return ""

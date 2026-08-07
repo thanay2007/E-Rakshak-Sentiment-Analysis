@@ -114,14 +114,116 @@ class Settings(BaseSettings):
     # requests, and that must not consume the analyst's own quota.
     RATE_LIMIT_ASSISTANT: str = "40/60"
 
-    # SENTINEL voice assistant (routers/assistant.py).
+    # SENTINEL voice assistant (services/assistant/).
     ASSISTANT_ENABLED: bool = True
-    ASSISTANT_MAX_QUERY_CHARS: int = 280
-    # Let the LLM phrase answers the deterministic intent layer could not match.
-    # It is given aggregate counts only — never crawled post text — because post
-    # text is authored by the accounts under investigation and would otherwise
-    # be a prompt-injection channel straight into the officer's assistant.
+    # Generous, because the agent answers real questions and not just commands.
+    # The transcript is still truncated rather than rejected: a dictation engine
+    # that ran on produces a long transcript with a good question at the front.
+    ASSISTANT_MAX_QUERY_CHARS: int = 600
+    # The tool-calling agent, which handles everything the deterministic rules
+    # layer does not recognise. Turning it off leaves those rules working — the
+    # nine common questions keep answering with no model involved at all.
     ASSISTANT_LLM_FALLBACK: bool = True
+    # The read-only SQL window (services/assistant/sandbox.py). Restricted to
+    # three views of structured columns, enforced by the database as well as by
+    # a validator, and it cannot reach post text, accounts, the audit trail or
+    # the registry. Set false to leave the assistant with curated tools only.
+    ASSISTANT_SQL_ENABLED: bool = True
+    ASSISTANT_SQL_MIN_ROLE: str = "analyst"
+
+    # ── real-time voice pipeline (services/voice/) ──────────────────────────
+    # The streaming channel: microphone → denoise → VAD → STT → end-of-speech →
+    # assistant → sentence aggregation → normalisation → TTS. Off does not
+    # remove the assistant, only the live audio channel — the typed endpoint
+    # and the browser's own Web Speech API keep working.
+    VOICE_ENABLED: bool = True
+
+    # Recognition. "browser" needs no key and runs in the client; the rest are
+    # server-side and are tried in fallback order when the chosen one has no
+    # key. Groq Whisper is the default because the key already exists for the
+    # rest of the product and it handles Gujarati and code-mixed speech well.
+    VOICE_STT_PROVIDER: str = "groq_whisper"
+    VOICE_STT_MODEL: str = "whisper-large-v3-turbo"
+    VOICE_STT_LOCAL_MODEL: str = "base"          # openai-whisper size
+    VOICE_STT_TIMEOUT: float = 30.0
+    # "auto" leaves the language unpinned. Pinning to en makes Whisper
+    # transliterate Gujarati into nonsense English rather than transcribing it,
+    # and officers switch language mid-sentence.
+    VOICE_LANGUAGE: str = "auto"
+
+    # Synthesis. "auto" takes the best voice this deployment has a key for —
+    # elevenlabs, then sarvam, then the browser's own — rather than failing
+    # when a named provider has no key. The browser end of that ladder costs
+    # nothing, adds no round trip, and keeps the answer on the machine, which
+    # in a police deployment is an argument in its own right.
+    # Name a provider explicitly to pin it. (Groq's playai-tts was here and is
+    # decommissioned upstream — see services/voice/transformer/tts.py.)
+    VOICE_TTS_PROVIDER: str = "auto"
+    #: Optional voice name/id, in the *pinned* provider's namespace. Ignored
+    #: when the factory falls back, since voice names are not portable.
+    VOICE_TTS_VOICE: str = ""
+    VOICE_TTS_TIMEOUT: float = 30.0
+
+    VOICE_VAD_PROVIDER: str = "energy_vad"       # or silero_vad (needs torch)
+    VOICE_DENOISER: str = "spectral_gate"        # or passthrough
+    # How long a pause means "finished" rather than "thinking". Shortened
+    # automatically after terminal punctuation and lengthened after a trailing
+    # conjunction — see services/voice/end_of_speech.py.
+    VOICE_EOS_SILENCE_SECONDS: float = 1.0
+
+    # Spoken once, on the first connection of a sitting — not on the automatic
+    # reconnects that follow an idle close, or an officer would be greeted
+    # every few minutes for a whole shift.
+    # The microphone is open from sign-in, so with this ON the assistant only
+    # answers speech that names Sentinel — which is what a shared control room
+    # wants, because otherwise it answers the whole room's conversation aloud.
+    #
+    # It defaults OFF regardless, and the reason is worth stating: this changes
+    # the console's most basic behaviour, and when it is on, every utterance
+    # that does not name Sentinel produces *silence*. That is indistinguishable
+    # from a broken microphone to anyone who has not been told, which is
+    # exactly how it was first experienced here. A feature whose failure mode
+    # looks identical to a bug does not belong on by default; a single
+    # operator at a desk gains nothing from it and loses the ability to just
+    # talk. Turn it on for a shared room.
+    VOICE_WAKE_WORD_ENABLED: bool = False
+    # After an answer, the officer is mid-conversation and should not have to
+    # say the name again — "Sentinel, brief me on Surat" / "and Rajkot?" is one
+    # exchange, not two. Speaking again extends the window; silence closes it,
+    # which is exactly when the officer has turned back to the room.
+    VOICE_WAKE_FOLLOW_UP_SECONDS: float = 20.0
+    VOICE_GREETING: str = ("Sentinel online. Say “Sentinel” and then "
+                           "your question whenever you need me.")
+    # A microphone left open is a privacy problem as much as a cost one, so an
+    # unused session closes itself rather than waiting to be remembered. The
+    # browser reconnects transparently, so an officer never sees this happen;
+    # it is longer than it was only because the assistant is now always on and
+    # a five-minute close/reopen cycle was pure churn.
+    VOICE_IDLE_TIMEOUT: float = 900.0
+    VOICE_MAX_SESSION_SECONDS: float = 1800.0
+    VOICE_MAX_CONCURRENT_SESSIONS: int = 8
+
+    # Optional provider keys. Absent means the provider is skipped by the
+    # factory's fallback walk, never an error.
+    SARVAM_API_KEY: str = ""
+    DEEPGRAM_API_KEY: str = ""
+    ELEVENLABS_API_KEY: str = ""
+    ELEVENLABS_VOICE_ID: str = ""
+    ELEVENLABS_MODEL: str = "eleven_turbo_v2_5"
+
+    # Local neural voice (kokoro-onnx). Weights are not shipped and are not
+    # fetched on demand — see app/services/voice/bootstrap.py. Until they are
+    # on disk the provider reports unavailable and the ladder walks past it,
+    # so an unprepared machine still talks, just through the browser.
+    KOKORO_MODEL_DIR: str = str(BASE_DIR / "models" / "kokoro")
+    #: Blank follows the session language: an American voice for English, a
+    #: Hindi one for Hindi or Gujarati. Set it to pin one regardless.
+    KOKORO_VOICE: str = ""
+    # A separately installed Piper HTTP server, e.g.
+    # http://127.0.0.1:5000 — deliberately out-of-process, because piper-tts
+    # is GPL-3.0 and importing it would relicense this backend.
+    PIPER_HTTP_URL: str = ""
+    PIPER_VOICE: str = ""
 
     NLP_MODE: str = "full"  # full | lite
     ALERT_THRESHOLD: int = 65
@@ -184,9 +286,39 @@ class Settings(BaseSettings):
         "openai/gpt-oss-20b",
         "qwen/qwen3.6-27b",
     ]
+    # Models that support function calling, in preference order. The assistant
+    # walks this chain instead of the general one: a model that ignores the
+    # `tools` parameter answers from memory, and an assistant whose safety
+    # rests on "it only sees what tools return" must never do that.
+    GROQ_TOOL_MODELS: list[str] = [
+        "llama-3.3-70b-versatile",
+        "openai/gpt-oss-120b",
+        "llama-3.1-8b-instant",
+    ]
     GROQ_VERIFY_MIN_SCORE: int = 55
     GROQ_MAX_PER_TICK: int = 8
     GROQ_TIMEOUT_SECONDS: int = 20
+
+    # Ollama — a model running on this machine, tried when every Groq model in
+    # the chain has failed, and the only LLM at all when there is no Groq key.
+    # It is what keeps the assistant answering through a drained free tier, a
+    # dropped uplink, or an air-gapped installation, none of which are
+    # hypothetical for a police control room.
+    #
+    # Blank disables it. Point it at a running `ollama serve`, e.g.
+    #   OLLAMA_BASE_URL=http://127.0.0.1:11434
+    OLLAMA_BASE_URL: str = ""
+    OLLAMA_MODEL: str = "llama3.1:8b"
+    # Tool calling is a *separate* switch, and blank by default even when a
+    # model is configured. A local model that accepts the `tools` parameter and
+    # then answers from memory is the one failure this assistant cannot absorb:
+    # its whole safety story is that it only ever sees what a tool returned.
+    # Set this only to a model verified to call tools — llama3.1, qwen2.5 and
+    # mistral-nemo do; most small local models do not.
+    OLLAMA_TOOL_MODEL: str = ""
+    # Local inference on CPU is far slower than Groq. The timeout is generous
+    # because the alternative to a slow answer here is no answer at all.
+    OLLAMA_TIMEOUT_SECONDS: int = 120
 
     # GNews (gnews.io) — richer news corroboration for analyst-triggered
     # fact-checks and evidence dossiers. Free tier: 100 requests/day, so the
@@ -236,7 +368,27 @@ class Settings(BaseSettings):
     # for business_discovery / hashtag search) + seed creator/business handles.
     IG_ACCESS_TOKEN: str = ""
     IG_BUSINESS_ACCOUNT_ID: str = ""
-    IG_SEED_USERNAMES_RAW: list[str] = []
+    # Seed handles, same shape as REDDIT_SUBREDDITS/TELEGRAM_CHANNELS and read
+    # by whichever Instagram adapter is live. Defaulted rather than left empty:
+    # with no seeds the collector silently falls back to watchlist hashtags
+    # only, which looks like "Instagram is configured but returns nothing".
+    # These two are the handles the README documents; add Vadodara/Rajkot
+    # civic pages here as they are verified.
+    # Every handle here was resolved against the live private API before being
+    # added. That check is the whole point of the list: a handle that does not
+    # exist costs a failed lookup every cycle and then silently contributes
+    # nothing, which is indistinguishable from a city simply being quiet.
+    # "suratsmartcity" was exactly that — it had been the documented Surat seed
+    # since the beginning and does not resolve, so Surat had no civic page at
+    # all while appearing configured.
+    IG_SEED_USERNAMES_RAW: list[str] = [
+        "amdavadamc:Ahmedabad",       # Ahmedabad Municipal Corporation — 91k
+        "suratcitypolice:Surat",      # Surat City Police — 443k
+        "vmcvadodara:Vadodara",       # Vadodara Municipal Corporation — 94k
+        # Rajkot still needs a verified handle: the public fallback route was
+        # rate-limited when the others were checked, so no candidate has been
+        # confirmed rather than one having been rejected.
+    ]
 
     @property
     def IG_SEED_USERNAMES(self) -> list[tuple[str, str]]:
@@ -246,6 +398,42 @@ class Settings(BaseSettings):
             if source.strip():
                 out.append((source.strip(), city.strip()))
         return out
+
+    # Instagram via instagrapi (unofficial, no Meta app review) — credentials of
+    # a real IG account (use a dedicated burner). Activates the
+    # "Instagram (instagrapi)" adapter only when no Graph API token is set;
+    # the session persists in backend/ig_session.json. IG_SESSIONID is the
+    # `sessionid` cookie from a logged-in browser and is preferred: it skips the
+    # fresh-login handshake that usually triggers Instagram's checkpoint.
+    IG_SESSIONID: str = ""
+    IG_USERNAME: str = ""
+    IG_PASSWORD: str = ""
+    # Private-API reads get an account blocked far faster than Graph calls, so
+    # this politeness gap is deliberately wider than CRAWL_MIN_INTERVAL_SECONDS.
+    IG_MIN_INTERVAL_SECONDS: int = 1800
+    # Comment threads are where municipal grievances actually live — the caption
+    # is usually a press release. Each media costs one extra private-API call
+    # though, so only the most-commented media of a cycle get one. Set the
+    # media cap to 0 to collect captions only.
+    IG_COMMENTS_MAX_MEDIA_PER_CYCLE: int = 8
+    IG_COMMENTS_PER_MEDIA: int = 20
+    # Hashtag reads per cycle. Instagram throttles these hardest of all, so the
+    # watchlist is walked a slice at a time and the starting point advances
+    # each cycle — every term gets covered, just spread over the day rather
+    # than all at once (the same tactic the YouTube adapter uses for quota).
+    IG_HASHTAGS_PER_CYCLE: int = 3
+    # Accounts on the watchlist (kind="account") read per cycle, same rotation.
+    # These are pulled *in addition to* IG_SEED_USERNAMES: seeds are the civic
+    # pages this deployment always watches, these are the handles an officer
+    # added. 0 disables the leg.
+    IG_WATCHED_ACCOUNTS_PER_CYCLE: int = 4
+    # Author profile lookups per cycle. Media found through a hashtag carries
+    # only a UserShort — no follower count, no reliable verified flag — so a
+    # viral unknown account would be scored as having zero reach. This budget
+    # buys back the real numbers for the highest-engagement authors of the
+    # cycle; results are cached for IG_PROFILE_TTL_HOURS. 0 disables it.
+    IG_PROFILE_LOOKUPS_PER_CYCLE: int = 5
+    IG_PROFILE_TTL_HOURS: int = 24
 
     # Telegram — official MTProto API credentials from my.telegram.org, plus a
     # session string generated once by `python -m app.crawlers.telegram_login`

@@ -18,6 +18,7 @@ from app.database import get_session
 from app.security.deps import require_supervisor
 from app.models import Post, WatchlistItem, User
 from app.schemas import WatchlistCreate, WatchlistUpdate
+from app.services.scheduler import invalidate_watch_terms
 from app.services.serializers import iso
 
 router = APIRouter()
@@ -32,38 +33,63 @@ def _to_dict(w: WatchlistItem) -> dict:
             "active": w.active, "created_at": iso(w.created_at)}
 
 
-def _hit_stats(session: Session, w: WatchlistItem, since: datetime) -> dict:
-    """How often this term actually fired in recent posts."""
+def _match(w: WatchlistItem):
+    """The SQL condition for "this post fired this term"."""
     if w.kind == "account":
         handle = w.value.rstrip("*").lstrip("@").lower()
-        cond = func.lower(Post.author_handle).like(f"{handle}%")
-    elif w.kind == "location":
-        cond = (func.lower(Post.location) == w.value.lower()) | \
+        return func.lower(Post.author_handle).like(f"{handle}%")
+    if w.kind == "location":
+        return (func.lower(Post.location) == w.value.lower()) | \
                func.lower(Post.text).like(f"%{w.value.lower()}%")
-    else:  # keyword | hashtag — hashtags always appear inline in the text
-        needle = f"%{w.value.lower()}%"
-        cond = func.lower(Post.text).like(needle) | \
-               func.lower(Post.translation).like(needle)
-    row = session.exec(
-        select(func.count(), func.max(Post.created_at), func.max(Post.threat_score))
-        .where(Post.created_at >= since).where(cond)
-    ).one()
-    n, last, top = row
-    return {"hits_7d": int(n or 0), "last_hit": iso(last) if last else None,
-            "top_threat": round(float(top), 1) if top else 0.0}
+    # keyword | hashtag — hashtags always appear inline in the text
+    needle = f"%{w.value.lower()}%"
+    return func.lower(Post.text).like(needle) | \
+           func.lower(Post.translation).like(needle)
+
+
+def _hit_stats_bulk(session: Session, items: list[WatchlistItem],
+                    since: datetime) -> dict[int, dict]:
+    """How often each term actually fired, for every term at once.
+
+    One query with a conditional aggregate per term, rather than one query per
+    term. The per-term version was a textbook N+1, and an unusually expensive
+    one: each of those queries is an unindexable `LIKE '%…%'` over the post
+    text, so a desk with thirty watch terms scanned the table thirty times and
+    paid thirty round trips to a database on another continent. Here the scan
+    happens once and every term's counters come back with it.
+    """
+    if not items:
+        return {}
+    columns = []
+    for w in items:
+        cond = _match(w)
+        columns += [func.count().filter(cond),
+                    func.max(Post.created_at).filter(cond),
+                    func.max(Post.threat_score).filter(cond)]
+
+    row = session.exec(select(*columns).where(Post.created_at >= since)).one()
+    # A SQLAlchemy `Row` is tuple-*like* but is not a tuple subclass, so it has
+    # to be converted rather than type-checked. There are always at least three
+    # columns here (one term, three aggregates), so this is never a bare scalar.
+    values = list(row)
+
+    stats: dict[int, dict] = {}
+    for i, w in enumerate(items):
+        n, last, top = values[i * 3:i * 3 + 3]
+        stats[w.id] = {"hits_7d": int(n or 0),
+                       "last_hit": iso(last) if last else None,
+                       "top_threat": round(float(top), 1) if top else 0.0}
+    return stats
 
 
 @router.get("/watchlist")
 def list_items(session: Session = Depends(get_session)) -> list[dict]:
     since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=7)
-    out = []
-    for w in session.exec(
+    items = session.exec(
         select(WatchlistItem).order_by(col(WatchlistItem.created_at).desc())
-    ).all():
-        d = _to_dict(w)
-        d.update(_hit_stats(session, w, since))
-        out.append(d)
-    return out
+    ).all()
+    stats = _hit_stats_bulk(session, list(items), since)
+    return [{**_to_dict(w), **stats.get(w.id, {})} for w in items]
 
 
 @router.post("/watchlist", status_code=201)
@@ -75,6 +101,7 @@ def create_item(item: WatchlistCreate, session: Session = Depends(get_session)) 
     w = WatchlistItem(**item.model_dump())
     session.add(w)
     session.commit()
+    invalidate_watch_terms()
     session.refresh(w)
     return _to_dict(w)
 
@@ -105,6 +132,7 @@ def bulk_create(body: BulkItems, session: Session = Depends(get_session)) -> dic
         session.add(WatchlistItem(**data))
         added += 1
     session.commit()
+    invalidate_watch_terms()
     return {"added": added, "skipped": skipped}
 
 
@@ -132,6 +160,7 @@ def apply_preset(slug: str, session: Session = Depends(get_session)) -> dict:
                                   priority=priority, category=pack["title"]))
         added += 1
     session.commit()
+    invalidate_watch_terms()
     return {"pack": pack["title"], "added": added,
             "skipped": len(pack["items"]) - added}
 
@@ -161,6 +190,7 @@ def update_item(item_id: str, patch: WatchlistUpdate, session: Session = Depends
         setattr(w, k, v)
     session.add(w)
     session.commit()
+    invalidate_watch_terms()
     session.refresh(w)
     return _to_dict(w)
 
@@ -178,3 +208,4 @@ def delete_item(item_id: str, session: Session = Depends(get_session),
     log_action(session, "watchlist_delete", w.id, {"kind": w.kind, "value": w.value})
     session.delete(w)
     session.commit()
+    invalidate_watch_terms()

@@ -28,8 +28,22 @@ def get_stats(session: Session = Depends(get_session)) -> dict:
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     since24 = now - timedelta(hours=24)
     total_posts = session.exec(select(func.count()).select_from(Post)).one()
-    posts24 = session.exec(select(Post).where(Post.created_at >= since24)).all()
-    alerts24 = session.exec(select(Alert).where(Alert.created_at >= since24)).all()
+    # Only the columns the numbers below are made of. `select(Post)` fetches
+    # all thirty-eight, including the post text, its translation, the class
+    # probability vector and any evidence report — none of which this endpoint
+    # reads, and all of which cross the network to a database that is not in
+    # this country. The rows still support attribute access, so everything
+    # downstream is unchanged.
+    posts24 = session.exec(
+        select(Post.created_at, Post.platform, Post.sentiment_label,
+               Post.threat_label, Post.threat_score, Post.cluster_id,
+               Post.true_label)
+        .where(Post.created_at >= since24)
+    ).all()
+    alerts24 = session.exec(
+        select(Alert.created_at, Alert.severity)
+        .where(Alert.created_at >= since24)
+    ).all()
     open_critical = session.exec(
         select(func.count()).select_from(Alert)
         .where(Alert.severity == "critical", Alert.status == "new")

@@ -181,7 +181,10 @@ export interface Stats {
   platform_activity: { platform: string; posts: number; threats: number }[];
   // `adapter` names the route actually in use for that platform — e.g. "X" for
   // the official API vs "X (twikit)" for the session-cookie fallback.
-  platforms: { name: string; online: boolean; adapter?: string }[];
+  // `detail` is why an offline platform is offline, in words an operator can
+  // act on ("session cookie rejected …"). Empty for a platform that was simply
+  // never configured — that one needs credentials, not troubleshooting.
+  platforms: { name: string; online: boolean; adapter?: string; detail?: string }[];
   accuracy: { overall: number | null; per_class: Record<string, number>; sample: number };
   last_updated: string;
 }
@@ -583,6 +586,13 @@ export interface NewOfficer {
 
 // ── Sentinel voice assistant ───────────────────────────────────────────
 
+/** One tool the assistant ran to build its answer. Names and arguments only —
+ *  results arrive separately in `data`, keyed by the same tool name. */
+export interface AssistantStep {
+  tool: string;
+  arguments: Record<string, unknown>;
+}
+
 export interface AssistantAnswer {
   intent: string;
   /** Shown in the panel. */
@@ -591,10 +601,15 @@ export interface AssistantAnswer {
    *  that is fine on screen but tedious in audio. */
   speech: string;
   /** In-app path the answer wants to open. Only ever set by the backend's
-   *  deterministic layer, never by the LLM — see routers/assistant.py. */
+   *  `navigate` tool resolving a fixed label against a fixed table — never
+   *  parsed out of model prose. See services/assistant/agent.py. */
   navigate: string | null;
+  /** Per-tool results for the panel to render. Richer than what the model was
+   *  shown: post wording lives here, and is displayed rather than spoken. */
   data: Record<string, unknown>;
-  source: "rules" | "llm" | "refusal";
+  source: "rules" | "agent" | "refusal" | "unknown";
+  trace: AssistantStep[];
+  model: string | null;
 }
 
 export interface AssistantCapabilities {
@@ -602,10 +617,46 @@ export interface AssistantCapabilities {
   name: string;
   wake_words: string[];
   read_only: boolean;
+  /** The caller's rank. The tool list below is already filtered by it. */
+  role: string;
+  agent_enabled: boolean;
+  sql_enabled: boolean;
   capabilities: { intent: string; description: string }[];
+  tools: { name: string; description: string }[];
+  knowledge_topics: { id: string; title: string }[];
   refuses: string[];
   cities: string[];
   examples: string[];
+}
+
+/** The read-only views the SQL window exposes, served so the limits are
+ *  inspectable without reading the source. */
+export interface AssistantSchema {
+  enabled: boolean;
+  available: boolean;
+  views: string[];
+  schema: string;
+  limits: Record<string, string | number>;
+}
+
+/** Shape of a `run_sql` result inside `AssistantAnswer.data`. */
+export interface AssistantSqlResult {
+  sql: string;
+  columns: string[];
+  rows: (string | number | boolean | null)[][];
+  elapsed_ms: number;
+}
+
+/** Shape of a `top_posts` result inside `AssistantAnswer.data`. */
+export interface AssistantPostRow {
+  post_id: string;
+  platform: string;
+  author_handle: string;
+  threat_label: string;
+  threat_score: number;
+  sentiment_label: string;
+  location: string;
+  text_excerpt?: string;
 }
 
 // ── HTTP helpers ───────────────────────────────────────────────────────
@@ -643,11 +694,37 @@ async function describeError(res: Response, path: string): Promise<string> {
   return `${res.status} ${res.statusText} — ${path}`;
 }
 
+/** How long any single call may hang before it is called a failure.
+ *
+ *  `fetch` has no timeout of its own, and the gap that matters is not a dead
+ *  server — a refused connection fails in milliseconds. It is a server that has
+ *  *bound the port but is not serving yet*: this API loads ~2.5 GB of models
+ *  during startup, so for a minute after launch every request connects
+ *  successfully and then waits forever. The UI has no way to tell that from a
+ *  slow answer, so it sits on "checking…" indefinitely and looks broken.
+ *
+ *  Generous, because the assistant legitimately takes several seconds when the
+ *  model has tools to call — this is a backstop against hanging, not a latency
+ *  budget. */
+const REQUEST_TIMEOUT_MS = 90_000;
+
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: authHeaders({ "Content-Type": "application/json", ...(init?.headers || {}) }),
-  });
+  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      signal: timeout,
+      headers: authHeaders({ "Content-Type": "application/json", ...(init?.headers || {}) }),
+    });
+  } catch (err) {
+    // A timeout and an unreachable server are the same thing to the officer —
+    // nothing came back — but only one of them says so on its own.
+    if (err instanceof DOMException && err.name === "TimeoutError") {
+      throw new Error("The server didn't answer in time. It may still be starting up.");
+    }
+    throw err;
+  }
   if (res.status === 401) {
     onUnauthorized();
     throw new UnauthorizedError(await describeError(res, path));
@@ -780,6 +857,7 @@ export const api = {
 
   // ── Sentinel voice assistant ───────────────────────────────────────────
   assistantCapabilities: () => http<AssistantCapabilities>("/api/assistant/capabilities"),
+  assistantSchema: () => http<AssistantSchema>("/api/assistant/schema"),
   ask: (query: string, page = "") =>
     http<AssistantAnswer>("/api/assistant/ask", {
       method: "POST",
