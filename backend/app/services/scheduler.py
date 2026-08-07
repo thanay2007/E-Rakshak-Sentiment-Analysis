@@ -69,7 +69,7 @@ def start_scheduler() -> None:
                       seconds=settings.INGEST_INTERVAL_SECONDS,
                       next_run_time=datetime.now(timezone.utc) + timedelta(
                           seconds=max(0, settings.SCHEDULER_START_DELAY_SECONDS)),
-                      max_instances=1, coalesce=True)
+                      max_instances=1, coalesce=True, misfire_grace_time=15)
     scheduler.start()
     log.info("Ingestion loop started (every %ss, first run in %ss)",
              settings.INGEST_INTERVAL_SECONDS,

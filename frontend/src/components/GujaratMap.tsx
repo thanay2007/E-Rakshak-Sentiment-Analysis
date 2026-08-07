@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { ExternalLink, MapPin, X } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 /** Geo threat map of Gujarat, styled as a GEOINT console: graticule with
  * lat/lon labels, corner brackets, radial heat halos around monitored cities,
@@ -43,20 +45,26 @@ function heatLabel(avg: number): string {
 }
 
 export default function GujaratMap({ regions }: { regions: Region[] }) {
+  const navigate = useNavigate();
   const [pinned, setPinned] = useState<Region | null>(null);
   const [hover, setHover] = useState<Region | null>(null);
-  const active = hover ?? pinned;
+  const active = pinned ?? hover;
   const maxCount = Math.max(1, ...regions.map((r) => r.count));
 
   return (
     <div className="relative">
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label="Gujarat threat map"
-           onClick={() => setPinned(null)}>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="h-auto w-full select-none"
+        role="img"
+        aria-label="Gujarat threat map"
+        onClick={() => setPinned(null)}
+      >
         <defs>
           {["#EF4444", "#F59E0B", "#A855F7", "#10B981"].map((c) => (
             <radialGradient key={c} id={`halo-${c.slice(1)}`}>
-              <stop offset="0%" stopColor={c} stopOpacity="0.35" />
-              <stop offset="55%" stopColor={c} stopOpacity="0.12" />
+              <stop offset="0%" stopColor={c} stopOpacity="0.45" />
+              <stop offset="55%" stopColor={c} stopOpacity="0.18" />
               <stop offset="100%" stopColor={c} stopOpacity="0" />
             </radialGradient>
           ))}
@@ -67,8 +75,8 @@ export default function GujaratMap({ regions }: { regions: Region[] }) {
           const y = project(la, 68)[1];
           return (
             <g key={`la${la}`}>
-              <line x1={0} y1={y} x2={W} y2={y} stroke="rgba(148,163,184,0.06)" strokeWidth="1" strokeDasharray="2 6" />
-              <text x={4} y={y - 3} fill="rgba(100,116,139,0.55)" fontSize="7.5" fontFamily="ui-monospace, monospace">
+              <line x1={0} y1={y} x2={W} y2={y} stroke="rgba(148,163,184,0.08)" strokeWidth="1" strokeDasharray="2 6" />
+              <text x={4} y={y - 3} fill="rgba(148,163,184,0.7)" fontSize="8" fontFamily="ui-monospace, monospace">
                 {la}°N
               </text>
             </g>
@@ -78,8 +86,8 @@ export default function GujaratMap({ regions }: { regions: Region[] }) {
           const x = project(22, lo)[0];
           return (
             <g key={`lo${lo}`}>
-              <line x1={x} y1={0} x2={x} y2={H} stroke="rgba(148,163,184,0.06)" strokeWidth="1" strokeDasharray="2 6" />
-              <text x={x + 3} y={H - 5} fill="rgba(100,116,139,0.55)" fontSize="7.5" fontFamily="ui-monospace, monospace">
+              <line x1={x} y1={0} x2={x} y2={H} stroke="rgba(148,163,184,0.08)" strokeWidth="1" strokeDasharray="2 6" />
+              <text x={x + 3} y={H - 5} fill="rgba(148,163,184,0.7)" fontSize="8" fontFamily="ui-monospace, monospace">
                 {lo}°E
               </text>
             </g>
@@ -92,7 +100,7 @@ export default function GujaratMap({ regions }: { regions: Region[] }) {
             key={i}
             d={`M${x + sx * 14},${y} L${x},${y} L${x},${y + sy * 14}`}
             fill="none"
-            stroke="rgba(20,184,196,0.4)"
+            stroke="rgba(20,184,196,0.6)"
             strokeWidth="1.5"
           />
         ))}
@@ -100,9 +108,9 @@ export default function GujaratMap({ regions }: { regions: Region[] }) {
         {/* state silhouette */}
         <path
           d={outlinePath}
-          fill="rgba(20,184,196,0.055)"
-          stroke="rgba(94,234,212,0.28)"
-          strokeWidth="1.4"
+          fill="rgba(20,184,196,0.07)"
+          stroke="rgba(94,234,212,0.4)"
+          strokeWidth="1.6"
           strokeLinejoin="round"
         />
 
@@ -121,13 +129,13 @@ export default function GujaratMap({ regions }: { regions: Region[] }) {
                 e.stopPropagation();
                 setPinned(pinned?.name === r.name ? null : r);
               }}
-              className="cursor-pointer"
+              className="cursor-pointer transition-all duration-200"
             >
               {/* heat halo */}
               <circle cx={x} cy={y} r={radius * 2.6} fill={`url(#halo-${c.slice(1)})`} />
               {r.avg_threat >= 45 && (
                 <circle
-                  cx={x} cy={y} r={radius + 6} fill="none" stroke={c} strokeWidth="1.5" opacity="0.6"
+                  cx={x} cy={y} r={radius + 6} fill="none" stroke={c} strokeWidth="1.5" opacity="0.7"
                   className="animate-ping" style={{ transformOrigin: `${x}px ${y}px` }}
                 />
               )}
@@ -137,20 +145,20 @@ export default function GujaratMap({ regions }: { regions: Region[] }) {
                   key={i}
                   x1={x + dx * (radius + 3)} y1={y + dy * (radius + 3)}
                   x2={x + dx * (radius + 8)} y2={y + dy * (radius + 8)}
-                  stroke={c} strokeWidth="1.2" opacity={isActive ? 0.9 : 0.45}
+                  stroke={c} strokeWidth="1.4" opacity={isActive ? 1 : 0.6}
                 />
               ))}
-              <circle cx={x} cy={y} r={radius} fill={c} fillOpacity={isActive ? 0.32 : 0.2} stroke={c} strokeWidth="1.6" />
-              <circle cx={x} cy={y} r={2.6} fill={c} />
+              <circle cx={x} cy={y} r={radius} fill={c} fillOpacity={isActive ? 0.45 : 0.25} stroke={c} strokeWidth="1.8" />
+              <circle cx={x} cy={y} r={3} fill="#FFFFFF" />
 
               {/* label pill: name + threat value */}
-              <g transform={`translate(${x},${y - radius - 9})`}>
+              <g transform={`translate(${x},${y - radius - 10})`}>
                 <rect
-                  x={-(r.name.length * 3.4 + 17)} y={-9} width={r.name.length * 6.8 + 34} height={13}
-                  rx={6.5} fill="rgba(7,11,22,0.82)" stroke={`${c}55`} strokeWidth="0.8"
+                  x={-(r.name.length * 3.6 + 20)} y={-10} width={r.name.length * 7.2 + 40} height={15}
+                  rx={7.5} fill="rgba(10,15,30,0.92)" stroke={`${c}88`} strokeWidth="1"
                 />
-                <text textAnchor="middle" y={1} fill="#CBD5E1" fontSize="8.5" fontFamily="ui-monospace, monospace" fontWeight="600">
-                  {r.name} <tspan fill={c} fontWeight="700">{r.avg_threat}</tspan>
+                <text textAnchor="middle" y={1.5} fill="#F1F5F9" fontSize="9" fontFamily="ui-monospace, monospace" fontWeight="600">
+                  {r.name} <tspan fill={c} fontWeight="800">· {r.avg_threat}</tspan>
                 </text>
               </g>
             </g>
@@ -158,50 +166,73 @@ export default function GujaratMap({ regions }: { regions: Region[] }) {
         })}
 
         {/* console tag */}
-        <text x={W - 8} y={16} textAnchor="end" fill="rgba(94,234,212,0.5)" fontSize="8" fontFamily="ui-monospace, monospace" letterSpacing="2">
+        <text x={W - 8} y={16} textAnchor="end" fill="rgba(94,234,212,0.8)" fontSize="8.5" fontFamily="ui-monospace, monospace" letterSpacing="2" fontWeight="600">
           GEOINT · GUJARAT SECTOR
         </text>
       </svg>
 
       {/* pinned/hover detail card */}
       {active && (
-        <div className="pointer-events-none absolute left-3 top-3 min-w-[170px] rounded-xl border bg-slate-900/95 px-3 py-2.5 backdrop-blur"
-             style={{ borderColor: `${heat(active.avg_threat)}55` }}>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-[13px] font-semibold text-slate-200">{active.name}</span>
-            <span
-              className="rounded px-1.5 py-0.5 font-mono text-[9px] font-bold"
-              style={{ backgroundColor: `${heat(active.avg_threat)}22`, color: heat(active.avg_threat) }}
-            >
-              {heatLabel(active.avg_threat)}
-            </span>
+        <div
+          className="absolute left-3 top-3 z-10 min-w-[200px] rounded-2xl border bg-slate-950/95 p-3.5 shadow-2xl backdrop-blur-md"
+          style={{ borderColor: `${heat(active.avg_threat)}80` }}
+        >
+          <div className="flex items-center justify-between gap-2 border-b border-white/[0.08] pb-2">
+            <div className="flex items-center gap-1.5">
+              <MapPin size={13} style={{ color: heat(active.avg_threat) }} />
+              <span className="text-sm font-bold text-slate-100">{active.name}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span
+                className="rounded-md px-1.5 py-0.5 font-mono text-[9px] font-extrabold uppercase"
+                style={{ backgroundColor: `${heat(active.avg_threat)}25`, color: heat(active.avg_threat) }}
+              >
+                {heatLabel(active.avg_threat)}
+              </span>
+              {pinned?.name === active.name && (
+                <button onClick={() => setPinned(null)} className="text-slate-400 hover:text-white" title="Unpin">
+                  <X size={12} />
+                </button>
+              )}
+            </div>
           </div>
-          <div className="mt-1.5 grid grid-cols-3 gap-2 text-center">
+
+          <div className="mt-2.5 grid grid-cols-3 gap-2 text-center">
             {[
-              ["threat", active.avg_threat],
-              ["posts", active.count],
-              ["flagged", active.threats],
+              ["avg threat", active.avg_threat],
+              ["total posts", active.count],
+              ["threat alerts", active.threats],
             ].map(([k, v]) => (
-              <div key={k}>
-                <div className="font-mono text-sm font-bold" style={{ color: k === "threat" ? heat(active.avg_threat) : "#E2E8F0" }}>
+              <div key={k} className="rounded-lg bg-white/[0.03] p-1.5">
+                <div className="font-mono text-sm font-bold" style={{ color: k.includes("threat") ? heat(active.avg_threat) : "#F8FAFC" }}>
                   {v}
                 </div>
-                <div className="text-[8.5px] uppercase tracking-widest text-slate-500">{k}</div>
+                <div className="text-[8px] uppercase tracking-wider text-slate-400">{k}</div>
               </div>
             ))}
           </div>
-          <div className="mt-1 font-mono text-[9px] text-slate-600">
-            {active.lat.toFixed(2)}°N {active.lon.toFixed(2)}°E{pinned?.name === active.name ? " · pinned" : ""}
+
+          <div className="mt-2.5 flex items-center justify-between border-t border-white/[0.06] pt-2 text-[10px]">
+            <span className="font-mono text-slate-400">
+              {active.lat.toFixed(2)}°N {active.lon.toFixed(2)}°E
+            </span>
+            <button
+              onClick={() => navigate(`/app/feed?location=${encodeURIComponent(active.name)}`)}
+              className="inline-flex items-center gap-1 font-semibold text-accent hover:underline"
+            >
+              Feed <ExternalLink size={10} />
+            </button>
           </div>
         </div>
       )}
 
-      <div className="mt-1 flex items-center justify-between font-mono text-[9.5px] text-slate-600">
-        <span>click a city to pin its readout</span>
+      {/* Map Legend */}
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-1.5 font-mono text-[10.5px] text-slate-400">
+        <span>Click any district marker to pin geospatial metrics</span>
         <div className="flex items-center gap-3">
-          {[["calm", "#10B981"], ["elevated", "#A855F7"], ["high", "#F59E0B"], ["critical", "#EF4444"]].map(([label, c]) => (
-            <span key={label} className="inline-flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: c as string }} /> {label}
+          {[["Calm (<18)", "#10B981"], ["Elevated (18-29)", "#A855F7"], ["High (30-44)", "#F59E0B"], ["Critical (45+)", "#EF4444"]].map(([label, c]) => (
+            <span key={label} className="inline-flex items-center gap-1 font-medium">
+              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: c }} /> {label}
             </span>
           ))}
         </div>
@@ -209,3 +240,4 @@ export default function GujaratMap({ regions }: { regions: Region[] }) {
     </div>
   );
 }
+

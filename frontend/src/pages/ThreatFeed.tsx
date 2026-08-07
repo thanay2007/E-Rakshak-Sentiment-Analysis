@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, FilterX, SlidersHorizontal } from "lucide-react";
+import { ChevronLeft, ChevronRight, Filter, FilterX, RefreshCw, Search, SlidersHorizontal, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Virtuoso } from "react-virtuoso";
@@ -15,19 +15,21 @@ import type { Post } from "../services/api";
 const CITIES = ["Ahmedabad", "Surat", "Vadodara", "Rajkot", "Gandhinagar", "Bhavnagar", "Jamnagar", "Junagadh"];
 const PAGE_SIZE = 20;
 
-function Chip({ active, color, children, onClick }: {
+function FilterChip({ active, color, children, onClick }: {
   active: boolean; color?: string; children: React.ReactNode; onClick: () => void;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-all ${
-        active ? "" : "border-white/10 text-slate-500 hover:border-white/25 hover:text-slate-300"
+      className={`rounded-xl border px-3 py-1.5 text-xs font-semibold transition-all shadow-sm ${
+        active
+          ? "shadow-md"
+          : "border-white/[0.08] bg-white/[0.03] text-slate-400 hover:border-white/20 hover:bg-white/[0.06] hover:text-slate-200"
       }`}
       style={active ? {
         color: color ?? "#14B8C4",
-        borderColor: `${color ?? "#14B8C4"}66`,
-        backgroundColor: `${color ?? "#14B8C4"}14`,
+        borderColor: `${color ?? "#14B8C4"}80`,
+        backgroundColor: `${color ?? "#14B8C4"}22`,
       } : undefined}
     >
       {children}
@@ -51,12 +53,18 @@ export default function ThreatFeed() {
     });
   };
 
-  // The keyword box is uncontrolled by the URL while typing: writing straight
-  // through fired a request *and* a history entry per keystroke.
+  const removeParam = (k: string) => {
+    setPage(1);
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete(k);
+      return next;
+    });
+  };
+
   const urlQ = get("q");
   const [qDraft, setQDraft] = useState(urlQ);
 
-  // refill the box when the URL changes from elsewhere (TopBar search, Clear)
   useEffect(() => setQDraft(urlQ), [urlQ]);
 
   useEffect(() => {
@@ -70,11 +78,12 @@ export default function ThreatFeed() {
           else next.delete("q");
           return next;
         },
-        { replace: true } // keeps the back button usable while typing
+        { replace: true }
       );
     }, 350);
     return () => window.clearTimeout(id);
   }, [qDraft, urlQ, setParams]);
+
   const toggleCsv = (k: string, v: string) => {
     const cur = get(k) ? get(k).split(",") : [];
     const next = cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v];
@@ -102,92 +111,180 @@ export default function ThreatFeed() {
   const revealRef = useGsapReveal<HTMLDivElement>(data?.items[0]?.id ?? "");
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / PAGE_SIZE));
 
+  const activeFiltersCount = [
+    get("platform"),
+    get("threat_level"),
+    get("language"),
+    get("location"),
+    get("q"),
+    get("min_score"),
+    get("date_from"),
+    get("date_to"),
+  ].filter(Boolean).length;
+
   return (
     <div className="space-y-4">
       {/* filter bar */}
-      <GlassCard className="space-y-3 p-4">
+      <GlassCard className="space-y-3.5 border border-white/[0.08] p-4">
+        {/* Row 1: Platforms & Threat Classes */}
         <div className="flex flex-wrap items-center gap-2">
-          <span className="mr-1 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-            <SlidersHorizontal size={12} /> Filters
+          <span className="mr-1 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-300">
+            <SlidersHorizontal size={13} className="text-accent" /> Filter By:
           </span>
-          {PLATFORMS.map((p) => (
-            <Chip key={p} active={get("platform").split(",").includes(p)} onClick={() => toggleCsv("platform", p)}>
-              {p}
-            </Chip>
-          ))}
-          <span className="mx-1 h-4 w-px bg-white/10" />
-          {THREAT_LABELS.map((t) => (
-            <Chip key={t} color={THREAT_COLORS[t]} active={get("threat_level").split(",").includes(t)} onClick={() => toggleCsv("threat_level", t)}>
-              {THREAT_SHORT[t]}
-            </Chip>
-          ))}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {PLATFORMS.map((p) => (
+              <FilterChip
+                key={p}
+                active={get("platform").split(",").includes(p)}
+                onClick={() => toggleCsv("platform", p)}
+              >
+                {p}
+              </FilterChip>
+            ))}
+          </div>
+
+          <span className="mx-1.5 hidden h-4 w-px bg-white/15 md:block" />
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            {THREAT_LABELS.map((t) => (
+              <FilterChip
+                key={t}
+                color={THREAT_COLORS[t]}
+                active={get("threat_level").split(",").includes(t)}
+                onClick={() => toggleCsv("threat_level", t)}
+              >
+                {THREAT_SHORT[t]}
+              </FilterChip>
+            ))}
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <input
-            value={qDraft}
-            onChange={(e) => setQDraft(e.target.value)}
-            placeholder="Keyword / #hashtag / @handle"
-            aria-label="Keyword search"
-            className="w-52 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-600 focus:border-accent/40 focus:outline-none"
-          />
-          <select value={get("language")} onChange={(e) => setParam("language", e.target.value)} className="rounded-xl border border-white/[0.08] bg-base-800 pl-2 pr-8 py-1.5 text-slate-400">
-            <option value="">Language</option>
-            {LANGUAGES.map((l) => <option key={l} value={l}>{l}</option>)}
-          </select>
-          <select value={get("location")} onChange={(e) => setParam("location", e.target.value)} className="rounded-xl border border-white/[0.08] bg-base-800 pl-2 pr-8 py-1.5 text-slate-400">
-            <option value="">Geo watchlist</option>
-            {CITIES.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <label className="flex items-center gap-2 text-slate-500">
-            min score
+        {/* Row 2: Search, Language, Geo, Score, Sorting */}
+        <div className="flex flex-wrap items-center gap-2.5 pt-1 text-xs">
+          <div className="relative min-w-[220px] flex-1">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
-              type="range" min={0} max={80} step={5}
+              value={qDraft}
+              onChange={(e) => setQDraft(e.target.value)}
+              placeholder="Keyword / #hashtag / @handle"
+              aria-label="Keyword search"
+              className="w-full rounded-xl border border-white/[0.1] bg-white/[0.04] py-2 pl-9 pr-3 text-xs text-slate-100 placeholder:text-slate-500 focus:border-accent/60 focus:bg-white/[0.07] focus:outline-none"
+            />
+          </div>
+
+          <select
+            value={get("language")}
+            onChange={(e) => setParam("language", e.target.value)}
+            className="rounded-xl border border-white/[0.1] bg-base-800 py-2 pl-3 pr-8 text-xs text-slate-200 hover:border-white/20 focus:border-accent/60 focus:outline-none"
+          >
+            <option value="">All Languages</option>
+            {LANGUAGES.map((l) => (
+              <option key={l} value={l}>
+                {l}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={get("location")}
+            onChange={(e) => setParam("location", e.target.value)}
+            className="rounded-xl border border-white/[0.1] bg-base-800 py-2 pl-3 pr-8 text-xs text-slate-200 hover:border-white/20 focus:border-accent/60 focus:outline-none"
+          >
+            <option value="">All Districts (Gujarat)</option>
+            {CITIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+
+          <div className="flex items-center gap-2 rounded-xl border border-white/[0.1] bg-base-800/80 px-3 py-1.5 text-xs text-slate-300">
+            <span className="text-[11px] font-medium text-slate-400">Min Score:</span>
+            <input
+              type="range"
+              min={0}
+              max={80}
+              step={5}
               value={get("min_score") || 0}
               onChange={(e) => setParam("min_score", e.target.value === "0" ? "" : e.target.value)}
-              className="w-24 accent-[#14B8C4]"
+              className="w-20 accent-[#14B8C4]"
             />
-            <span className="w-6 font-mono text-slate-300">{get("min_score") || 0}</span>
-          </label>
-          <input type="datetime-local" value={get("date_from")} onChange={(e) => setParam("date_from", e.target.value)} className="rounded-xl border border-white/[0.08] bg-base-800 px-2 py-1.5 text-slate-400" aria-label="From" />
-          <input type="datetime-local" value={get("date_to")} onChange={(e) => setParam("date_to", e.target.value)} className="rounded-xl border border-white/[0.08] bg-base-800 px-2 py-1.5 text-slate-400" aria-label="To" />
-          <select value={get("sort") || "recent"} onChange={(e) => setParam("sort", e.target.value)} className="rounded-xl border border-white/[0.08] bg-base-800 pl-2 pr-8 py-1.5 text-slate-400">
-            <option value="recent">Most recent</option>
-            <option value="score">Highest threat</option>
-            <option value="engagement">Most shared</option>
-          </select>
-          <button
-            onClick={() => { setParams(new URLSearchParams()); setPage(1); }}
-            className="ml-auto inline-flex items-center gap-1 rounded-xl border border-white/10 px-2.5 py-1.5 text-slate-500 hover:text-slate-300"
+            <span className="w-6 font-mono font-bold text-accent">{get("min_score") || 0}</span>
+          </div>
+
+          <select
+            value={get("sort") || "recent"}
+            onChange={(e) => setParam("sort", e.target.value)}
+            className="rounded-xl border border-white/[0.1] bg-base-800 py-2 pl-3 pr-8 text-xs text-slate-200 hover:border-white/20 focus:border-accent/60 focus:outline-none"
           >
-            <FilterX size={12} /> Clear
-          </button>
+            <option value="recent">Sort: Most Recent</option>
+            <option value="score">Sort: Highest Threat</option>
+            <option value="engagement">Sort: Most Shared</option>
+          </select>
+
+          {activeFiltersCount > 0 && (
+            <button
+              onClick={() => {
+                setParams(new URLSearchParams());
+                setPage(1);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-300 hover:bg-red-500/20"
+            >
+              <FilterX size={13} /> Reset Filters ({activeFiltersCount})
+            </button>
+          )}
         </div>
       </GlassCard>
 
-      {/* results */}
-      <div className="flex items-center justify-between px-1">
-        <span className="font-mono text-[11px] text-slate-500">
-          {data ? `${data.total.toLocaleString()} matching posts` : "querying…"}
-        </span>
+      {/* Results header & Pagination */}
+      <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+        <div className="flex items-center gap-2.5">
+          <span className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-base-950/70 px-3 py-1.5 font-mono text-xs font-bold text-slate-200 shadow-sm backdrop-blur-md">
+            <span className="h-2 w-2 rounded-full bg-accent animate-pulse" />
+            {data ? `${data.total.toLocaleString()} Matching Signals` : "Querying Pipeline…"}
+          </span>
+          <button
+            onClick={() => void refresh()}
+            className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs text-slate-300 hover:bg-white/[0.08] hover:text-white transition-all shadow-sm"
+            title="Refresh feed"
+          >
+            <RefreshCw size={12} className={loading ? "animate-spin text-accent" : ""} />
+            <span className="hidden sm:inline font-mono text-[11px]">Sync</span>
+          </button>
+        </div>
+
         <div className="flex items-center gap-2">
-          <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="rounded-lg border border-white/10 p-1.5 text-slate-400 disabled:opacity-30 hover:bg-white/[0.06]" aria-label="Previous page">
-            <ChevronLeft size={14} />
-          </button>
-          <span className="font-mono text-[11px] text-slate-500">{page} / {totalPages}</span>
-          <button disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)} className="rounded-lg border border-white/10 p-1.5 text-slate-400 disabled:opacity-30 hover:bg-white/[0.06]" aria-label="Next page">
-            <ChevronRight size={14} />
-          </button>
+          <span className="font-mono text-xs text-slate-400">
+            Page <strong className="text-slate-200">{page}</strong> / {totalPages}
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              disabled={page <= 1}
+              onClick={() => setPage((p) => p - 1)}
+              className="rounded-xl border border-white/10 bg-white/[0.04] p-1.5 text-slate-300 disabled:opacity-30 hover:bg-white/[0.08] transition-all"
+              aria-label="Previous page"
+            >
+              <ChevronLeft size={15} />
+            </button>
+            <button
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => p + 1)}
+              className="rounded-xl border border-white/10 bg-white/[0.04] p-1.5 text-slate-300 disabled:opacity-30 hover:bg-white/[0.08] transition-all"
+              aria-label="Next page"
+            >
+              <ChevronRight size={15} />
+            </button>
+          </div>
         </div>
       </div>
 
       {error && !data ? (
-        <GlassCard className="space-y-3 p-6 text-sm text-slate-400">
+        <GlassCard className="space-y-3 p-6 text-sm text-slate-300">
           <div className="font-semibold text-red-300">Could not load posts</div>
-          <div className="text-xs text-slate-500">{error}</div>
+          <div className="text-xs text-slate-400">{error}</div>
           <button
             onClick={() => void refresh()}
-            className="rounded-xl border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent"
+            className="rounded-xl border border-accent/40 bg-accent/15 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent/25"
           >
             Retry
           </button>
@@ -195,16 +292,16 @@ export default function ThreatFeed() {
       ) : loading && !data ? (
         <SkeletonRow n={8} />
       ) : (
-        <div ref={revealRef} className="h-[70vh] w-full">
+        <div ref={revealRef} className="h-[calc(100vh-320px)] min-h-[500px] w-full rounded-2xl border border-white/[0.06] bg-base-950/40 p-2 backdrop-blur-md">
           {data?.items.length === 0 ? (
-            <GlassCard className="p-10 text-center text-sm text-slate-500">
-              No posts match the current filters.
+            <GlassCard className="p-12 text-center text-xs text-slate-400">
+              No intelligence items match the current filter criteria. Broaden your search terms or reset filters.
             </GlassCard>
           ) : (
             <Virtuoso
-              style={{ height: '100%', width: '100%' }}
+              style={{ height: "100%", width: "100%" }}
               data={data?.items || []}
-              itemContent={(index, p) => (
+              itemContent={(_index, p) => (
                 <div className="pb-2.5 pr-1">
                   <FeedItemCard post={p} onOpen={setSelected} />
                 </div>
@@ -218,3 +315,4 @@ export default function ThreatFeed() {
     </div>
   );
 }
+

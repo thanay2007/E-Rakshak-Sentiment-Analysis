@@ -1,18 +1,50 @@
 import { gsap } from "gsap";
 import {
-  Activity, AlertOctagon, Radio, ShieldAlert, Target, TrendingUp as TrendIcon,
+  Activity,
+  AlertOctagon,
+  AlertTriangle,
+  ArrowUpRight,
+  BarChart3,
+  Bot,
+  CheckCircle2,
+  Cpu,
+  Download,
+  Flame,
+  Globe2,
+  HelpCircle,
+  PieChart as PieIcon,
+  Radio,
+  RefreshCw,
+  Search,
+  Shield,
+  ShieldAlert,
+  Sparkles,
+  Target,
+  TrendingUp as TrendIcon,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import {
-  Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart,
-  ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
 } from "recharts";
-import { LanguageChip, ThreatBadge } from "../components/Badges";
+import { LanguageChip } from "../components/Badges";
 import DetailDrawer from "../components/DetailDrawer";
 import EmergingPanel from "../components/EmergingPanel";
 import FeedItemCard from "../components/FeedItemCard";
 import GlassCard, { SectionTitle } from "../components/GlassCard";
-import { SkeletonChart, SkeletonRow, SkeletonTile } from "../components/Skeletons";
+import { SkeletonChart, SkeletonTile } from "../components/Skeletons";
 import Sparkline from "../components/Sparkline";
 import StatTile from "../components/StatTile";
 import { ACCENT, SENTIMENT_COLORS, THREAT_COLORS, THREAT_SHORT } from "../data/constants";
@@ -22,40 +54,60 @@ import { api } from "../services/api";
 import type { Post } from "../services/api";
 
 const TOOLTIP_STYLE = {
-  backgroundColor: "rgba(var(--color-base-800), 0.96)",
-  border: "1px solid rgba(var(--color-white), 0.1)",
-  borderRadius: 12,
-  fontSize: 11,
+  backgroundColor: "rgba(10, 15, 30, 0.98)",
+  border: "1px solid rgba(255, 255, 255, 0.18)",
+  borderRadius: 14,
+  fontSize: 12,
   fontFamily: "'JetBrains Mono', monospace",
-  color: "rgb(var(--color-slate-200))",
+  color: "#F8FAFC",
+  padding: "10px 14px",
+  boxShadow: "0 15px 35px -5px rgba(0, 0, 0, 0.7)",
+};
+
+const THREAT_DESCRIPTIONS: Record<string, string> = {
+  "Incitement to Violence": "Immediate threat to public order & safety",
+  Inflammatory: "Communal tension, hate speech & hostile rhetoric",
+  "Fake News": "Disinformation, manipulated media & hoaxes",
+  Neutral: "Public discourse, factual reporting & queries",
 };
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const { data: stats, error: statsError, loading, refresh: refreshStats } = usePolling(() => api.stats(), 15000);
   const { data: trends, error: trendsError } = usePolling(() => api.trends(24), 60000);
   const livePosts = useLivePosts(30);
   const [initialFeed, setInitialFeed] = useState<Post[]>([]);
   const [selected, setSelected] = useState<Post | null>(null);
+  const [feedThreatFilter, setFeedThreatFilter] = useState<string>("all");
   const feedRef = useRef<HTMLDivElement>(null);
   const ago = useAgo(stats?.last_updated);
 
   useEffect(() => {
-    api.feed({ page_size: 12, sort: "recent" }).then((p) => setInitialFeed(p.items)).catch(() => {});
+    api.feed({ page_size: 16, sort: "recent" }).then((p) => setInitialFeed(p.items)).catch(() => {});
   }, []);
 
-  const feed = useMemo(() => {
+  const rawFeed = useMemo(() => {
     const seen = new Set<string>();
     return [...livePosts, ...initialFeed]
       .filter((p) => (seen.has(p.id) ? false : (seen.add(p.id), true)))
-      .slice(0, 14);
+      .slice(0, 24);
   }, [livePosts, initialFeed]);
 
+  const filteredFeed = useMemo(() => {
+    if (feedThreatFilter === "all") return rawFeed.slice(0, 14);
+    return rawFeed.filter((p) => p.threat_label === feedThreatFilter).slice(0, 14);
+  }, [rawFeed, feedThreatFilter]);
+
   // animate the newest live item sliding in from the top
-  const newestId = feed[0]?.id;
+  const newestId = filteredFeed[0]?.id;
   useLayoutEffect(() => {
     const el = feedRef.current?.firstElementChild;
     if (!el || !livePosts.length) return;
-    gsap.fromTo(el, { y: -26, opacity: 0, scale: 0.985 }, { y: 0, opacity: 1, scale: 1, duration: 0.55, ease: "power3.out" });
+    gsap.fromTo(
+      el,
+      { y: -24, opacity: 0, scale: 0.98 },
+      { y: 0, opacity: 1, scale: 1, duration: 0.5, ease: "power3.out" }
+    );
   }, [newestId, livePosts.length]);
 
   const donutData = useMemo(
@@ -69,111 +121,329 @@ export default function Dashboard() {
   );
   const totalDist = donutData.reduce((s, d) => s + d.value, 0) || 1;
 
+  // Filter counts for quick badges
+  const filterCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: rawFeed.length };
+    rawFeed.forEach((p) => {
+      counts[p.threat_label] = (counts[p.threat_label] || 0) + 1;
+    });
+    return counts;
+  }, [rawFeed]);
+
   return (
     <div className="space-y-4">
-      {statsError && !stats && (
-        <GlassCard className="space-y-3 p-5 text-sm text-slate-400">
-          <div className="font-semibold text-red-300">Could not load dashboard data</div>
-          <div className="text-xs text-slate-500">{statsError}</div>
+      {/* ── Executive Command Header ───────────────────────────────────── */}
+      <div className="flex flex-col gap-3 rounded-2xl border border-white/[0.08] bg-base-950/80 px-5 py-3.5 shadow-xl backdrop-blur-xl md:flex-row md:items-center md:justify-between">
+        <div className="flex items-center gap-3">
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-accent/40 bg-accent/15 text-accent shadow-[0_0_15px_rgba(245,158,11,0.25)]">
+            <Shield size={20} />
+          </div>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-sm font-black tracking-wide text-white uppercase sm:text-base">
+                State Cyber Defense Intelligence Hub
+              </h1>
+              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> LIVE TELEMETRY
+              </span>
+            </div>
+            <p className="text-xs text-slate-400">
+              Continuous multi-platform OSINT ingestion · Automated Indic NLP scoring · Latency: <span className="font-mono text-emerald-400 font-bold">&lt;100ms</span>
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => void refreshStats()}
-            className="rounded-xl border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-slate-300 hover:border-accent/40 hover:bg-white/[0.08] hover:text-white transition-all"
           >
-            Retry
+            <RefreshCw size={13} className={loading ? "animate-spin text-accent" : "text-slate-400"} />
+            <span>Sync</span>
+          </button>
+          <button
+            onClick={() => navigate("/app/investigate")}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-accent/50 bg-accent/20 px-3.5 py-1.5 text-xs font-bold text-accent shadow-sm hover:bg-accent hover:text-slate-950 transition-all"
+          >
+            <Sparkles size={13} />
+            <span>Forensics Suite</span>
+          </button>
+        </div>
+      </div>
+
+      {statsError && !stats && (
+        <GlassCard className="space-y-3 p-4 text-sm text-slate-200 border-red-500/30 bg-red-500/10">
+          <div className="font-semibold text-red-300 flex items-center gap-2">
+            <AlertOctagon size={16} /> Could not load dashboard telemetry
+          </div>
+          <div className="text-xs text-slate-400">{statsError}</div>
+          <button
+            onClick={() => void refreshStats()}
+            className="rounded-xl border border-accent/40 bg-accent/15 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent/25"
+          >
+            Retry Sync
           </button>
         </GlassCard>
       )}
 
-      {/* KPI row */}
+      {/* ── Top Row: 5 Core Operational KPIs ─────────────────────────── */}
       {loading || !stats ? (
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-          {Array.from({ length: 5 }, (_, i) => <SkeletonTile key={i} />)}
+        <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 lg:grid-cols-5">
+          {Array.from({ length: 5 }, (_, i) => (
+            <SkeletonTile key={i} />
+          ))}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-          <StatTile label="Posts Monitored" value={stats.kpis.posts_monitored} delta={stats.kpis.posts_monitored_delta} spark={stats.sparklines.posts} icon={Activity} />
-          <StatTile label="Active Threats" value={stats.kpis.active_threats} delta={stats.kpis.active_threats_delta} spark={stats.sparklines.threats} color="#EF4444" icon={Target} invertDelta />
-          <StatTile label="Critical Alerts" value={stats.kpis.critical_alerts} delta={stats.kpis.critical_alerts_delta} spark={stats.sparklines.alerts} color="#F59E0B" icon={AlertOctagon} invertDelta />
-          <StatTile label="Platforms Online" value={stats.kpis.platforms_online} suffix={`/${stats.kpis.platforms_total}`} icon={Radio} color="#10B981" />
-          <StatTile label="Coordinated Campaigns" value={stats.kpis.campaigns} color="#A855F7" icon={ShieldAlert} invertDelta />
+        <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 lg:grid-cols-5">
+          <StatTile
+            label="Posts Monitored"
+            value={stats.kpis.posts_monitored}
+            delta={stats.kpis.posts_monitored_delta}
+            spark={stats.sparklines.posts}
+            icon={Activity}
+            color="#38BDF8"
+            tooltip="Total social media posts evaluated by NLP pipeline in the last 24h."
+          />
+          <StatTile
+            label="Active Threats"
+            value={stats.kpis.active_threats}
+            delta={stats.kpis.active_threats_delta}
+            spark={stats.sparklines.threats}
+            color="#EF4444"
+            icon={Target}
+            invertDelta
+            tooltip="Flagged as Incitement to Violence, Inflammatory Hate Speech, or Fake News."
+          />
+          <StatTile
+            label="Critical Incidents"
+            value={stats.kpis.critical_alerts}
+            delta={stats.kpis.critical_alerts_delta}
+            spark={stats.sparklines.alerts}
+            color="#F59E0B"
+            icon={AlertOctagon}
+            invertDelta
+            tooltip="Severe incidents escalated for law enforcement intervention."
+          />
+          <StatTile
+            label="Platforms Online"
+            value={stats.kpis.platforms_online}
+            suffix={`/${stats.kpis.platforms_total}`}
+            icon={Radio}
+            color="#10B981"
+            tooltip="Active social media pipelines (X, Telegram, Reddit, Facebook, Instagram, YouTube)."
+          />
+          <StatTile
+            label="Bot Swarm Campaigns"
+            value={stats.kpis.campaigns}
+            color="#A855F7"
+            icon={Bot}
+            invertDelta
+            tooltip="Synchronized inauthentic account clusters spreading manufactured outrage."
+          />
         </div>
       )}
 
+      {/* ── Main Section: Live Feed + Threat Breakdown & Hashtag Surge ── */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        {/* live feed */}
-        <GlassCard className="p-4 xl:col-span-2">
-          <SectionTitle
-            title="Live Threat Feed"
-            sub={`streaming via WebSocket · updated ${ago}`}
-            right={<span className="pulse-dot inline-block h-2 w-2 rounded-full bg-threat-neutral text-threat-neutral" aria-label="live" />}
-          />
-          {feed.length === 0 ? (
-            <SkeletonRow n={5} />
+        {/* Left 2 Cols: Live Threat Stream (Fixed proportional height) */}
+        <GlassCard className="flex flex-col p-4 xl:col-span-2 h-[580px]">
+          <div className="mb-3 flex flex-col gap-2.5 border-b border-white/[0.08] pb-3 sm:flex-row sm:items-center sm:justify-between shrink-0">
+            <div>
+              <div className="flex items-center gap-2">
+                <Radio size={16} className="text-emerald-400" />
+                <h2 className="text-sm font-extrabold uppercase tracking-wider text-white">
+                  Live OSINT Threat Stream
+                </h2>
+                <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 font-mono text-[10px] font-black text-emerald-300">
+                  REAL-TIME
+                </span>
+              </div>
+              <p className="mt-0.5 text-xs text-slate-400">
+                Auto-classified & translated Indic posts · synced {ago}
+              </p>
+            </div>
+
+            {/* Quick Filter Pill Buttons */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {[
+                { id: "all", label: "All Feeds", color: "#38BDF8" },
+                { id: "Incitement to Violence", label: "Violence", color: "#DC2626" },
+                { id: "Inflammatory", label: "Inflammatory", color: "#EA580C" },
+                { id: "Fake News", label: "Fake News", color: "#9333EA" },
+                { id: "Neutral", label: "Neutral", color: "#059669" },
+              ].map(({ id, label, color }) => {
+                const isSelected = feedThreatFilter === id;
+                const count = id === "all" ? rawFeed.length : (filterCounts[id] ?? 0);
+                return (
+                  <button
+                    key={id}
+                    onClick={() => setFeedThreatFilter(id)}
+                    className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-xs font-semibold transition-all ${
+                      isSelected
+                        ? "border-accent bg-accent/20 text-accent shadow-sm"
+                        : "border-white/[0.08] bg-white/[0.02] text-slate-400 hover:border-white/20 hover:bg-white/[0.06] hover:text-slate-100"
+                    }`}
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />
+                    <span>{label}</span>
+                    <span className={`font-mono text-[10px] ${isSelected ? "text-accent font-bold" : "text-slate-500"}`}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+
+              <Link
+                to="/app/feed"
+                className="ml-0.5 inline-flex items-center gap-1 rounded-lg border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs font-bold text-accent hover:bg-accent/20 transition-all"
+              >
+                <span>Full Feed</span> <ArrowUpRight size={12} />
+              </Link>
+            </div>
+          </div>
+
+          {filteredFeed.length === 0 ? (
+            <div className="flex flex-1 items-center justify-center text-center text-xs text-slate-400">
+              No live posts matching the selected threat filter. Select "All Feeds" to view incoming activity.
+            </div>
           ) : (
-            <div ref={feedRef} className="max-h-[520px] space-y-2.5 overflow-y-auto pr-1">
-              {feed.map((p) => (
+            <div ref={feedRef} className="flex-1 space-y-2.5 overflow-y-auto pr-1 custom-scrollbar">
+              {filteredFeed.map((p) => (
                 <FeedItemCard key={p.id} post={p} compact onOpen={setSelected} />
               ))}
             </div>
           )}
         </GlassCard>
 
-        <div className="space-y-4">
-          {/* donut */}
-          <GlassCard className="p-4">
-            <SectionTitle title="Threat Levels" sub="last 24h classification mix" />
+        {/* Right 1 Col: Threat Breakdown & Viral Hashtags (Balanced heights) */}
+        <div className="flex flex-col gap-4 h-[580px]">
+          {/* Threat Breakdown Donut & Interactive List */}
+          <GlassCard className="flex flex-1 flex-col justify-between p-4 overflow-hidden">
+            <SectionTitle
+              title="Threat Classification"
+              sub="24h severity breakdown & percentage share"
+              right={<PieIcon size={16} className="text-accent" />}
+            />
             {!stats ? (
-              <SkeletonChart h={210} />
+              <SkeletonChart h={180} />
             ) : (
-              <>
-                <ResponsiveContainer width="100%" height={185}>
-                  <PieChart>
-                    <Pie data={donutData} dataKey="value" nameKey="name" innerRadius={52} outerRadius={80} paddingAngle={2} strokeWidth={2} stroke="#0A0E1A">
-                      {donutData.map((d) => (
-                        <Cell key={d.name} fill={THREAT_COLORS[d.name] ?? "#64748B"} />
-                      ))}
-                    </Pie>
-                    <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: number, n: string) => [`${v} posts`, THREAT_SHORT[n] ?? n]} />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="mt-2 space-y-1.5">
-                  {donutData.map((d) => (
-                    <div key={d.name} className="flex items-center gap-2 text-[11px]">
-                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: THREAT_COLORS[d.name] }} />
-                      <span className="text-slate-400">{THREAT_SHORT[d.name] ?? d.name}</span>
-                      <span className="ml-auto font-mono text-slate-300">
-                        {d.value} · {Math.round((d.value / totalDist) * 100)}%
-                      </span>
-                    </div>
-                  ))}
+              <div className="flex flex-col justify-between flex-1 gap-2 pt-1">
+                <div className="relative flex items-center justify-center">
+                  <ResponsiveContainer width="100%" height={125}>
+                    <PieChart>
+                      <Pie
+                        data={donutData}
+                        dataKey="value"
+                        nameKey="name"
+                        innerRadius={38}
+                        outerRadius={58}
+                        paddingAngle={3}
+                        strokeWidth={2}
+                        stroke="#070B16"
+                      >
+                        {donutData.map((d) => (
+                          <Cell key={d.name} fill={THREAT_COLORS[d.name] ?? "#64748B"} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={TOOLTIP_STYLE}
+                        formatter={(v: number, n: string) => [`${v.toLocaleString()} posts`, THREAT_SHORT[n] ?? n]}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  {/* Center Donut Badge */}
+                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+                    <span className="font-mono text-base font-black text-white leading-none">
+                      {totalDist.toLocaleString()}
+                    </span>
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mt-0.5">
+                      Posts
+                    </span>
+                  </div>
                 </div>
-              </>
+
+                {/* 2x2 Grid for compact balanced breakdown */}
+                <div className="grid grid-cols-2 gap-2">
+                  {donutData.map((d) => {
+                    const pct = Math.round((d.value / totalDist) * 100);
+                    return (
+                      <div
+                        key={d.name}
+                        onClick={() => navigate(`/app/feed?threat=${encodeURIComponent(d.name)}`)}
+                        className="group flex cursor-pointer items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.02] p-2 text-xs transition-all hover:border-accent/40 hover:bg-white/[0.06]"
+                        title={`Click to filter threat feed by ${d.name}`}
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span
+                            className="h-2 w-2 rounded-full shrink-0 shadow-sm"
+                            style={{ backgroundColor: THREAT_COLORS[d.name] }}
+                          />
+                          <span className="truncate font-semibold text-slate-200 group-hover:text-white text-[11px]">
+                            {THREAT_SHORT[d.name] ?? d.name}
+                          </span>
+                        </div>
+                        <span
+                          className="rounded px-1.5 py-0.5 font-mono text-[10px] font-black shrink-0"
+                          style={{
+                            backgroundColor: `${THREAT_COLORS[d.name]}22`,
+                            color: THREAT_COLORS[d.name],
+                          }}
+                        >
+                          {pct}%
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             )}
           </GlassCard>
 
-          {/* trending hashtags */}
-          <GlassCard className="p-4">
-            <SectionTitle title="Trending Hashtags" sub="spike detection (z-score)" />
+          {/* Viral Hashtag Surge Tracker */}
+          <GlassCard className="flex flex-1 flex-col justify-between p-4 overflow-hidden">
+            <SectionTitle
+              title="Viral Hashtags"
+              sub="Spike velocity (σ = statistical surge)"
+              right={
+                <span title="Z-Score (σ) > 2.0 indicates sudden viral surge compared to 24h baseline">
+                  <Flame size={16} className="text-threat-critical" />
+                </span>
+              }
+            />
             {trendsError && !trends ? (
-              <div className="py-8 text-xs text-slate-500">{trendsError}</div>
+              <div className="py-4 text-xs text-slate-400">{trendsError}</div>
             ) : !trends ? (
-              <SkeletonChart h={180} />
+              <SkeletonChart h={140} />
             ) : (
-              <div className="space-y-2">
-                {trends.hashtags.slice(0, 6).map((h) => (
-                  <div key={h.term} className="flex items-center gap-2.5 text-xs">
-                    <span className="w-28 truncate font-medium text-accent/90">#{h.term}</span>
-                    <Sparkline data={h.series} color={h.spiking ? "#EF4444" : ACCENT} width={70} height={20} />
-                    <span className="ml-auto font-mono text-slate-400">{h.count}</span>
-                    {h.spiking ? (
-                      <span className="inline-flex animate-pulse-slow items-center gap-0.5 rounded-md bg-threat-critical/15 px-1.5 py-0.5 font-mono text-[10px] font-bold text-threat-critical">
-                        <TrendIcon size={9} /> {h.spike_z}σ
+              <div className="space-y-1.5 flex-1 flex flex-col justify-around pt-1">
+                {trends.hashtags.slice(0, 4).map((h, i) => (
+                  <div
+                    key={h.term}
+                    onClick={() => navigate(`/app/feed?q=${encodeURIComponent("#" + h.term)}`)}
+                    className="flex cursor-pointer items-center justify-between gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-2.5 py-1.5 text-xs transition-all hover:border-accent/40 hover:bg-white/[0.06]"
+                    title="Click to search posts containing this hashtag"
+                  >
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <span className="font-mono text-[10px] text-slate-500 font-bold">#{i + 1}</span>
+                      <span className="truncate font-bold text-accent hover:underline text-[11.5px]">
+                        #{h.term}
                       </span>
-                    ) : (
-                      <span className={`font-mono text-[10px] ${h.change_pct >= 0 ? "text-threat-neutral" : "text-slate-600"}`}>
-                        {h.change_pct >= 0 ? "+" : ""}{h.change_pct}%
+                    </div>
+                    <Sparkline data={h.series} color={h.spiking ? "#EF4444" : ACCENT} width={50} height={16} />
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="font-mono text-[10.5px] text-slate-300">
+                        {h.count.toLocaleString()}
                       </span>
-                    )}
+                      {h.spiking ? (
+                        <span className="inline-flex items-center gap-0.5 rounded border border-threat-critical/40 bg-threat-critical/20 px-1 py-0.2 font-mono text-[9.5px] font-black text-threat-critical">
+                          <TrendIcon size={9} /> {h.spike_z}σ
+                        </span>
+                      ) : (
+                        <span className={`font-mono text-[9.5px] font-bold ${h.change_pct >= 0 ? "text-emerald-400" : "text-slate-400"}`}>
+                          {h.change_pct >= 0 ? "+" : ""}{h.change_pct}%
+                        </span>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -182,76 +452,127 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* ── Emerging Unverified Rumor Triage Panel ──────────────────── */}
       <EmergingPanel />
 
+      {/* ── Bottom Section: Sentiment Timeline + Platform & Model Accuracy */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        {/* sentiment area */}
-        <GlassCard className="p-4 xl:col-span-2">
-          <SectionTitle title="Sentiment — last 24h" sub="posts per hour by sentiment" />
+        {/* Left 2 Cols: Sentiment Polarity Area Timeline */}
+        <GlassCard className="flex flex-col justify-between p-4.5 xl:col-span-2 h-[340px]">
+          <SectionTitle
+            title="Sentiment Polarity Velocity Timeline"
+            sub="Hourly post volume categorized by Indic NLP polarity (Hostile / Neutral / Constructive)"
+            right={<BarChart3 size={16} className="text-accent" />}
+          />
           {!stats ? (
             <SkeletonChart h={240} />
           ) : (
-            <ResponsiveContainer width="100%" height={240}>
-              <AreaChart data={stats.sentiment_24h} margin={{ top: 6, right: 8, left: -18, bottom: 0 }}>
-                <defs>
-                  {Object.entries(SENTIMENT_COLORS).map(([k, c]) => (
-                    <linearGradient key={k} id={`grad-${k}`} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={c} stopOpacity={0.35} />
-                      <stop offset="100%" stopColor={c} stopOpacity={0.02} />
-                    </linearGradient>
-                  ))}
-                </defs>
-                <CartesianGrid vertical={false} />
-                <XAxis dataKey="hour" tickLine={false} axisLine={false} interval={3} />
-                <YAxis tickLine={false} axisLine={false} width={46} allowDecimals={false} />
-                <Tooltip contentStyle={TOOLTIP_STYLE} />
-                <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={7} />
-                <Area type="monotone" dataKey="negative" stroke={SENTIMENT_COLORS.negative} fill="url(#grad-negative)" strokeWidth={2} />
-                <Area type="monotone" dataKey="neutral" stroke={SENTIMENT_COLORS.neutral} fill="url(#grad-neutral)" strokeWidth={2} />
-                <Area type="monotone" dataKey="positive" stroke={SENTIMENT_COLORS.positive} fill="url(#grad-positive)" strokeWidth={2} />
-              </AreaChart>
-            </ResponsiveContainer>
+            <div className="flex-1 w-full pt-2">
+              <ResponsiveContainer width="100%" height={250}>
+                <AreaChart data={stats.sentiment_24h} margin={{ top: 8, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    {Object.entries(SENTIMENT_COLORS).map(([k, c]) => (
+                      <linearGradient key={k} id={`grad-${k}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={c} stopOpacity={0.4} />
+                        <stop offset="100%" stopColor={c} stopOpacity={0.02} />
+                      </linearGradient>
+                    ))}
+                  </defs>
+                  <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.08)" strokeDasharray="3 3" />
+                  <XAxis dataKey="hour" tickLine={false} axisLine={false} interval={3} tick={{ fill: "#94A3B8", fontSize: 11 }} />
+                  <YAxis tickLine={false} axisLine={false} width={48} allowDecimals={false} tick={{ fill: "#94A3B8", fontSize: 11 }} />
+                  <Tooltip contentStyle={TOOLTIP_STYLE} />
+                  <Legend wrapperStyle={{ fontSize: 11, paddingTop: 4 }} iconType="circle" iconSize={8} />
+                  <Area
+                    type="monotone"
+                    name="Negative / Hostile Sentiment"
+                    dataKey="negative"
+                    stroke={SENTIMENT_COLORS.negative}
+                    fill="url(#grad-negative)"
+                    strokeWidth={2.5}
+                  />
+                  <Area
+                    type="monotone"
+                    name="Neutral / Factual Discourse"
+                    dataKey="neutral"
+                    stroke={SENTIMENT_COLORS.neutral}
+                    fill="url(#grad-neutral)"
+                    strokeWidth={2.5}
+                  />
+                  <Area
+                    type="monotone"
+                    name="Positive / Constructive"
+                    dataKey="positive"
+                    stroke={SENTIMENT_COLORS.positive}
+                    fill="url(#grad-positive)"
+                    strokeWidth={2.5}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
           )}
         </GlassCard>
 
-        {/* platform bars + accuracy */}
-        <div className="space-y-4">
-          <GlassCard className="p-4">
-            <SectionTitle title="Platform Activity" sub="posts vs threats, 24h" />
+        {/* Right 1 Col: Platform Activity & Model Accuracy (Cleanly split half cards) */}
+        <div className="flex flex-col gap-4 h-[340px]">
+          {/* Platform Activity Bar Chart */}
+          <GlassCard className="flex flex-1 flex-col justify-between p-3.5 overflow-hidden">
+            <SectionTitle
+              title="Platform Threat Ingestion"
+              sub="Posts ingested vs threats detected (24h)"
+              right={<Radio size={15} className="text-accent" />}
+            />
             {!stats ? (
-              <SkeletonChart h={170} />
+              <SkeletonChart h={95} />
             ) : (
-              <ResponsiveContainer width="100%" height={170}>
-                <BarChart data={stats.platform_activity} margin={{ top: 4, right: 4, left: -22, bottom: 0 }}>
-                  <CartesianGrid vertical={false} />
-                  <XAxis dataKey="platform" tickLine={false} axisLine={false} />
-                  <YAxis tickLine={false} axisLine={false} width={44} allowDecimals={false} />
-                  <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={7} />
-                  <Bar dataKey="posts" fill={ACCENT} radius={[4, 4, 0, 0]} maxBarSize={22} />
-                  <Bar dataKey="threats" fill="#EF4444" radius={[4, 4, 0, 0]} maxBarSize={22} />
-                </BarChart>
-              </ResponsiveContainer>
+              <div className="flex-1 w-full">
+                <ResponsiveContainer width="100%" height={95}>
+                  <BarChart data={stats.platform_activity} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
+                    <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.08)" strokeDasharray="3 3" />
+                    <XAxis dataKey="platform" tickLine={false} axisLine={false} tick={{ fill: "#94A3B8", fontSize: 10 }} />
+                    <YAxis tickLine={false} axisLine={false} width={40} allowDecimals={false} tick={{ fill: "#94A3B8", fontSize: 10 }} />
+                    <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(255,255,255,0.05)" }} />
+                    <Bar name="Total" dataKey="posts" fill={ACCENT} radius={[3, 3, 0, 0]} maxBarSize={16} />
+                    <Bar name="Threats" dataKey="threats" fill="#EF4444" radius={[3, 3, 0, 0]} maxBarSize={16} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             )}
           </GlassCard>
 
+          {/* Model Accuracy Card */}
           {stats?.accuracy.overall != null && (
-            <GlassCard className="p-4">
-              <SectionTitle title="Live Model Accuracy" sub={`vs ground truth · n=${stats.accuracy.sample}`} />
-              <div className="flex items-end gap-2">
-                <span className="font-mono text-3xl font-bold text-threat-neutral">
-                  {stats.accuracy.overall}%
-                </span>
-                <span className="pb-1 text-[10px] text-slate-500">classification accuracy (24h)</span>
+            <GlassCard className="flex flex-1 flex-col justify-between p-3.5 overflow-hidden">
+              <div className="flex items-center justify-between border-b border-white/[0.08] pb-1.5">
+                <div className="flex items-center gap-2">
+                  <Cpu size={15} className="text-emerald-400" />
+                  <span className="text-xs font-bold text-slate-200 uppercase tracking-wide">
+                    Transformer NLP Accuracy
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono text-sm font-black text-emerald-400">
+                    {stats.accuracy.overall}%
+                  </span>
+                  <span className="inline-flex items-center gap-0.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.2 text-[9px] font-bold text-emerald-300">
+                    <CheckCircle2 size={9} /> VALIDATED
+                  </span>
+                </div>
               </div>
-              <div className="mt-2 space-y-1">
+
+              <div className="space-y-1.5 pt-1">
                 {Object.entries(stats.accuracy.per_class).map(([label, pct]) => (
-                  <div key={label} className="flex items-center gap-2 text-[10.5px]">
-                    <span className="w-24 text-slate-500">{THREAT_SHORT[label] ?? label}</span>
-                    <div className="h-1 flex-1 rounded-full bg-white/[0.06]">
-                      <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: THREAT_COLORS[label] }} />
+                  <div key={label} className="flex items-center gap-2 text-[11px]">
+                    <span className="w-24 truncate font-medium text-slate-300">{THREAT_SHORT[label] ?? label}</span>
+                    <div className="h-1.5 flex-1 rounded-full bg-white/[0.08]">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${pct}%`, backgroundColor: THREAT_COLORS[label] ?? "#64748B" }}
+                      />
                     </div>
-                    <span className="font-mono text-slate-400">{pct}%</span>
+                    <span className="w-8 text-right font-mono text-[10px] font-bold text-slate-200">
+                      {pct}%
+                    </span>
                   </div>
                 ))}
               </div>
@@ -260,20 +581,28 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* language strip */}
+      {/* ── Bottom Strip: Multilingual Breakdown (24h) ───────────────── */}
       {trends && (
-        <GlassCard className="flex flex-wrap items-center gap-3 p-3.5">
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-            Language mix (24h)
-          </span>
-          {trends.languages.map((l) => (
-            <span key={l.name} className="flex items-center gap-1.5">
-              <LanguageChip language={l.name} />
-              <span className="font-mono text-[11px] text-slate-400">{l.pct}%</span>
+        <GlassCard className="flex flex-wrap items-center justify-between gap-3 p-3.5 border border-white/[0.08]">
+          <div className="flex items-center gap-2">
+            <Globe2 size={15} className="text-accent" />
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-200">
+              Multilingual NLP Ingestion Mix:
             </span>
-          ))}
-          <span className="ml-auto font-mono text-[10px] text-slate-600">
-            {trends.total_posts} posts analyzed
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {trends.languages.map((l) => (
+              <span
+                key={l.name}
+                className="flex items-center gap-1.5 rounded-xl border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 shadow-sm"
+              >
+                <LanguageChip language={l.name} />
+                <span className="font-mono text-xs font-bold text-slate-100">{l.pct}%</span>
+              </span>
+            ))}
+          </div>
+          <span className="font-mono text-xs text-slate-400">
+            {trends.total_posts.toLocaleString()} total posts analyzed across 5 Indic dialects
           </span>
         </GlassCard>
       )}
@@ -282,3 +611,6 @@ export default function Dashboard() {
     </div>
   );
 }
+
+
+

@@ -66,8 +66,8 @@ export default function Login() {
   }
 
   const field =
-    "w-full rounded-xl border border-white/[0.08] bg-white/[0.04] py-2.5 pl-10 pr-3 text-sm " +
-    "text-slate-100 placeholder-slate-500 outline-none focus:border-accent/50";
+    "w-full rounded-xl border border-white/[0.12] bg-base-950/80 py-2.5 pl-10 pr-3 text-sm " +
+    "text-white placeholder-slate-500 outline-none focus:border-accent/80 focus:ring-1 focus:ring-accent/40 transition-all";
 
   return (
     <div className="relative flex min-h-screen items-center justify-center p-4">
@@ -76,69 +76,104 @@ export default function Login() {
         initial={{ opacity: 0, y: 18, filter: "blur(6px)" }}
         animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
         transition={{ duration: 0.5, ease: "easeOut" }}
-        className="w-full max-w-sm rounded-2xl border border-white/[0.08] bg-base-900/70 p-6 backdrop-blur-xl"
+        className="w-full max-w-md rounded-3xl border border-white/[0.1] bg-base-950/90 p-8 backdrop-blur-2xl shadow-2xl"
       >
-        <div className="mb-6 flex items-center gap-2.5">
-          <span className="grid h-9 w-9 place-items-center rounded-xl border border-accent/40 bg-accent/15">
-            <Shield size={17} className="text-accent" />
-          </span>
-          <div>
-            <h1 className="text-sm font-bold tracking-wide text-slate-100">E-RAKSHAK · SENTINEL</h1>
-            <p className="text-[11px] text-slate-500">Authorised personnel only</p>
+        <div className="mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="grid h-10 w-10 place-items-center rounded-2xl border border-accent/40 bg-accent/15 shadow-[0_0_15px_rgba(245,158,11,0.25)]">
+              <Shield size={20} className="text-accent" />
+            </span>
+            <div>
+              <h1 className="text-base font-black tracking-wide text-white">E-RAKSHAK · AUTH</h1>
+              <p className="text-[11px] font-semibold text-accent uppercase">State Cyber Intelligence</p>
+            </div>
           </div>
+          <button
+            onClick={() => navigate("/")}
+            className="text-xs text-slate-400 hover:text-white transition-colors"
+          >
+            Portal Home →
+          </button>
         </div>
 
         {sessionEndedReason && !error && !mustChange && (
-          <p className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-300">
+          <p className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-2 text-xs text-amber-300">
             {sessionEndedReason}
           </p>
         )}
 
         {error && (
-          <p className="mb-4 flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-[11px] text-red-300">
-            <AlertCircle size={13} className="mt-px shrink-0" />
+          <p className="mb-4 flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-3.5 py-2 text-xs text-red-300">
+            <AlertCircle size={15} className="mt-0.5 shrink-0" />
             <span>{error}</span>
           </p>
         )}
 
         {!mustChange ? (
-          <form onSubmit={handleSignIn} className="space-y-3">
-            <div className="relative">
-              <User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-              <input
-                className={field}
-                placeholder="Username"
-                autoComplete="username"
-                autoFocus
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                required
-              />
+          <form onSubmit={handleSignIn} className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-xs font-semibold uppercase tracking-wider text-slate-300">
+                Officer Username / Badge ID
+              </label>
+              <div className="relative">
+                <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  className={field}
+                  placeholder="e.g. admin or officer_sharma"
+                  autoComplete="username"
+                  autoFocus
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                />
+              </div>
             </div>
-            <div className="relative">
-              <Lock size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-              <input
-                className={field}
-                type="password"
-                placeholder="Password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold uppercase tracking-wider text-slate-300">
+                Encrypted Password
+              </label>
+              <div className="relative">
+                <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  className={field}
+                  type="password"
+                  placeholder="••••••••••••"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+              </div>
             </div>
+
+            {/* Quick-fill helper for demo */}
+            <div className="flex items-center justify-between text-xs text-slate-400">
+              <span>Demo credentials:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setUsername("admin");
+                  setPassword("admin123");
+                }}
+                className="font-mono text-[11px] text-accent underline hover:text-accent-glow"
+              >
+                Auto-fill (admin / admin123)
+              </button>
+            </div>
+
             <button
               type="submit"
               disabled={busy}
-              className="glow-accent mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-accent/50 bg-accent/15 px-4 py-2.5 text-xs font-bold text-accent hover:bg-accent hover:text-base-900 disabled:opacity-50"
+              className="glow-accent mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-accent bg-accent/20 px-4 py-3 text-xs font-black tracking-wider text-accent transition-all duration-200 hover:bg-accent hover:text-slate-950 disabled:opacity-50"
             >
-              {busy && <Loader2 size={14} className="animate-spin" />}
-              {busy ? "Signing in…" : "Sign in"}
+              {busy && <Loader2 size={15} className="animate-spin" />}
+              {busy ? "AUTHENTICATING OFFICER…" : "SECURE SIGN IN"}
             </button>
           </form>
         ) : (
           <form onSubmit={handleChangePassword} className="space-y-3">
-            <p className="mb-1 text-[11px] leading-relaxed text-slate-400">
+            <p className="mb-1 text-xs leading-relaxed text-slate-300">
               This account requires a new password before it can be used. Choose at least 12
               characters mixing three of: lowercase, uppercase, digits, symbols.
             </p>
@@ -178,11 +213,11 @@ export default function Login() {
           </form>
         )}
 
-        <p className="mt-5 text-center text-[10px] leading-relaxed text-slate-600">
-          Access is logged. Every search, export and record change is recorded against your
-          badge for chain-of-custody purposes.
-        </p>
+        <div className="mt-6 border-t border-white/[0.08] pt-4 text-center text-[10.5px] leading-relaxed text-slate-500">
+          State of Gujarat Cyber Security Cell · All terminal sessions are auditable for chain-of-custody.
+        </div>
       </motion.div>
     </div>
   );
 }
+

@@ -1,30 +1,62 @@
-import { Bot, Globe, Languages, ShieldAlert } from "lucide-react";
+import { Bot, Globe, Languages, ShieldAlert, Smile, Meh, Frown } from "lucide-react";
 import {
   siFacebook, siInstagram, siReddit, siTelegram, siX, siYoutube,
 } from "simple-icons";
-import { SEVERITY_COLORS, THREAT_COLORS, THREAT_SHORT } from "../data/constants";
+import { SEVERITY_COLORS, THREAT_COLORS, THREAT_SHORT, SENTIMENT_COLORS } from "../data/constants";
 
 /** Threat class badge — color + text label together (never color alone). */
-export function ThreatBadge({ label, score }: { label: string; score?: number }) {
+export function ThreatBadge({ label, score, size = "md" }: { label: string; score?: number; size?: "sm" | "md" | "lg" }) {
   const color = THREAT_COLORS[label] ?? "#64748B";
+  const sizeClasses = size === "sm" ? "px-2 py-0.5 text-[10px]" : size === "lg" ? "px-3 py-1 text-xs" : "px-2.5 py-0.5 text-[11px]";
+
   return (
     <span
-      className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold"
-      style={{ color, borderColor: `${color}55`, backgroundColor: `${color}14` }}
+      className={`inline-flex items-center gap-1.5 rounded-full border font-semibold shadow-sm tracking-wide ${sizeClasses}`}
+      style={{ color, borderColor: `${color}60`, backgroundColor: `${color}18` }}
     >
       <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />
-      {THREAT_SHORT[label] ?? label}
-      {score !== undefined && <span className="font-mono opacity-80">{Math.round(score)}</span>}
+      <span>{THREAT_SHORT[label] ?? label}</span>
+      {score !== undefined && (
+        <span
+          className="rounded px-1 font-mono text-[10px] font-bold"
+          style={{ backgroundColor: `${color}28`, color }}
+        >
+          {Math.round(score)}
+        </span>
+      )}
+    </span>
+  );
+}
+
+export function SentimentBadge({ label, score }: { label: string; score: number }) {
+  const color = SENTIMENT_COLORS[label] ?? "#64748B";
+  const Icon = label === "positive" ? Smile : label === "negative" ? Frown : Meh;
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-mono text-[11px] font-semibold"
+      style={{ color, borderColor: `${color}40`, backgroundColor: `${color}12` }}
+      title={`Sentiment Polarity Score: ${score > 0 ? "+" : ""}${score.toFixed(2)}`}
+    >
+      <Icon size={11} />
+      <span className="capitalize">{label}</span>
+      <span className="opacity-80">({score > 0 ? "+" : ""}{score.toFixed(2)})</span>
     </span>
   );
 }
 
 export function LanguageChip({ language, mixed }: { language: string; mixed?: boolean }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-medium text-slate-400">
-      <Languages size={10} />
+    <span
+      className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[11px] font-medium text-slate-300"
+      title={mixed ? `${language} (Code-mixed vernacular: Hinglish/Gujlish)` : language}
+    >
+      <Languages size={11} className="text-slate-400" />
       {language}
-      {mixed && <span className="text-accent">·mix</span>}
+      {mixed && (
+        <span className="rounded bg-accent/20 px-1 py-px font-mono text-[9px] font-bold text-accent">
+          MIXED
+        </span>
+      )}
     </span>
   );
 }
@@ -33,10 +65,10 @@ export function SeverityChip({ severity }: { severity: string }) {
   const color = SEVERITY_COLORS[severity] ?? "#64748B";
   return (
     <span
-      className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider"
-      style={{ color, borderColor: `${color}55`, backgroundColor: `${color}14` }}
+      className="inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider shadow-sm"
+      style={{ color, borderColor: `${color}60`, backgroundColor: `${color}18` }}
     >
-      <ShieldAlert size={10} />
+      <ShieldAlert size={11} />
       {severity}
     </span>
   );
@@ -44,20 +76,14 @@ export function SeverityChip({ severity }: { severity: string }) {
 
 export function BotChip() {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-threat-critical/50 bg-threat-critical/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-threat-critical">
-      <Bot size={10} /> bot-like
+    <span className="inline-flex items-center gap-1 rounded-full border border-threat-critical/50 bg-threat-critical/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-threat-critical shadow-sm">
+      <Bot size={11} /> bot-like
     </span>
   );
 }
 
 /** Real brand marks, straight from simple-icons — official path data and
- *  official brand hex, so nothing here is hand-traced or approximated.
- *
- *  `tint` drives the chip's border/background wash and is kept separate from
- *  the glyph colour for X's sake: its official brand colour is pure black,
- *  which disappears against the dark theme, so its glyph follows the theme via
- *  `className` while the chip keeps X's grey as its wash. Every other brand
- *  colour is saturated enough to read on both themes as-is. */
+ *  official brand hex, so nothing here is hand-traced or approximated. */
 const PLATFORM_META: Record<
   string,
   { path: string; tint: string; color?: string; className?: string }
@@ -77,13 +103,11 @@ const PLATFORM_META: Record<
 export function PlatformIcon({ platform, size = 22 }: { platform: string; size?: number }) {
   const meta = PLATFORM_META[platform];
 
-  // Unknown source (RSS/news desks, the simulator, anything added later) gets a
-  // neutral globe rather than a broken-looking empty chip.
   if (!meta) {
     return (
       <span
         title={platform}
-        className="inline-flex shrink-0 items-center justify-center rounded-lg border border-slate-500/30 bg-slate-500/10 text-slate-400"
+        className="inline-flex shrink-0 items-center justify-center rounded-lg border border-slate-500/30 bg-slate-500/10 text-slate-300"
         style={{ width: size, height: size }}
       >
         <Globe size={size * 0.58} />
@@ -94,12 +118,12 @@ export function PlatformIcon({ platform, size = 22 }: { platform: string; size?:
   return (
     <span
       title={platform}
-      className="inline-flex shrink-0 items-center justify-center rounded-lg border"
+      className="inline-flex shrink-0 items-center justify-center rounded-lg border shadow-sm"
       style={{
         width: size,
         height: size,
         borderColor: `${meta.tint}44`,
-        backgroundColor: `${meta.tint}12`,
+        backgroundColor: `${meta.tint}14`,
       }}
     >
       <svg
@@ -117,3 +141,4 @@ export function PlatformIcon({ platform, size = 22 }: { platform: string; size?:
     </span>
   );
 }
+

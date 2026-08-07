@@ -169,7 +169,7 @@ class Settings(BaseSettings):
     # How long a pause means "finished" rather than "thinking". Shortened
     # automatically after terminal punctuation and lengthened after a trailing
     # conjunction — see services/voice/end_of_speech.py.
-    VOICE_EOS_SILENCE_SECONDS: float = 1.0
+    VOICE_EOS_SILENCE_SECONDS: float = 0.55
 
     # Spoken once, on the first connection of a sitting — not on the automatic
     # reconnects that follow an idle close, or an officer would be greeted

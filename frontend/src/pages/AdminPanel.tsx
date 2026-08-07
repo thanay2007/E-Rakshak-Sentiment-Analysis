@@ -47,32 +47,40 @@ export default function AdminPanel() {
   const [tab, setTab] = useState<Tab>("officers");
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-lg font-bold tracking-wide text-slate-100">Admin Panel</h1>
-        <p className="mt-1 text-xs text-slate-500">
-          Signed in as{" "}
-          <span className="font-mono text-slate-400">{user?.username}</span> ·{" "}
-          {user?.role}. Every action on this page is written to the audit trail
-          against your badge.
-        </p>
-      </div>
+    <div className="space-y-4">
+      {/* Executive Command Header */}
+      <div className="flex flex-col gap-3 rounded-2xl border border-white/[0.08] bg-base-950/80 p-4 shadow-xl backdrop-blur-xl md:flex-row md:items-center md:justify-between">
+        <div className="flex items-center gap-3">
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-accent/40 bg-accent/15 text-accent shadow-[0_0_15px_rgba(20,184,196,0.25)]">
+            <ShieldCheck size={20} />
+          </div>
+          <div>
+            <h1 className="text-sm font-black uppercase tracking-wider text-white sm:text-base">
+              Security Governance & Officer Registry
+            </h1>
+            <p className="text-xs text-slate-400">
+              Active Officer: <span className="font-mono font-bold text-accent">@{user?.username}</span> ({user?.role?.toUpperCase()}) · Strict append-only audit trail logging
+            </p>
+          </div>
+        </div>
 
-      <div className="flex flex-wrap gap-2">
-        {TABS.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            onClick={() => setTab(id)}
-            className={`flex items-center gap-2 rounded-xl border px-4 py-2 text-xs font-semibold transition-colors ${
-              tab === id
-                ? "border-accent/40 bg-accent/10 text-accent"
-                : "border-white/[0.08] text-slate-400 hover:bg-white/[0.05] hover:text-slate-200"
-            }`}
-          >
-            <Icon size={14} />
-            {label}
-          </button>
-        ))}
+        {/* Navigation Tabs */}
+        <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.03] p-1">
+          {TABS.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => setTab(id)}
+              className={`flex items-center gap-2 rounded-lg px-3 py-1.5 font-mono text-xs font-bold transition-all ${
+                tab === id
+                  ? "bg-accent text-base-950 shadow-md shadow-accent/20"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <Icon size={14} />
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {tab === "officers" && <OfficersTab />}

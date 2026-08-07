@@ -38,9 +38,9 @@ from app.services.voice.types import (EndOfSpeechPacket, InterimEndOfSpeechPacke
 
 log = logging.getLogger("sentinel.voice.eos")
 
-DEFAULT_SILENCE_TIMEOUT = 1.0          # Rapida's defaultSilenceTimeout
-PUNCTUATED_TIMEOUT = 0.45
-TRAILING_WORD_TIMEOUT = 1.8
+DEFAULT_SILENCE_TIMEOUT = 0.55          # Rapida's defaultSilenceTimeout
+PUNCTUATED_TIMEOUT = 0.30
+TRAILING_WORD_TIMEOUT = 1.5
 
 # Sentence-final punctuation across the scripts this deployment sees. The
 # Devanagari danda is not decorative here — a Hindi or Gujarati transcript ends

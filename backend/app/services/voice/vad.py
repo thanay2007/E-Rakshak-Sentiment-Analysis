@@ -82,13 +82,13 @@ class EnergyVAD:
 
     name = "energy_vad"
 
-    def __init__(self, on_packet: OnPacket, *, threshold: float = 0.012,
-                 speech_frames: int = 3, silence_frames: int = 25) -> None:
+    def __init__(self, on_packet: OnPacket, *, threshold: float = 0.008,
+                 speech_frames: int = 3, silence_frames: int = 15) -> None:
         self._on_packet = on_packet
         self._gate = _Hysteresis(threshold=0.5, speech_frames=speech_frames,
                                  silence_frames=silence_frames)
         self._base_threshold = threshold
-        self._floor = threshold
+        self._floor = 0.002
 
     def probability(self, pcm: bytes) -> float:
         level = rms(pcm)
@@ -97,7 +97,7 @@ class EnergyVAD:
             self._floor = 0.9 * self._floor + 0.1 * level
         else:
             self._floor = 0.999 * self._floor + 0.001 * level
-        threshold = max(self._base_threshold, self._floor * 3.0)
+        threshold = max(self._base_threshold, self._floor * 2.5)
         if level <= threshold:
             return 0.0
         # Map "just over the threshold" → 0.5 and "well over" → ~1, so the
