@@ -53,6 +53,77 @@ html.light {
 
   --color-white: 0, 0, 0;
   --color-black: 255, 255, 255;
+
+  /* High contrast warm amber in light mode (WCAG AA compliant against white/light backgrounds) */
+  --color-accent: 180, 83, 9;
+  --color-accent-dim: 146, 64, 14;
+  --color-accent-glow: 217, 119, 6;
+}
+
+/* ── light mode high-contrast text & badge auto-readability overrides ── */
+html.light .text-amber-100,
+html.light .text-amber-200,
+html.light .text-amber-300,
+html.light .text-amber-400,
+html.light .text-amber-500,
+html.light .text-yellow-100,
+html.light .text-yellow-200,
+html.light .text-yellow-300,
+html.light .text-yellow-400,
+html.light .text-yellow-500 {
+  color: #b45309 !important;
+}
+
+html.light .text-amber-200\/80,
+html.light .text-amber-300\/80,
+html.light .text-amber-400\/80 {
+  color: #92400e !important;
+}
+
+html.light .border-amber-500\/20,
+html.light .border-amber-500\/25,
+html.light .border-amber-500\/30,
+html.light .border-amber-500\/40,
+html.light .border-amber-500\/50 {
+  border-color: rgba(180, 83, 9, 0.35) !important;
+}
+
+html.light .bg-amber-500\/10,
+html.light .bg-amber-500\/15,
+html.light .bg-amber-500\/20,
+html.light .bg-amber-500\/25,
+html.light .bg-amber-500\/30 {
+  background-color: rgba(245, 158, 11, 0.12) !important;
+}
+
+html.light .text-emerald-300,
+html.light .text-emerald-400 {
+  color: #047857 !important;
+}
+
+html.light .text-red-300,
+html.light .text-red-400 {
+  color: #b91c1c !important;
+}
+
+html.light .bg-emerald-500\/20,
+html.light .bg-emerald-500\/15 {
+  background-color: rgba(5, 150, 105, 0.18) !important;
+}
+
+html.light .border-emerald-500\/40,
+html.light .border-emerald-500\/30 {
+  border-color: rgba(5, 150, 105, 0.5) !important;
+}
+
+html.light .bg-red-500\/20,
+html.light .bg-red-500\/15 {
+  background-color: rgba(220, 38, 38, 0.18) !important;
+}
+
+html.light .border-red-500\/40,
+html.light .border-red-500\/30 {
+  border-color: rgba(220, 38, 38, 0.5) !important;
 }
 
 body {

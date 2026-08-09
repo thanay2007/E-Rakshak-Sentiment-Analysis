@@ -56,15 +56,15 @@ export default function TopBar() {
 
   return (
     <>
-      <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-white/[0.08] bg-base-900/80 px-4 backdrop-blur-xl">
-        <form onSubmit={submit} className="relative w-full max-w-sm">
+      <header className="sticky top-0 z-20 flex h-14 items-center gap-3.5 border-b border-white/[0.08] bg-base-900/80 px-5 sm:px-6 backdrop-blur-xl">
+        <form onSubmit={submit} className="relative w-full max-w-xs sm:max-w-sm md:max-w-md">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             ref={searchInputRef}
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search posts, handles, hashtags… (press /)"
-            className="w-full rounded-xl border border-white/[0.1] bg-white/[0.05] py-2 pl-9 pr-8 text-xs text-slate-100 placeholder:text-slate-500 focus:border-accent/60 focus:bg-white/[0.07] focus:outline-none"
+            className="w-full rounded-xl border border-white/[0.1] bg-white/[0.05] py-2 pl-9 pr-8 text-xs text-slate-100 placeholder:text-slate-500 focus:border-accent/60 focus:bg-white/[0.07] focus:outline-none transition-all"
             aria-label="Global search"
           />
           <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-white/10 bg-white/[0.06] px-1.5 py-0.5 font-mono text-[9px] text-slate-400">
@@ -107,11 +107,11 @@ export default function TopBar() {
           <button
             onClick={() => setGuideOpen(true)}
             className="flex items-center gap-1.5 rounded-xl border border-accent/30 bg-accent/10 px-2.5 py-1.5 text-xs font-semibold text-accent transition-colors hover:bg-accent/20"
-            aria-label="Open Intel Guide"
-            title="Intel & Operations Guide"
+            aria-label="Open Guide"
+            title="Operations Guide"
           >
             <HelpCircle size={14} />
-            <span className="hidden sm:inline">Intel Guide</span>
+            <span className="hidden sm:inline">Guide</span>
           </button>
 
           <button

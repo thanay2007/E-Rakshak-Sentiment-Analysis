@@ -183,39 +183,75 @@ export function useSpeaker() {
           resolve();
           return;
         }
-        // Queued, not cancelled. A reply is delivered a sentence at a time as
-        // the model produces it, and cancelling on each one would leave the
-        // officer hearing only the last sentence of every answer.
-        const mine = generation.current;
 
-        const utterance = new SpeechSynthesisUtterance(text);
-        if (voiceRef.current) utterance.voice = voiceRef.current;
-        // Slightly under conversational pace and a touch low: this reads out
-        // threat scores and place names, and both survive being read calmly.
-        utterance.rate = 1.0;
-        utterance.pitch = 0.95;
-
-        let settled = false;
-        const finish = () => {
-          if (settled) return;
-          settled = true;
-          if (mine === generation.current) {
-            outstanding.current = Math.max(0, outstanding.current - 1);
-            if (outstanding.current === 0) setSpeaking(false);
+        try {
+          if (window.speechSynthesis.paused) {
+            window.speechSynthesis.resume();
           }
-          resolve();
-        };
-        utterance.onend = finish;
-        utterance.onerror = finish;
+        } catch {
+          // ignore
+        }
 
-        outstanding.current += 1;
+        if (!voiceRef.current) {
+          const available = window.speechSynthesis.getVoices();
+          if (available && available.length > 0) {
+            voiceRef.current = pickVoice(available);
+          }
+        }
+
+        const mine = generation.current;
+        
+        // Split into sentences for immediate playback start
+        const sentences = text.match(/[^.!?]+[.!?]*/g) || [text];
+        let completed = 0;
+        
         setSpeaking(true);
-        window.speechSynthesis.speak(utterance);
+        
+        sentences.forEach((sentence, index) => {
+          if (!sentence.trim()) {
+            completed++;
+            if (completed === sentences.length) {
+              if (mine === generation.current) setSpeaking(false);
+              resolve();
+            }
+            return;
+          }
+          
+          const utterance = new SpeechSynthesisUtterance(sentence);
+          if (voiceRef.current) utterance.voice = voiceRef.current;
+          utterance.rate = 1.05;
+          utterance.pitch = 0.98;
 
-        // Chrome drops long utterances silently and never fires onend, which
-        // would leave the microphone gated forever. Release on a generous
-        // estimate of the reading time as a backstop.
-        window.setTimeout(finish, 2500 + text.length * 90);
+          const finish = () => {
+            completed++;
+            if (completed === sentences.length) {
+              if (mine === generation.current) {
+                outstanding.current = Math.max(0, outstanding.current - 1);
+                if (outstanding.current === 0) setSpeaking(false);
+              }
+              resolve();
+            }
+          };
+          
+          utterance.onend = finish;
+          utterance.onerror = finish;
+
+          if (index === 0) {
+            outstanding.current += 1;
+          }
+
+          try {
+            window.speechSynthesis.speak(utterance);
+            if (window.speechSynthesis.paused) {
+              window.speechSynthesis.resume();
+            }
+          } catch {
+            finish();
+          }
+
+          // Fallback timeout per sentence
+          window.setTimeout(finish, 2000 + sentence.length * 80);
+        });
       }),
     []
   );

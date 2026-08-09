@@ -1,9 +1,10 @@
 import { motion } from "framer-motion";
-import { AlertCircle, Loader2, Lock, Shield, User } from "lucide-react";
+import { AlertCircle, Loader2, Lock, User } from "lucide-react";
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import BackgroundFX from "../components/BackgroundFX";
+import { Logo } from "../components/Sidebar";
 import { useAuth } from "../hooks/useAuth";
 import { safeInternalPath } from "../lib/safeUrl";
 import { changePassword } from "../services/auth";
@@ -80,9 +81,9 @@ export default function Login() {
       >
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-2xl border border-accent/40 bg-accent/15 shadow-[0_0_15px_rgba(245,158,11,0.25)]">
-              <Shield size={20} className="text-accent" />
-            </span>
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-accent/40 bg-accent/15 shadow-[0_0_15px_rgba(245,158,11,0.25)]">
+              <Logo size={28} />
+            </div>
             <div>
               <h1 className="text-base font-black tracking-wide text-white">E-RAKSHAK · AUTH</h1>
               <p className="text-[11px] font-semibold text-accent uppercase">State Cyber Intelligence</p>
@@ -147,25 +148,10 @@ export default function Login() {
               </div>
             </div>
 
-            {/* Quick-fill helper for demo */}
-            <div className="flex items-center justify-between text-xs text-slate-400">
-              <span>Demo credentials:</span>
-              <button
-                type="button"
-                onClick={() => {
-                  setUsername("admin");
-                  setPassword("admin123");
-                }}
-                className="font-mono text-[11px] text-accent underline hover:text-accent-glow"
-              >
-                Auto-fill (admin / admin123)
-              </button>
-            </div>
-
             <button
               type="submit"
               disabled={busy}
-              className="glow-accent mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-accent bg-accent/20 px-4 py-3 text-xs font-black tracking-wider text-accent transition-all duration-200 hover:bg-accent hover:text-slate-950 disabled:opacity-50"
+              className="glow-accent mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-accent bg-accent/20 px-4 py-3 text-xs font-black tracking-wider text-accent transition-all duration-200 hover:bg-accent hover:text-slate-950 disabled:opacity-50"
             >
               {busy && <Loader2 size={15} className="animate-spin" />}
               {busy ? "AUTHENTICATING OFFICER…" : "SECURE SIGN IN"}

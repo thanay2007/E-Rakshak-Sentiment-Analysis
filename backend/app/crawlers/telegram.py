@@ -192,11 +192,21 @@ class TelegramCollector(Collector):
             log.warning("Telegram preview collect failed: %s", exc)
         return posts
 
-    # ── official mode: MTProto via Telethon ─────────────────────────────
+    async def disconnect(self) -> None:
+        """Gracefully disconnect the MTProto client if connected."""
+        if self._client is not None:
+            try:
+                await self._client.disconnect()
+            except Exception:
+                pass
+            self._client = None
 
     async def _connect(self):
         if self._client is not None:
-            return self._client
+            if hasattr(self._client, "is_connected") and self._client.is_connected():
+                return self._client
+            await self.disconnect()
+
         from telethon import TelegramClient          # lazy: optional dependency
         from telethon.sessions import StringSession
 
@@ -204,14 +214,20 @@ class TelegramCollector(Collector):
                    if settings.TELEGRAM_SESSION_STRING else str(SESSION_FILE))
         client = TelegramClient(session, settings.TELEGRAM_API_ID,
                                 settings.TELEGRAM_API_HASH)
-        await client.connect()
-        if not await client.is_user_authorized():
-            # No interactive login here — the ingestion loop has no console.
-            # Generate a session string once offline, then set it in .env.
-            raise RuntimeError(
-                "Telegram session not authorized — run "
-                "`python -m app.crawlers.telegram_login` once and put the "
-                "printed string in TELEGRAM_SESSION_STRING")
+        try:
+            await client.connect()
+            if not await client.is_user_authorized():
+                await client.disconnect()
+                raise RuntimeError(
+                    "Telegram session not authorized — run "
+                    "`python -m app.crawlers.telegram_login` once and put the "
+                    "printed string in TELEGRAM_SESSION_STRING")
+        except Exception:
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+            raise
         self._client = client
         return client
 
@@ -237,8 +253,10 @@ class TelegramCollector(Collector):
         try:
             client = await self._connect()
         except Exception as exc:
-            log.warning("Telegram MTProto connect failed: %s", exc)
-            self._client = None
+            log.warning("Telegram MTProto connect failed (%s) — falling back to previews", exc)
+            await self.disconnect()
+            # Park MTProto for 1 hour on auth / connect failure so preview carries the load
+            self._mtproto_until = time.monotonic() + 3600
             return posts
 
         # 1. seed channels — newest messages of each, geo-tagged from config

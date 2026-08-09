@@ -28,18 +28,25 @@ export function ThreatBadge({ label, score, size = "md" }: { label: string; scor
   );
 }
 
-export function SentimentBadge({ label, score }: { label: string; score: number }) {
-  const color = SENTIMENT_COLORS[label] ?? "#64748B";
-  const Icon = label === "positive" ? Smile : label === "negative" ? Frown : Meh;
+export function SentimentBadge({ label, score }: { label: string; score?: number }) {
+  const norm = (label || "neutral").toLowerCase();
+  const color = SENTIMENT_COLORS[norm] ?? "#64748B";
+
+  let text = "Neutral";
+  if (norm.includes("pos")) {
+    text = "Positive";
+  } else if (norm.includes("neg") || norm.includes("hostile")) {
+    text = "Negative";
+  }
+
   return (
     <span
-      className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-mono text-[11px] font-semibold"
-      style={{ color, borderColor: `${color}40`, backgroundColor: `${color}12` }}
-      title={`Sentiment Polarity Score: ${score > 0 ? "+" : ""}${score.toFixed(2)}`}
+      className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold tracking-wide shadow-sm"
+      style={{ color, borderColor: `${color}50`, backgroundColor: `${color}15` }}
+      title={`Sentiment: ${text}`}
     >
-      <Icon size={11} />
-      <span className="capitalize">{label}</span>
-      <span className="opacity-80">({score > 0 ? "+" : ""}{score.toFixed(2)})</span>
+      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />
+      <span>{text}</span>
     </span>
   );
 }

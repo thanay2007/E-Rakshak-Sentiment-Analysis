@@ -35,6 +35,14 @@ from app.services.voice.transformer.tts import warm_local_voice
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("sentinel")
 
+# Silence noisy third-party loggers
+logging.getLogger("huggingface_hub.utils._http").setLevel(logging.ERROR)
+for _lib in ("instagrapi", "public_request", "private_request", "instagrapi.mixins.user",
+            "instagrapi.mixins.private", "instagrapi.mixins.challenge", "instagrapi.mixins.auth"):
+    _l = logging.getLogger(_lib)
+    _l.setLevel(logging.CRITICAL)
+    _l.propagate = False
+
 from app.config import settings
 from app.ml.geo import _ALIASES as CITY_ALIASES
 
@@ -100,6 +108,14 @@ async def lifespan(app: FastAPI):
     log.info("SENTINEL online")
     yield
     stop_scheduler()
+    # Clean up any active crawler background sessions (Telethon, etc.)
+    from app.crawlers.registry import get_collector
+    tg = get_collector("Telegram")
+    if tg and hasattr(tg, "disconnect"):
+        try:
+            await tg.disconnect()
+        except Exception:
+            pass
 
 
 app = FastAPI(

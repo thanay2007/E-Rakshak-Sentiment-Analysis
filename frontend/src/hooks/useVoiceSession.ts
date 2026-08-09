@@ -109,6 +109,8 @@ interface Options {
   /** Silence the assistant without closing the channel. Synthesised audio is
    *  dropped rather than played, so it also never reaches the microphone. */
   muted?: boolean;
+  /** True mutes the user's microphone without disconnecting the WebSocket. */
+  micMuted?: boolean;
 }
 
 // ── half-duplex tuning ─────────────────────────────────────────────────────
@@ -180,7 +182,7 @@ interface Scheduled {
 
 export function useVoiceSession({
   token, page, onNavigate, speakLocally, cancelLocalSpeech, enabled,
-  muted = false,
+  muted = false, micMuted = false,
 }: Options) {
   const [state, setState] = useState<VoiceState>("idle");
   const [connected, setConnected] = useState(false);
@@ -256,11 +258,14 @@ export function useVoiceSession({
   const lastLevelPush = useRef(0);
 
   const providersRef = useRef<{ stt: string; tts: string } | null>(null);
-  const wakeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const spokenContexts = useRef<Set<string>>(new Set());
+  const wakeTimer = useRef<number | null>(null);
   const pageRef = useRef(page);
   pageRef.current = page;
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
+  const micMutedRef = useRef(micMuted);
+  micMutedRef.current = micMuted;
 
   const push = useCallback((turn: VoiceTurn) => {
     setTurns((prev) => [...prev.slice(-29), turn]);
@@ -415,6 +420,11 @@ export function useVoiceSession({
 
       reportPlayback();
 
+      if (micMutedRef.current) {
+        bargeMs.current = 0;
+        return;
+      }
+
       if (microphoneGated()) {
         // Half duplex: nothing leaves while the assistant is audible. The only
         // question left is whether the officer is talking over it.
@@ -502,10 +512,11 @@ export function useVoiceSession({
           // "it closed" packet, so the label expires here. Any extension
           // arrives as a fresh packet and restarts this timer.
           if (wakeTimer.current) clearTimeout(wakeTimer.current);
-          if (packet.listening && packet.expires_in > 0) {
+          const expiresInSec = typeof packet.expires_in === "number" ? packet.expires_in : Number(packet.expires_in || 0);
+          if (packet.listening && expiresInSec > 0) {
             wakeTimer.current = setTimeout(
               () => setWake((w) => ({ ...w, listening: false })),
-              packet.expires_in * 1000);
+              expiresInSec * 1000);
           }
           break;
         }
@@ -521,15 +532,40 @@ export function useVoiceSession({
           setState("thinking");
           break;
 
-        case "LLMResponseDonePacket":
+        case "LLMResponseDonePacket": {
+          const text = String(packet.text ?? "");
+          const ctxId = String(packet.context_id ?? "");
           push({
-            id: `${packet.context_id}-reply`,
+            id: `${ctxId || Date.now()}-reply`,
             role: "sentinel",
-            text: String(packet.text ?? ""),
+            text,
           });
+          if (providersRef.current?.tts === "browser" && speakLocally && text.trim()) {
+            if (ctxId) spokenContexts.current.add(ctxId);
+            localPending.current += 1;
+            localSpeaking.current = true;
+            lastLiveAt.current = Date.now();
+            setState("speaking");
+            reportPlayback();
+            void speakLocally(text).finally(() => {
+              localPending.current = Math.max(0, localPending.current - 1);
+              if (localPending.current === 0) {
+                localSpeaking.current = false;
+                lastLiveAt.current = Date.now();
+                setState((current) => (current === "speaking" ? "idle" : current));
+              }
+              reportPlayback();
+            });
+          }
           break;
+        }
 
         case "TextToSpeechTextPacket": {
+          const ctxId = String(packet.context_id ?? "");
+          if (ctxId && spokenContexts.current.has(ctxId)) {
+            // Already spoken immediately on LLMResponseDonePacket
+            break;
+          }
           // With no server-side synthesiser configured, this is the instruction
           // to speak locally. The text is already normalised for speech by the
           // backend chain. Holding `localSpeaking` for the true duration of the
@@ -655,27 +691,47 @@ export function useVoiceSession({
       window.addEventListener("keydown", resume);
     }
 
-    const blob = new Blob([CAPTURE_WORKLET], { type: "application/javascript" });
-    const workletUrl = URL.createObjectURL(blob);
+    const source = context.createMediaStreamSource(micStream);
+    sourceNode.current = source;
+
+    let useWorkletSuccess = false;
     try {
-      await context.audioWorklet.addModule(workletUrl);
-    } finally {
-      URL.revokeObjectURL(workletUrl);
+      if (context.audioWorklet) {
+        const blob = new Blob([CAPTURE_WORKLET], { type: "application/javascript" });
+        const workletUrl = URL.createObjectURL(blob);
+        try {
+          await context.audioWorklet.addModule(workletUrl);
+          const node = new AudioWorkletNode(context, "capture-processor");
+          node.port.onmessage = (event: MessageEvent<Float32Array>) =>
+            handleBlockRef.current(event.data);
+          source.connect(node);
+          // Connect to destination with no gain: some browsers suspend a worklet
+          // whose output reaches nothing. This routes silence, not a feedback loop.
+          const mute = context.createGain();
+          mute.gain.value = 0;
+          node.connect(mute).connect(context.destination);
+          workletNode.current = node;
+          useWorkletSuccess = true;
+        } finally {
+          URL.revokeObjectURL(workletUrl);
+        }
+      }
+    } catch {
+      useWorkletSuccess = false;
     }
 
-    const source = context.createMediaStreamSource(micStream);
-    const node = new AudioWorkletNode(context, "capture-processor");
-    node.port.onmessage = (event: MessageEvent<Float32Array>) =>
-      handleBlockRef.current(event.data);
-    source.connect(node);
-    // Connect to destination with no gain: some browsers suspend a worklet
-    // whose output reaches nothing. This routes silence, not a feedback loop.
-    const mute = context.createGain();
-    mute.gain.value = 0;
-    node.connect(mute).connect(context.destination);
+    if (!useWorkletSuccess) {
+      const scriptNode = context.createScriptProcessor(1024, 1, 1);
+      scriptNode.onaudioprocess = (e) => {
+        const inputData = e.inputBuffer.getChannelData(0);
+        handleBlockRef.current(new Float32Array(inputData));
+      };
+      source.connect(scriptNode);
+      const mute = context.createGain();
+      mute.gain.value = 0;
+      scriptNode.connect(mute).connect(context.destination);
+    }
 
-    sourceNode.current = source;
-    workletNode.current = node;
     return context;
   }, []);
 
@@ -836,8 +892,8 @@ export function useVoiceSession({
     () => () => {
       running.current = false;
       disconnect();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
 

@@ -245,11 +245,16 @@ export default function ThreatFeed() {
           </span>
           <button
             onClick={() => void refresh()}
-            className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs text-slate-300 hover:bg-white/[0.08] hover:text-white transition-all shadow-sm"
+            disabled={loading}
+            className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs transition-all shadow-sm ${
+              loading
+                ? "border-accent/60 bg-accent/20 text-accent shadow-[0_0_15px_rgba(245,158,11,0.25)]"
+                : "border-white/10 bg-white/[0.04] text-slate-300 hover:border-accent/40 hover:bg-white/[0.08] hover:text-white"
+            }`}
             title="Refresh feed"
           >
             <RefreshCw size={12} className={loading ? "animate-spin text-accent" : ""} />
-            <span className="hidden sm:inline font-mono text-[11px]">Sync</span>
+            <span className="hidden sm:inline font-mono text-[11px]">{loading ? "Syncing…" : "Sync"}</span>
           </button>
         </div>
 

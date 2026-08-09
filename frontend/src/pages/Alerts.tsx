@@ -171,9 +171,6 @@ export default function Alerts() {
             <h1 className="text-sm font-black uppercase tracking-wider text-white sm:text-base">
               Threat Alerts & Critical Incidents
             </h1>
-            <p className="text-xs text-slate-400">
-              Automated high-severity escalation dispatcher · Law enforcement coordination
-            </p>
           </div>
         </div>
 

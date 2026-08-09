@@ -116,11 +116,7 @@ export default function Sentinel() {
           trace: answer.trace,
           data: answer.data,
         });
-        await say(answer.speech);
-        // Navigation targets only ever come from the backend's deterministic
-        // layer — never from the LLM — but they still go through the same
-        // in-app path check the sign-in redirect uses. A path from the network
-        // is a path from the network.
+        void say(answer.speech);
         if (answer.navigate) navigate(safeInternalPath(answer.navigate, "/app"));
       } catch (err) {
         const message =
@@ -144,8 +140,9 @@ export default function Sentinel() {
   const voice = useVoiceSession({
     token,
     page: location.pathname,
-    enabled: micOn && Boolean(token),
+    enabled: Boolean(token),
     muted,
+    micMuted: !micOn,
     onNavigate: (path) => navigate(safeInternalPath(path, "/app")),
     speakLocally: say,
     cancelLocalSpeech: cancel,
@@ -227,9 +224,64 @@ export default function Sentinel() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [turns, thinking]);
 
+  // 1. Auto-close mic when the agent finishes answering (transitions back to listening).
+  // This solves the issue of the mic staying open automatically after responding.
+  const previousState = useRef(voice.state);
+  useEffect(() => {
+    if ((previousState.current === "speaking" || previousState.current === "thinking") && voice.state === "listening") {
+      setMicOn(false);
+      persist(MIC_KEY, false);
+    }
+    previousState.current = voice.state;
+  }, [voice.state]);
+
+  // 2. Stop words: instantly end the turn when specific words are heard.
+  useEffect(() => {
+    if (interim && /\b(okay|ok|over|stop listening|that'?s all|stand down)\b[.!]*$/i.test(interim)) {
+      voice.endTurn();
+      // DO NOT turn off the mic here, or we won't hear the response!
+    }
+    
+    // Fallback for typed turns or final transcriptions.
+    const last = turns[turns.length - 1];
+    if (last && last.role === "officer" && /\b(okay|ok|over|stop listening|that'?s all|stand down)\b[.!]*$/i.test(last.text)) {
+      voice.endTurn();
+    }
+  }, [interim, turns, voice]);
+
+  // 3. Auto-close mic after 3 seconds of extended pause.
+  const lastLoud = useRef(Date.now());
+  
+  useEffect(() => {
+    if (voice.level > 0.03) lastLoud.current = Date.now();
+  }, [voice.level]);
+
+  useEffect(() => {
+    if (!micOn) return;
+    
+    // Reset timer when mic is turned on.
+    lastLoud.current = Date.now();
+    
+    const interval = setInterval(() => {
+      // Don't timeout if it's currently speaking or thinking
+      if (voice.speaking || thinking || voice.state === "thinking" || voice.state === "speaking") {
+        lastLoud.current = Date.now();
+        return;
+      }
+      
+      if (Date.now() - lastLoud.current > 3000) {
+        setMicOn(false);
+        persist(MIC_KEY, false);
+        voice.endTurn();
+      }
+    }, 500);
+    
+    return () => clearInterval(interval);
+  }, [micOn, voice.speaking, thinking, voice.state, voice]);
+
   /** The orb. The microphone is already open, so this cannot mean "start
    *  listening" — it means the two things an officer actually wants mid-answer:
-   *  stop talking, or show me the transcript. */
+   *  stop talking, or show me the transcript. If the mic is off, it turns it on. */
   const orbClick = () => {
     clearError();
     voice.clearError();
@@ -237,7 +289,13 @@ export default function Sentinel() {
       voice.interrupt();
       return;
     }
-    setOpen((current) => !current);
+    if (!micOn) {
+      setMicOn(true);
+      persist(MIC_KEY, true);
+      setOpen(true);
+    } else {
+      setOpen((current) => !current);
+    }
   };
 
   // One entry point for a typed question, so the input does not have to know
@@ -274,7 +332,7 @@ export default function Sentinel() {
               // reads a filtered utterance as a broken microphone — so the
               // line says which of the two states it is actually in.
               ? voice.wake.required && !voice.wake.listening
-                ? "say “Sentinel” to ask"
+                ? "say “E-Rakshak” or “Sentinel” to ask"
                 : `listening${voice.providers?.stt ? ` · ${voice.providers.stt}` : ""}`
               : needsBrowserStt && browserListening
                 ? "listening"
@@ -291,7 +349,7 @@ export default function Sentinel() {
             transition={{ duration: 0.2, ease: "easeOut" }}
             className="fixed bottom-24 right-5 z-40 flex max-h-[70vh] w-[min(400px,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-base-900/95 backdrop-blur-xl"
             role="dialog"
-            aria-label="Sentinel voice assistant"
+            aria-label="E-Rakshak voice assistant"
           >
             {/* header */}
             <div className="flex items-center gap-2.5 border-b border-white/[0.06] px-4 py-3">
@@ -302,7 +360,7 @@ export default function Sentinel() {
                 )}
               </span>
               <div className="min-w-0 flex-1">
-                <div className="text-xs font-bold tracking-wide text-slate-100">SENTINEL</div>
+                <div className="text-xs font-bold tracking-wide text-slate-100">E-RAKSHAK</div>
                 <div className="text-[10px] text-slate-500">{status}</div>
               </div>
 
@@ -336,7 +394,7 @@ export default function Sentinel() {
                 <div className="space-y-3">
                   <p className="text-[11px] leading-relaxed text-slate-500">
                     Ask me anything about what’s being monitored, or about how
-                    SENTINEL itself works. I query the live data
+                    E-RAKSHAK itself works. I query the live data
                     {caps?.sql_enabled ? " directly" : ""} and answer from the
                     product’s own documentation — I can’t change, action or
                     export anything, and I won’t discuss accounts, credentials,
@@ -589,10 +647,8 @@ function Evidence({ data }: { data?: Record<string, unknown> }) {
               </thead>
               <tbody className="text-slate-400">
                 {sql.rows.slice(0, 20).map((row, i) => (
-                  // eslint-disable-next-line react/no-array-index-key
                   <tr key={i}>
                     {row.map((cell, j) => (
-                      // eslint-disable-next-line react/no-array-index-key
                       <td key={j} className="pr-3 py-px">
                         {cell === null ? "—" : String(cell)}
                       </td>

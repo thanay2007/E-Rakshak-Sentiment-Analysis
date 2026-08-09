@@ -211,8 +211,8 @@ _NAV_VERB_WEAK = re.compile(
 #: the officer was reading.
 _DESTINATION_ONLY = frozenset({
     "investigate", "investigation", "network", "graph", "reports", "report",
-    "settings", "admin", "admin panel", "feed", "threat feed", "posts",
-    "overview", "dashboard", "home",
+    "settings", "admin", "admin panel", "feed", "threat feed", "overview", 
+    "dashboard", "home",
 })
 
 

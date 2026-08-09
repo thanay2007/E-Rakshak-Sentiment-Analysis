@@ -94,49 +94,44 @@ class SpectralGateDenoiser:
         if samples.size < 32:
             return pcm
 
-        window = self._windowing(samples.size)
-        spectrum = np.fft.rfft(samples * window)
+        frame_rms = float(np.sqrt(np.mean(np.square(samples))))
+        spectrum = np.fft.rfft(samples)
         magnitude = np.abs(spectrum)
 
+        # Only initialize or adapt noise floor during genuine quiet background periods
         if self._noise is None or self._noise.size != magnitude.size:
-            # Seed from the first frame. Slightly wrong if the session opens
-            # mid-sentence, and corrected within a second of silence.
-            self._noise = magnitude.copy()
+            if frame_rms < 0.015:
+                self._noise = magnitude.copy()
+            else:
+                self._noise = np.zeros_like(magnitude)
             return pcm
 
-        if not self.speech_active:
+        if not self.speech_active and frame_rms < 0.015:
             self._noise = ((1 - self._adaptation) * self._noise
                            + self._adaptation * magnitude)
 
         reduced = magnitude - self._over_subtraction * self._noise
-        # The floor is what stops "musical noise": clamping to zero leaves
-        # isolated surviving bins that warble between frames and sound worse
-        # than the noise did.
         reduced = np.maximum(reduced, self._floor * magnitude)
 
         with np.errstate(divide="ignore", invalid="ignore"):
             gain = np.where(magnitude > 1e-9, reduced / magnitude, 1.0)
-        restored = np.fft.irfft(spectrum * gain, n=samples.size)
+            # Smooth gain curve to prevent musical chirps
+            gain = np.clip(gain, self._floor, 1.0)
 
-        # Undo the analysis window. Guarded because a Hann window is zero at
-        # both ends, and dividing by it there amplifies numerical dust into a
-        # click on every frame boundary.
-        safe = np.where(window > 1e-3, window, 1.0)
-        restored = np.where(window > 1e-3, restored / safe, restored)
+        restored = np.fft.irfft(spectrum * gain, n=samples.size)
         return float32_to_pcm16(np.asarray(restored, dtype=np.float32))
 
     async def close(self) -> None:
         self._noise = None
 
 
-def create(on_packet: OnPacket, provider: str = "spectral_gate"):
+def create(on_packet: OnPacket, provider: str = "passthrough"):
     """Factory mirroring Rapida's `denoiser.New` — provider chosen by name,
     with an unknown name degrading to passthrough rather than failing the
-    session. A voice agent that will not start because noise reduction is
-    misconfigured has the priorities backwards."""
+    session. Passthrough is the default since browser WebRTC handles noise cancellation."""
     if provider in ("", "none", "passthrough", "off"):
         return PassthroughDenoiser(on_packet)
-    if provider != "spectral_gate":
-        log.warning("unknown denoiser %r — using passthrough", provider)
-        return PassthroughDenoiser(on_packet)
-    return SpectralGateDenoiser(on_packet)
+    if provider == "spectral_gate":
+        return SpectralGateDenoiser(on_packet)
+    log.warning("unknown denoiser %r — using passthrough", provider)
+    return PassthroughDenoiser(on_packet)

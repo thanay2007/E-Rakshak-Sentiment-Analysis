@@ -199,15 +199,15 @@ export default function GujaratMap({ regions }: { regions: Region[] }) {
 
           <div className="mt-2.5 grid grid-cols-3 gap-2 text-center">
             {[
-              ["avg threat", active.avg_threat],
-              ["total posts", active.count],
-              ["threat alerts", active.threats],
-            ].map(([k, v]) => (
-              <div key={k} className="rounded-lg bg-white/[0.03] p-1.5">
-                <div className="font-mono text-sm font-bold" style={{ color: k.includes("threat") ? heat(active.avg_threat) : "#F8FAFC" }}>
-                  {v}
+              { label: "avg threat", value: active.avg_threat, isThreat: true },
+              { label: "total posts", value: active.count, isThreat: false },
+              { label: "threat alerts", value: active.threats, isThreat: true },
+            ].map(({ label, value, isThreat }) => (
+              <div key={label} className="rounded-lg bg-white/[0.03] p-1.5">
+                <div className="font-mono text-sm font-bold" style={{ color: isThreat ? heat(active.avg_threat) : "#F8FAFC" }}>
+                  {value}
                 </div>
-                <div className="text-[8px] uppercase tracking-wider text-slate-400">{k}</div>
+                <div className="text-[8px] uppercase tracking-wider text-slate-400">{label}</div>
               </div>
             ))}
           </div>

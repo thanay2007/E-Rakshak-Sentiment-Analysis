@@ -62,14 +62,17 @@ VARIANTS = frozenset({
     "sentinel", "sentinal", "sentinell", "sentinelle", "sentnel", "sentinl",
     "centinel", "centinal", "centennial", "sentenial", "sentimental",
     "santinel", "santinal", "sentin", "sentry",
+    "rakshak", "erakshak", "e rakshak", "rakshakji",
     "सेंटिनल", "सेण्टिनल", "सेंटीनल", "સેન્ટિનલ", "સેંટિનલ",
+    "रक्षक", "ई रक्षक", "ईरक्षक", "રક્ષક", "ઈ રક્ષક", "ઈરક્ષક",
 })
 
 #: Two-token hearings of the one name. Checked before the single-token pass,
 #: because "sent in all" is three tokens that mean "Sentinel" and no amount of
 #: per-word matching finds it.
 SPLIT_VARIANTS = ("sent in all", "sent in el", "sent in nel", "send in el",
-                  "cent in el", "sent i nel", "set in el")
+                  "cent in el", "sent i nel", "set in el",
+                  "e rakshak", "e rakshaq", "he rakshak")
 
 #: Optional politeness in front of the name, in the languages this room uses.
 PREFIXES = frozenset({"hey", "hi", "hello", "ok", "okay", "yo", "oi",

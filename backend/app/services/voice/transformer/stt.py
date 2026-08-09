@@ -121,14 +121,14 @@ class GroqWhisper(SpeechToText):
             raise RuntimeError(f"HTTP {response.status_code}: {response.text[:200]}")
 
         payload = response.json()
+        raw_text = (payload.get("text") or "").strip()
         segments = payload.get("segments") or []
-        # `no_speech_prob` is Whisper's own admission that it heard nothing.
-        # Trusting it removes most hallucinations that survive the phrase list.
-        if segments:
-            quiet = sum(1 for s in segments if s.get("no_speech_prob", 0) > 0.6)
+        # `no_speech_prob` indicates low speech confidence, but don't reject non-empty valid words.
+        if segments and not raw_text:
+            quiet = sum(1 for s in segments if s.get("no_speech_prob", 0) > 0.85)
             if quiet == len(segments):
                 return "", 0.0, payload.get("language", "")
-        return (payload.get("text", ""), 0.9, payload.get("language", ""))
+        return (raw_text, 0.9, payload.get("language", ""))
 
 
 class LocalWhisper(SpeechToText):

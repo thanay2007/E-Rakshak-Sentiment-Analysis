@@ -105,7 +105,7 @@ _JAILBREAK_REFUSAL = (
 
 _WAKE_PREFIX = re.compile(
     r"^(hey|hi|ok|okay|hello)?\s*"
-    r"(sentinel|sentinal|sentinelle|centinel|central)\b[,\s]*")
+    r"(sentinel|sentinal|sentinelle|centinel|central|rakshak|e-rakshak|e\srakshak|erakshak)\b[,\s]*")
 
 _PUNCT_FOLD = str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"',
                              "–": "-", "—": "-"})

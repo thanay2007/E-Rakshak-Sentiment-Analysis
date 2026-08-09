@@ -157,6 +157,25 @@ class AuthFailed(RuntimeError):
     "IG_SESSIONID: login_required (session revoked)" is."""
 
 
+def _silence_instagrapi_loggers() -> None:
+    for name in (
+        "instagrapi",
+        "public_request",
+        "private_request",
+        "instagrapi.mixins.user",
+        "instagrapi.mixins.private",
+        "instagrapi.mixins.challenge",
+        "instagrapi.mixins.auth",
+        "instagrapi.mixins.public",
+    ):
+        l = logging.getLogger(name)
+        l.setLevel(logging.CRITICAL)
+        l.propagate = False
+
+
+_silence_instagrapi_loggers()
+
+
 def _auth_reason(exc: Exception) -> str:
     """Condense an instagrapi failure into the operator's next move.
 
@@ -169,6 +188,9 @@ def _auth_reason(exc: Exception) -> str:
     if "toomanyredirects" in type(exc).__name__.lower() or "redirect" in low:
         return ("session cookie rejected — Instagram redirected to the login "
                 "page (the cookie is expired or was revoked)")
+    if "jsondecodeerror" in low or "expecting value" in low or "doctype html" in low:
+        return ("session cookie rejected — Instagram redirected to a web login "
+                "page (the session is expired or revoked)")
     if "challenge" in low or "checkpoint" in low:
         return ("Instagram wants a checkpoint cleared — open the account in "
                 "the Instagram app on a trusted device, confirm it was you, "
@@ -694,8 +716,8 @@ class InstagrapiCollector(Collector):
             self._client = None
             self._auth_error = str(exc)
             self._auth_failed_at = time.monotonic()
-            log.error("instagrapi: Instagram is OFFLINE — no auth route worked "
-                      "(%s). Retrying in %d minutes.", exc, AUTH_RETRY_MINUTES)
+            log.warning("instagrapi: Instagram is OFFLINE — no auth route worked "
+                        "(%s). Retrying in %d minutes.", exc, AUTH_RETRY_MINUTES)
             return []
         except Exception as exc:
             self._client = None  # force a fresh login next tick after any failure

@@ -37,6 +37,13 @@ _engine: "TransformerEngine | None" = None
 
 class TransformerEngine:
     def __init__(self) -> None:
+        import os
+        if getattr(settings, "HF_TOKEN", ""):
+            os.environ.setdefault("HF_TOKEN", settings.HF_TOKEN)
+            os.environ.setdefault("HUGGING_FACE_HUB_TOKEN", settings.HF_TOKEN)
+        # Suppress informational unauthenticated warning from HF Hub
+        logging.getLogger("huggingface_hub.utils._http").setLevel(logging.ERROR)
+
         from transformers import pipeline as hf_pipeline  # heavy import, deferred
 
         device = get_device()

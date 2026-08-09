@@ -6,10 +6,12 @@ export function usePolling<T>(fetcher: () => Promise<T>, intervalMs = 30000, dep
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (isManual = false) => {
+    if (isManual) setRefreshing(true);
     try {
       const d = await fetcherRef.current();
       setData(d);
@@ -18,16 +20,21 @@ export function usePolling<T>(fetcher: () => Promise<T>, intervalMs = 30000, dep
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
+      if (isManual) {
+        setTimeout(() => setRefreshing(false), 700);
+      }
     }
   }, []);
 
   useEffect(() => {
     setLoading(true);
     load();
-    const id = window.setInterval(load, intervalMs);
+    const id = window.setInterval(() => load(false), intervalMs);
     return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [intervalMs, load, ...deps]);
 
-  return { data, error, loading, refresh: load };
+  const manualRefresh = useCallback(() => load(true), [load]);
+
+  return { data, error, loading: loading || refreshing, refreshing, refresh: manualRefresh };
 }

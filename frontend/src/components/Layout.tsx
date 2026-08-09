@@ -43,7 +43,7 @@ export default function Layout() {
       <BackgroundFX />
       <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
       <div
-        className={`transition-[margin] duration-300 ${collapsed ? "ml-[64px]" : "ml-[220px]"}`}
+        className={`transition-[margin] duration-300 ${collapsed ? "ml-[68px]" : "ml-[240px]"}`}
       >
         <TopBar />
         <main ref={mainRef} className="mx-auto max-w-[1500px] p-4 lg:p-6">

@@ -506,6 +506,29 @@ def _h_watchlist(ctx: ToolContext, args: dict) -> ToolResult:
     })
 
 
+def _h_search_posts(ctx: ToolContext, args: dict) -> ToolResult:
+    limit = _clamp_limit(args.get("limit"), default=10, ceiling=30)
+    stmt, hours, city = _filtered_posts(args)
+    posts = ctx.session.exec(stmt.order_by(col(Post.created_at).desc()).limit(limit)).all()
+    
+    results = []
+    for p in posts:
+        results.append({
+            "platform": p.platform,
+            "language": p.language,
+            "author_handle": guard.sanitise_untrusted(p.author_handle, 40),
+            "threat_label": p.threat_label,
+            "sentiment_label": p.sentiment_label,
+            "text": guard.sanitise_untrusted(p.text, 500)
+        })
+    
+    return ToolResult({
+        "filters_applied": {"hours": hours, "city": city, "platform": args.get("platform"), "language": args.get("language")},
+        "posts_found": len(results),
+        "posts": results
+    })
+
+
 def _h_emerging(ctx: ToolContext, args: dict) -> ToolResult:
     from app.services.emerging import detect_emerging
 
@@ -768,6 +791,15 @@ TOOLS: list[Tool] = [
                                          "Schema:\n" + sandbox.SCHEMA_DOC}},
                  required=["sql"]),
          _h_run_sql),
+
+    Tool("search_posts",
+         "Search for posts and read their actual text bodies. You can filter by "
+         "city, platform, language, sentiment, and threat label.",
+         _params({"hours": _HOURS, "city": _CITY, "platform": _PLATFORM, 
+                  "language": {"type": "string", "description": "Optional language filter (e.g. English, Hindi)"},
+                  "sentiment": _SENTIMENT,
+                  "limit": {"type": "integer", "description": "Number of posts to fetch (max 30)"}}),
+         _h_search_posts),
 
     Tool("navigate",
          "Open a dashboard page for the officer. Call this when they ask to be "

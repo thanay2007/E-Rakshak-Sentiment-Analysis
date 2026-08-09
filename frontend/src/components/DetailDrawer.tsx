@@ -273,8 +273,8 @@ export default function DetailDrawer({
               <div className="grid grid-cols-2 gap-2 pt-1 text-[11px]">
                 <div className="rounded-lg bg-white/[0.03] p-2">
                   <div className="text-slate-500">Sentiment</div>
-                  <div className="font-mono" style={{ color: SENTIMENT_COLORS[post.sentiment_label] }}>
-                    {post.sentiment_label} ({post.sentiment_score.toFixed(2)})
+                  <div className="font-mono font-semibold capitalize" style={{ color: SENTIMENT_COLORS[post.sentiment_label] }}>
+                    {post.sentiment_label}
                   </div>
                 </div>
                 <div className="rounded-lg bg-white/[0.03] p-2">

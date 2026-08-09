@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     SECRET_KEY: str = ""
     ACCESS_TOKEN_TTL_MINUTES: int = 8 * 60      # one shift
 
+    # Hugging Face token for authenticated downloads and higher rate limits
+    HF_TOKEN: str = ""
+
     # Browser origins allowed to call the API. A wildcard is rejected at startup:
     # this API serves criminal records, so "any website may drive it with the
     # officer's credentials" is never an acceptable configuration.
@@ -165,11 +168,11 @@ class Settings(BaseSettings):
     VOICE_TTS_TIMEOUT: float = 30.0
 
     VOICE_VAD_PROVIDER: str = "energy_vad"       # or silero_vad (needs torch)
-    VOICE_DENOISER: str = "spectral_gate"        # or passthrough
+    VOICE_DENOISER: str = "passthrough"          # or spectral_gate
     # How long a pause means "finished" rather than "thinking". Shortened
     # automatically after terminal punctuation and lengthened after a trailing
     # conjunction — see services/voice/end_of_speech.py.
-    VOICE_EOS_SILENCE_SECONDS: float = 0.55
+    VOICE_EOS_SILENCE_SECONDS: float = 0.35
 
     # Spoken once, on the first connection of a sitting — not on the automatic
     # reconnects that follow an idle close, or an officer would be greeted

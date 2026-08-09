@@ -4,21 +4,15 @@ import {
   AlertOctagon,
   AlertTriangle,
   ArrowUpRight,
-  BarChart3,
   Bot,
   CheckCircle2,
   Cpu,
   Download,
-  Flame,
-  Globe2,
   HelpCircle,
-  PieChart as PieIcon,
   Radio,
   RefreshCw,
   Search,
-  Shield,
   ShieldAlert,
-  Sparkles,
   Target,
   TrendingUp as TrendIcon,
 } from "lucide-react";
@@ -31,7 +25,6 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  Legend,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -39,11 +32,11 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { LanguageChip } from "../components/Badges";
 import DetailDrawer from "../components/DetailDrawer";
 import EmergingPanel from "../components/EmergingPanel";
 import FeedItemCard from "../components/FeedItemCard";
 import GlassCard, { SectionTitle } from "../components/GlassCard";
+import { Logo } from "../components/Sidebar";
 import { SkeletonChart, SkeletonTile } from "../components/Skeletons";
 import Sparkline from "../components/Sparkline";
 import StatTile from "../components/StatTile";
@@ -130,43 +123,60 @@ export default function Dashboard() {
     return counts;
   }, [rawFeed]);
 
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleSync = async () => {
+    setIsSyncing(true);
+    try {
+      await Promise.all([
+        refreshStats(),
+        api.feed({ page_size: 16, sort: "recent" }).then((p) => setInitialFeed(p.items)).catch(() => {}),
+      ]);
+    } finally {
+      setTimeout(() => setIsSyncing(false), 750);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* ── Executive Command Header ───────────────────────────────────── */}
       <div className="flex flex-col gap-3 rounded-2xl border border-white/[0.08] bg-base-950/80 px-5 py-3.5 shadow-xl backdrop-blur-xl md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-3">
-          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-accent/40 bg-accent/15 text-accent shadow-[0_0_15px_rgba(245,158,11,0.25)]">
-            <Shield size={20} />
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-accent/40 bg-accent/15 text-accent shadow-[0_0_15px_rgba(245,158,11,0.25)]">
+            <Logo size={24} />
           </div>
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-sm font-black tracking-wide text-white uppercase sm:text-base">
-                State Cyber Defense Intelligence Hub
-              </h1>
-              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> LIVE TELEMETRY
-              </span>
-            </div>
-            <p className="text-xs text-slate-400">
-              Continuous multi-platform OSINT ingestion · Automated Indic NLP scoring · Latency: <span className="font-mono text-emerald-400 font-bold">&lt;100ms</span>
-            </p>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className="text-sm font-black tracking-wide text-white uppercase sm:text-base">
+              State Cyber Defense Intelligence Hub
+            </h1>
+            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> LIVE TELEMETRY
+            </span>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2">
           <button
-            onClick={() => void refreshStats()}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-slate-300 hover:border-accent/40 hover:bg-white/[0.08] hover:text-white transition-all"
+            onClick={handleSync}
+            disabled={isSyncing}
+            className={`inline-flex items-center gap-2 rounded-xl border px-3.5 py-1.5 text-xs font-semibold transition-all duration-200 ${
+              isSyncing || loading
+                ? "border-accent/60 bg-accent/20 text-accent shadow-[0_0_15px_rgba(245,158,11,0.25)]"
+                : "border-white/10 bg-white/[0.04] text-slate-300 hover:border-accent/40 hover:bg-white/[0.08] hover:text-white"
+            }`}
+            title="Synchronize telemetry and feed"
           >
-            <RefreshCw size={13} className={loading ? "animate-spin text-accent" : "text-slate-400"} />
-            <span>Sync</span>
-          </button>
-          <button
-            onClick={() => navigate("/app/investigate")}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-accent/50 bg-accent/20 px-3.5 py-1.5 text-xs font-bold text-accent shadow-sm hover:bg-accent hover:text-slate-950 transition-all"
-          >
-            <Sparkles size={13} />
-            <span>Forensics Suite</span>
+            <RefreshCw
+              size={13}
+              className={`${
+                isSyncing || loading
+                  ? "animate-spin text-accent"
+                  : "text-slate-400 group-hover:text-slate-200"
+              }`}
+            />
+            <span className="font-mono text-xs">
+              {isSyncing ? "Syncing…" : "Sync"}
+            </span>
           </button>
         </div>
       </div>
@@ -246,20 +256,17 @@ export default function Dashboard() {
       {/* ── Main Section: Live Feed + Threat Breakdown & Hashtag Surge ── */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         {/* Left 2 Cols: Live Threat Stream (Fixed proportional height) */}
-        <GlassCard className="flex flex-col p-4 xl:col-span-2 h-[580px]">
+        <GlassCard className="flex flex-col p-4 xl:col-span-2 h-[620px]">
           <div className="mb-3 flex flex-col gap-2.5 border-b border-white/[0.08] pb-3 sm:flex-row sm:items-center sm:justify-between shrink-0">
-            <div>
+            <div className="shrink-0 min-w-0">
               <div className="flex items-center gap-2">
-                <Radio size={16} className="text-emerald-400" />
-                <h2 className="text-sm font-extrabold uppercase tracking-wider text-white">
+                <Radio size={16} className="text-emerald-400 shrink-0" />
+                <h2 className="text-sm font-extrabold uppercase tracking-wider text-white whitespace-nowrap">
                   Live OSINT Threat Stream
                 </h2>
-                <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 font-mono text-[10px] font-black text-emerald-300">
-                  REAL-TIME
-                </span>
               </div>
-              <p className="mt-0.5 text-xs text-slate-400">
-                Auto-classified & translated Indic posts · synced {ago}
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Real-time multi-platform intelligence ingestion & automated threat scoring
               </p>
             </div>
 
@@ -316,27 +323,25 @@ export default function Dashboard() {
         </GlassCard>
 
         {/* Right 1 Col: Threat Breakdown & Viral Hashtags (Balanced heights) */}
-        <div className="flex flex-col gap-4 h-[580px]">
+        <div className="flex flex-col gap-4 h-[620px]">
           {/* Threat Breakdown Donut & Interactive List */}
-          <GlassCard className="flex flex-1 flex-col justify-between p-4 overflow-hidden">
+          <GlassCard className="flex flex-1 flex-col justify-between p-4">
             <SectionTitle
               title="Threat Classification"
-              sub="24h severity breakdown & percentage share"
-              right={<PieIcon size={16} className="text-accent" />}
             />
             {!stats ? (
               <SkeletonChart h={180} />
             ) : (
               <div className="flex flex-col justify-between flex-1 gap-2 pt-1">
                 <div className="relative flex items-center justify-center">
-                  <ResponsiveContainer width="100%" height={125}>
+                  <ResponsiveContainer width="100%" height={138}>
                     <PieChart>
                       <Pie
                         data={donutData}
                         dataKey="value"
                         nameKey="name"
-                        innerRadius={38}
-                        outerRadius={58}
+                        innerRadius={42}
+                        outerRadius={65}
                         paddingAngle={3}
                         strokeWidth={2}
                         stroke="#070B16"
@@ -403,12 +408,6 @@ export default function Dashboard() {
           <GlassCard className="flex flex-1 flex-col justify-between p-4 overflow-hidden">
             <SectionTitle
               title="Viral Hashtags"
-              sub="Spike velocity (σ = statistical surge)"
-              right={
-                <span title="Z-Score (σ) > 2.0 indicates sudden viral surge compared to 24h baseline">
-                  <Flame size={16} className="text-threat-critical" />
-                </span>
-              }
             />
             {trendsError && !trends ? (
               <div className="py-4 text-xs text-slate-400">{trendsError}</div>
@@ -458,18 +457,32 @@ export default function Dashboard() {
       {/* ── Bottom Section: Sentiment Timeline + Platform & Model Accuracy */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         {/* Left 2 Cols: Sentiment Polarity Area Timeline */}
-        <GlassCard className="flex flex-col justify-between p-4.5 xl:col-span-2 h-[340px]">
-          <SectionTitle
-            title="Sentiment Polarity Velocity Timeline"
-            sub="Hourly post volume categorized by Indic NLP polarity (Hostile / Neutral / Constructive)"
-            right={<BarChart3 size={16} className="text-accent" />}
-          />
+        <GlassCard className="flex flex-col justify-between p-5 xl:col-span-2 h-[390px]">
+          <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-white/[0.06] pb-3 shrink-0">
+            <div>
+              <h2 className="text-sm font-extrabold uppercase tracking-wider text-white">
+                Sentiment Polarity Velocity Timeline
+              </h2>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 text-xs">
+              <span className="inline-flex items-center gap-1.5 font-semibold text-rose-400">
+                <span className="h-2 w-2 rounded-full bg-rose-500 shadow-sm" /> Negative / Hostile
+              </span>
+              <span className="inline-flex items-center gap-1.5 font-semibold text-slate-300">
+                <span className="h-2 w-2 rounded-full bg-slate-400 shadow-sm" /> Neutral / Factual
+              </span>
+              <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-400">
+                <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-sm" /> Positive / Constructive
+              </span>
+            </div>
+          </div>
+
           {!stats ? (
-            <SkeletonChart h={240} />
+            <SkeletonChart h={280} />
           ) : (
-            <div className="flex-1 w-full pt-2">
-              <ResponsiveContainer width="100%" height={250}>
-                <AreaChart data={stats.sentiment_24h} margin={{ top: 8, right: 10, left: -20, bottom: 0 }}>
+            <div className="flex-1 w-full pt-1">
+              <ResponsiveContainer width="100%" height={290}>
+                <AreaChart data={stats.sentiment_24h} margin={{ top: 10, right: 15, left: -10, bottom: 0 }}>
                   <defs>
                     {Object.entries(SENTIMENT_COLORS).map(([k, c]) => (
                       <linearGradient key={k} id={`grad-${k}`} x1="0" y1="0" x2="0" y2="1">
@@ -482,10 +495,9 @@ export default function Dashboard() {
                   <XAxis dataKey="hour" tickLine={false} axisLine={false} interval={3} tick={{ fill: "#94A3B8", fontSize: 11 }} />
                   <YAxis tickLine={false} axisLine={false} width={48} allowDecimals={false} tick={{ fill: "#94A3B8", fontSize: 11 }} />
                   <Tooltip contentStyle={TOOLTIP_STYLE} />
-                  <Legend wrapperStyle={{ fontSize: 11, paddingTop: 4 }} iconType="circle" iconSize={8} />
                   <Area
                     type="monotone"
-                    name="Negative / Hostile Sentiment"
+                    name="Negative / Hostile"
                     dataKey="negative"
                     stroke={SENTIMENT_COLORS.negative}
                     fill="url(#grad-negative)"
@@ -493,7 +505,7 @@ export default function Dashboard() {
                   />
                   <Area
                     type="monotone"
-                    name="Neutral / Factual Discourse"
+                    name="Neutral / Factual"
                     dataKey="neutral"
                     stroke={SENTIMENT_COLORS.neutral}
                     fill="url(#grad-neutral)"
@@ -514,26 +526,54 @@ export default function Dashboard() {
         </GlassCard>
 
         {/* Right 1 Col: Platform Activity & Model Accuracy (Cleanly split half cards) */}
-        <div className="flex flex-col gap-4 h-[340px]">
-          {/* Platform Activity Bar Chart */}
+        <div className="flex flex-col gap-4 h-[390px]">
+          {/* Platform Activity Bar Chart (Sideways / Horizontal to cleanly fill card) */}
           <GlassCard className="flex flex-1 flex-col justify-between p-3.5 overflow-hidden">
-            <SectionTitle
-              title="Platform Threat Ingestion"
-              sub="Posts ingested vs threats detected (24h)"
-              right={<Radio size={15} className="text-accent" />}
-            />
+            <div className="flex items-center justify-between border-b border-white/[0.08] pb-1.5 shrink-0">
+              <span className="text-xs font-bold uppercase tracking-wide text-white">
+                Platform Threat Ingestion
+              </span>
+              <div className="flex items-center gap-2.5 text-[10px]">
+                <span className="inline-flex items-center gap-1 font-semibold text-slate-300">
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: ACCENT }} /> Posts
+                </span>
+                <span className="inline-flex items-center gap-1 font-semibold text-rose-400">
+                  <span className="h-1.5 w-1.5 rounded-full bg-red-500" /> Threats
+                </span>
+              </div>
+            </div>
+
             {!stats ? (
-              <SkeletonChart h={95} />
+              <SkeletonChart h={130} />
             ) : (
-              <div className="flex-1 w-full">
-                <ResponsiveContainer width="100%" height={95}>
-                  <BarChart data={stats.platform_activity} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
-                    <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.08)" strokeDasharray="3 3" />
-                    <XAxis dataKey="platform" tickLine={false} axisLine={false} tick={{ fill: "#94A3B8", fontSize: 10 }} />
-                    <YAxis tickLine={false} axisLine={false} width={40} allowDecimals={false} tick={{ fill: "#94A3B8", fontSize: 10 }} />
+              <div className="flex-1 w-full pt-1 min-h-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    layout="vertical"
+                    data={stats.platform_activity}
+                    margin={{ top: 2, right: 10, left: 10, bottom: 2 }}
+                    barGap={1}
+                    barCategoryGap="16%"
+                  >
+                    <CartesianGrid horizontal={false} stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
+                    <XAxis
+                      type="number"
+                      tickLine={false}
+                      axisLine={false}
+                      allowDecimals={false}
+                      tick={{ fill: "#94A3B8", fontSize: 9 }}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="platform"
+                      tickLine={false}
+                      axisLine={false}
+                      width={54}
+                      tick={{ fill: "#E2E8F0", fontSize: 9.5, fontWeight: 600 }}
+                    />
                     <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(255,255,255,0.05)" }} />
-                    <Bar name="Total" dataKey="posts" fill={ACCENT} radius={[3, 3, 0, 0]} maxBarSize={16} />
-                    <Bar name="Threats" dataKey="threats" fill="#EF4444" radius={[3, 3, 0, 0]} maxBarSize={16} />
+                    <Bar name="Total Posts" dataKey="posts" fill={ACCENT} radius={[0, 3, 3, 0]} maxBarSize={8} />
+                    <Bar name="Threats Flagged" dataKey="threats" fill="#EF4444" radius={[0, 3, 3, 0]} maxBarSize={8} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -580,32 +620,6 @@ export default function Dashboard() {
           )}
         </div>
       </div>
-
-      {/* ── Bottom Strip: Multilingual Breakdown (24h) ───────────────── */}
-      {trends && (
-        <GlassCard className="flex flex-wrap items-center justify-between gap-3 p-3.5 border border-white/[0.08]">
-          <div className="flex items-center gap-2">
-            <Globe2 size={15} className="text-accent" />
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-200">
-              Multilingual NLP Ingestion Mix:
-            </span>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {trends.languages.map((l) => (
-              <span
-                key={l.name}
-                className="flex items-center gap-1.5 rounded-xl border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 shadow-sm"
-              >
-                <LanguageChip language={l.name} />
-                <span className="font-mono text-xs font-bold text-slate-100">{l.pct}%</span>
-              </span>
-            ))}
-          </div>
-          <span className="font-mono text-xs text-slate-400">
-            {trends.total_posts.toLocaleString()} total posts analyzed across 5 Indic dialects
-          </span>
-        </GlassCard>
-      )}
 
       <DetailDrawer post={selected} onClose={() => setSelected(null)} />
     </div>

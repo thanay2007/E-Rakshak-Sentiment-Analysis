@@ -23,12 +23,12 @@ export function SectionTitle({
   right?: ReactNode;
 }) {
   return (
-    <div className="mb-4 flex items-start justify-between gap-3">
-      <div>
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-300">{title}</h2>
-        {sub && <p className="mt-0.5 text-xs text-slate-500">{sub}</p>}
+    <div className="mb-4 flex items-start justify-between gap-3 shrink-0">
+      <div className="min-w-0">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-300 whitespace-nowrap">{title}</h2>
+        {sub && <p className="mt-0.5 text-xs text-slate-500 truncate">{sub}</p>}
       </div>
-      {right}
+      {right && <div className="shrink-0">{right}</div>}
     </div>
   );
 }
