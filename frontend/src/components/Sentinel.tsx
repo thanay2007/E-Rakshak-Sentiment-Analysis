@@ -224,11 +224,12 @@ export default function Sentinel() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [turns, thinking]);
 
-  // 1. Auto-close mic when the agent finishes answering (transitions back to listening).
+  // 1. Auto-close mic when the agent finishes answering (transitions back to listening or idle).
   // This solves the issue of the mic staying open automatically after responding.
   const previousState = useRef(voice.state);
   useEffect(() => {
-    if ((previousState.current === "speaking" || previousState.current === "thinking") && voice.state === "listening") {
+    if ((previousState.current === "speaking" || previousState.current === "thinking") && 
+        (voice.state === "listening" || voice.state === "idle")) {
       setMicOn(false);
       persist(MIC_KEY, false);
     }
