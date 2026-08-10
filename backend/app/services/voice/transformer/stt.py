@@ -161,9 +161,9 @@ class LocalWhisper(SpeechToText):
             if LocalWhisper._model is None:
                 import whisper
 
-                from app.ml.device import resolve_device
+                from app.ml.device import get_device
 
-                device = resolve_device()
+                device = get_device()
                 log.info("loading local whisper %r on %s", self.model_size, device)
                 LocalWhisper._model = await asyncio.to_thread(
                     whisper.load_model, self.model_size, device=device)
