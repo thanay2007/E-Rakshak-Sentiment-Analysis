@@ -105,6 +105,12 @@ class Report(SQLModel, table=True):
     period_hours: int = 24
     payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
     pdf_path: str = ""
+    # Rendered alongside the PDF from the same payload. A stored path rather
+    # than one derived from the id, so "this was rendered" stays distinct from
+    # "a file of that name might exist": a renderer whose library is missing
+    # returns "", and the download endpoint 404s on that exactly as it already
+    # does for a missing PDF.
+    xlsx_path: str = ""
     created_at: datetime = Field(default_factory=utcnow, index=True)
 
 class Suspect(SQLModel, table=True):
