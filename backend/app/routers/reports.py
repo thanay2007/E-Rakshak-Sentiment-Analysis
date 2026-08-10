@@ -1,4 +1,4 @@
-"""Reports: list, generate (JSON + PDF), download."""
+"""Reports: list, generate (JSON + PDF + XLSX), download."""
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -19,6 +19,7 @@ def _report_dict(r: Report, with_payload: bool = True) -> dict:
         "id": r.id, "title": r.title, "kind": r.kind,
         "period_hours": r.period_hours, "created_at": iso(r.created_at),
         "has_pdf": bool(r.pdf_path),
+        "has_xlsx": bool(r.xlsx_path),
     }
     if with_payload:
         d["payload"] = r.payload
@@ -76,4 +77,23 @@ def download_report(report_id: str, session: Session = Depends(get_session)):
     log_action(session, "report_downloaded", report_id)
     return FileResponse(r.pdf_path, media_type="application/pdf",
                         filename=f"SENTINEL_{r.kind}_{r.id}.pdf")
+
+
+XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+@router.get("/reports/{report_id}/download.xlsx")
+def download_report_xlsx(report_id: str, session: Session = Depends(get_session)):
+    """The same report as a workbook. Audited separately from the PDF, because
+    "who took a copy they can edit" is a different question from "who read
+    it" — and the answer belongs in the same trail."""
+    from app.services.audit import log_action
+    r = session.get(Report, report_id)
+    if not r:
+        raise HTTPException(404, "Report not found")
+    if not r.xlsx_path or not Path(r.xlsx_path).exists():
+        raise HTTPException(404, "Excel export not available for this report")
+    log_action(session, "report_downloaded_xlsx", report_id)
+    return FileResponse(r.xlsx_path, media_type=XLSX_MEDIA_TYPE,
+                        filename=f"SENTINEL_{r.kind}_{r.id}.xlsx")
 

@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowUpRight, Download, FilePlus2, FileText, ShieldAlert, Sparkles, X } from "lucide-react";
+import { ArrowUpRight, Download, FilePlus2, FileSpreadsheet, FileText, ShieldAlert, Sparkles, X } from "lucide-react";
 import { useState } from "react";
 import { ThreatBadge } from "../components/Badges";
 import GlassCard, { SectionTitle } from "../components/GlassCard";
@@ -156,14 +156,26 @@ function ReportModal({ report, onClose }: { report: Report; onClose: () => void 
           </div>
         )}
 
-        {report.has_pdf && (
-          <div className="mt-5 border-t border-white/[0.08] pt-4">
-            <button
-              onClick={() => void api.downloadReport(report.id)}
-              className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-xs font-black text-base-950 shadow-md shadow-accent/20 hover:bg-accent-light transition-all"
-            >
-              <Download size={14} /> Download Official PDF Dossier
-            </button>
+        {(report.has_pdf || report.has_xlsx) && (
+          <div className="mt-5 flex flex-wrap gap-2 border-t border-white/[0.08] pt-4">
+            {report.has_pdf && (
+              <button
+                onClick={() => void api.downloadReport(report.id)}
+                className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-xs font-black text-base-950 shadow-md shadow-accent/20 hover:bg-accent-light transition-all"
+              >
+                <Download size={14} /> Download Official PDF Dossier
+              </button>
+            )}
+            {/* Secondary styling on purpose: the PDF is the document of record
+                and stays the primary action. The workbook is the working copy. */}
+            {report.has_xlsx && (
+              <button
+                onClick={() => void api.downloadReportXlsx(report.id)}
+                className="inline-flex items-center gap-2 rounded-xl border border-accent/40 bg-accent/10 px-4 py-2.5 text-xs font-black text-accent hover:bg-accent/20 transition-all"
+              >
+                <FileSpreadsheet size={14} /> Download Excel Workbook
+              </button>
+            )}
           </div>
         )}
       </motion.div>

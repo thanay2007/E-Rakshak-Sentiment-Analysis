@@ -271,6 +271,7 @@ export interface Report {
   period_hours: number;
   created_at: string;
   has_pdf: boolean;
+  has_xlsx: boolean;
   payload?: any;
 }
 
@@ -812,6 +813,8 @@ export const api = {
     http<Report>("/api/reports/generate", { method: "POST", body: JSON.stringify(body) }),
   downloadReport: (id: string) =>
     downloadFile(`/api/reports/${id}/download`, `SENTINEL_report_${id}.pdf`),
+  downloadReportXlsx: (id: string) =>
+    downloadFile(`/api/reports/${id}/download.xlsx`, `SENTINEL_report_${id}.xlsx`),
   watchlist: () => http<WatchItem[]>("/api/watchlist"),
   addWatch: (body: { kind: string; value: string; note?: string; priority?: string; category?: string }) =>
     http<WatchItem>("/api/watchlist", { method: "POST", body: JSON.stringify(body) }),
