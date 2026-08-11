@@ -30,7 +30,6 @@ from app.security.ratelimit import default_rate_limit
 from app.services.assistant.sandbox import ensure_views as ensure_assistant_views
 from app.services.ingestion import seed_if_empty
 from app.services.scheduler import start_scheduler, stop_scheduler
-from app.services.voice.transformer.tts import warm_local_voice
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("sentinel")
@@ -104,7 +103,6 @@ async def lifespan(app: FastAPI):
     # accounts that actually exist in the corpus, so they need it populated
     seed_suspects_if_empty()
     start_scheduler()
-    warm_local_voice()
     log.info("SENTINEL online")
     yield
     stop_scheduler()

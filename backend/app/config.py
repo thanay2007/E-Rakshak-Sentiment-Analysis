@@ -143,12 +143,46 @@ class Settings(BaseSettings):
 
     # Recognition. "browser" needs no key and runs in the client; the rest are
     # server-side and are tried in fallback order when the chosen one has no
-    # key. Groq Whisper is the default because the key already exists for the
-    # rest of the product and it handles Gujarati and code-mixed speech well.
-    VOICE_STT_PROVIDER: str = "groq_whisper"
+    # key.
+    #
+    # "auto" prefers Deepgram's streaming socket when DEEPGRAM_API_KEY is set
+    # and falls back to Groq Whisper otherwise. That preference is the single
+    # biggest lever on how the assistant *feels*: every other recogniser here
+    # is batch, and a batch recogniser cannot begin until the officer has
+    # stopped talking, so a five-second question costs its own length again
+    # before the assistant has read a word of it. Streaming also brings its own
+    # endpointing, which judges "finished" far better than the energy VAD and
+    # is why half-questions used to get answered.
+    # Realtime engine (services/voice/realtime.py). When on and GEMINI_API_KEY
+    # is set, the whole cascade below — VAD, recogniser, LLM, aggregator,
+    # synthesiser — is replaced by one bidirectional Gemini Live stream: the
+    # microphone goes to the model and the model's own voice comes back.
+    #
+    # It is the default because every stage of a cascade adds a wait in the one
+    # place a human notices, and because Gemini's turn detection understands
+    # the words. An energy threshold cannot tell a thinking pause from a
+    # finished question, which is why half-questions used to get answered.
+    #
+    # Turning it off falls back to the cascade, which still works and is the
+    # only option without a Gemini key.
+    VOICE_REALTIME_ENABLED: bool = True
+    #: Live-API model. Must be one that supports bidiGenerateContent with AUDIO
+    #: output — the plain chat aliases do not. Verified against this key:
+    #: gemini-3.1-flash-live-preview, gemini-2.5-flash-native-audio-latest.
+    GEMINI_LIVE_MODEL: str = "gemini-3.1-flash-live-preview"
+    #: Tokens the realtime model may spend thinking before it speaks. 0 is
+    #: measured as the right answer for this assistant — see realtime.py — and
+    #: a negative value leaves the model's own default alone.
+    VOICE_REALTIME_THINKING_BUDGET: int = 0
+
+    VOICE_STT_PROVIDER: str = "auto"
     VOICE_STT_MODEL: str = "whisper-large-v3-turbo"
-    VOICE_STT_LOCAL_MODEL: str = "base"          # openai-whisper size
     VOICE_STT_TIMEOUT: float = 30.0
+    #: Deepgram's multilingual streaming model. nova-3 handles code-mixed
+    #: Gujarati/Hindi/English in one utterance, which is the normal case in a
+    #: Gujarat control room and the thing a single pinned language breaks.
+    DEEPGRAM_STREAM_MODEL: str = "nova-3"
+    DEEPGRAM_STREAM_LANGUAGE: str = "multi"
     # "auto" leaves the language unpinned. Pinning to en makes Whisper
     # transliterate Gujarati into nonsense English rather than transcribing it,
     # and officers switch language mid-sentence.
@@ -214,19 +248,6 @@ class Settings(BaseSettings):
     ELEVENLABS_VOICE_ID: str = ""
     ELEVENLABS_MODEL: str = "eleven_turbo_v2_5"
 
-    # Local neural voice (kokoro-onnx). Weights are not shipped and are not
-    # fetched on demand — see app/services/voice/bootstrap.py. Until they are
-    # on disk the provider reports unavailable and the ladder walks past it,
-    # so an unprepared machine still talks, just through the browser.
-    KOKORO_MODEL_DIR: str = str(BASE_DIR / "models" / "kokoro")
-    #: Blank follows the session language: an American voice for English, a
-    #: Hindi one for Hindi or Gujarati. Set it to pin one regardless.
-    KOKORO_VOICE: str = ""
-    # A separately installed Piper HTTP server, e.g.
-    # http://127.0.0.1:5000 — deliberately out-of-process, because piper-tts
-    # is GPL-3.0 and importing it would relicense this backend.
-    PIPER_HTTP_URL: str = ""
-    PIPER_VOICE: str = ""
 
     NLP_MODE: str = "full"  # full | lite
     # Concern bands. Recalibrated against the live distribution: the previous
@@ -364,31 +385,18 @@ class Settings(BaseSettings):
         "gemini-3.5-flash",
     ]
     GEMINI_TIMEOUT_SECONDS: int = 30
-    #: Which provider the assistant tries FIRST. Groq and Ollama remain behind
-    #: it in the same order as before, so a dead Gemini key degrades the
-    #: assistant to what it was rather than switching it off.
+    #: Which provider the assistant tries FIRST. Groq remains behind it, so a
+    #: dead Gemini key degrades the assistant rather than switching it off.
     ASSISTANT_LLM_PROVIDER: str = "gemini"
 
-    # Ollama — a model running on this machine, tried when every Groq model in
-    # the chain has failed, and the only LLM at all when there is no Groq key.
-    # It is what keeps the assistant answering through a drained free tier, a
-    # dropped uplink, or an air-gapped installation, none of which are
-    # hypothetical for a police control room.
-    #
-    # Blank disables it. Point it at a running `ollama serve`, e.g.
-    #   OLLAMA_BASE_URL=http://127.0.0.1:11434
-    OLLAMA_BASE_URL: str = ""
-    OLLAMA_MODEL: str = "llama3.1:8b"
-    # Tool calling is a *separate* switch, and blank by default even when a
-    # model is configured. A local model that accepts the `tools` parameter and
-    # then answers from memory is the one failure this assistant cannot absorb:
-    # its whole safety story is that it only ever sees what a tool returned.
-    # Set this only to a model verified to call tools — llama3.1, qwen2.5 and
-    # mistral-nemo do; most small local models do not.
-    OLLAMA_TOOL_MODEL: str = ""
-    # Local inference on CPU is far slower than Groq. The timeout is generous
-    # because the alternative to a slow answer here is no answer at all.
-    OLLAMA_TIMEOUT_SECONDS: int = 120
+    # There is deliberately no local-model tier. An Ollama leg used to sit at
+    # the end of the chain for air-gapped installs; this deployment is a hosted
+    # web service, where "a model running on this machine" means a model
+    # running on the web host — CPU inference on the request path, competing
+    # with the API for the same box, and no operator nearby to `ollama pull`
+    # when it 404s. The remote chain (Gemini for the assistant, Groq for the
+    # pipeline) is now the whole LLM layer, and with no key at all the
+    # LLM-backed features report themselves off rather than degrading quietly.
 
     # ── news corroboration for evidence generation (services/fact_check.py) ──
     # Three tiers, queried in this order and merged into one evidence set:

@@ -48,8 +48,7 @@ MAX_TOOL_PAYLOAD_CHARS = 3500
 #: `tool_use_failed` the chain falls to a weaker model, and weaker models
 #: routinely emit `<navigate>{"page": "graph"}</navigate>` as prose. Nothing
 #: navigates, and the officer hears the words "navigate page graph" read out.
-#: Small local models do this far more often still, so the Ollama leg makes it
-#: commoner rather than rarer.
+#: The lighter models at the end of either provider's chain do this most.
 #:
 #: What happens next is the careful part. It would be easy to parse the block
 #: and act on it, and that would quietly destroy this module's first invariant:
