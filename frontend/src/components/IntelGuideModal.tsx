@@ -1,20 +1,14 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
-  AlertTriangle,
-  Bot,
-  CheckCircle2,
   Cpu,
   Flame,
   HelpCircle,
   Keyboard,
-  Layers,
   Network,
   Radio,
-  Search,
   ShieldAlert,
   Sparkles,
-  TrendingUp,
   X,
 } from "lucide-react";
 import { useState } from "react";

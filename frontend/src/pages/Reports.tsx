@@ -1,9 +1,9 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowUpRight, Download, FilePlus2, FileSpreadsheet, FileText, ShieldAlert, Sparkles, X } from "lucide-react";
+import { ArrowUpRight, Download, FilePlus2, FileSpreadsheet, FileText, ShieldAlert, X } from "lucide-react";
 import { useState } from "react";
 import { SentimentBadge } from "../components/Badges";
 import { usePostDetail } from "../components/PostDetailProvider";
-import GlassCard, { SectionTitle } from "../components/GlassCard";
+import GlassCard from "../components/GlassCard";
 import { SkeletonRow } from "../components/Skeletons";
 import { SENTIMENT_TEXT, sentimentColor } from "../data/constants";
 import { useGsapReveal } from "../hooks/useGsapReveal";

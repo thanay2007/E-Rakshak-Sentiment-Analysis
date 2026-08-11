@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Filter, FilterX, RefreshCw, Search, SlidersHorizontal, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, FilterX, RefreshCw, Search, SlidersHorizontal } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Virtuoso } from "react-virtuoso";
@@ -10,7 +10,6 @@ import { LANGUAGES, PLATFORMS, SENTIMENT_LABELS, SENTIMENT_TEXT, sentimentColor 
 import { useGsapReveal } from "../hooks/useGsapReveal";
 import { usePolling } from "../hooks/usePolling";
 import { api } from "../services/api";
-import type { Post } from "../services/api";
 
 const CITIES = ["Ahmedabad", "Surat", "Vadodara", "Rajkot", "Gandhinagar", "Bhavnagar", "Jamnagar", "Junagadh"];
 const PAGE_SIZE = 20;
@@ -49,15 +48,6 @@ export default function ThreatFeed() {
       const next = new URLSearchParams(prev);
       if (v) next.set(k, v);
       else next.delete(k);
-      return next;
-    });
-  };
-
-  const removeParam = (k: string) => {
-    setPage(1);
-    setParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.delete(k);
       return next;
     });
   };

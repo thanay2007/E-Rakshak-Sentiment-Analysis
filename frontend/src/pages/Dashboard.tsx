@@ -2,17 +2,12 @@ import { gsap } from "gsap";
 import {
   Activity,
   AlertOctagon,
-  AlertTriangle,
   ArrowUpRight,
   Bot,
   CheckCircle2,
   Cpu,
-  Download,
-  HelpCircle,
   Radio,
   RefreshCw,
-  Search,
-  ShieldAlert,
   Target,
   TrendingUp as TrendIcon,
 } from "lucide-react";
@@ -41,7 +36,7 @@ import { SkeletonChart, SkeletonTile } from "../components/Skeletons";
 import Sparkline from "../components/Sparkline";
 import StatTile from "../components/StatTile";
 import { ACCENT, SENTIMENT_COLORS, SENTIMENT_TEXT, sentimentColor } from "../data/constants";
-import { useAgo, useLivePosts } from "../hooks/useLive";
+import { useLivePosts } from "../hooks/useLive";
 import { usePolling } from "../hooks/usePolling";
 import { api } from "../services/api";
 import type { Post } from "../services/api";
@@ -72,7 +67,6 @@ export default function Dashboard() {
   const { openPost } = usePostDetail();
   const [feedThreatFilter, setFeedThreatFilter] = useState<string>("all");
   const feedRef = useRef<HTMLDivElement>(null);
-  const ago = useAgo(stats?.last_updated);
 
   useEffect(() => {
     api.feed({ page_size: 16, sort: "recent" }).then((p) => setInitialFeed(p.items)).catch(() => {});

@@ -1,4 +1,4 @@
-import { ChevronRight, ExternalLink, MapPin, MessageSquare, Repeat2, ThumbsUp } from "lucide-react";
+import { ChevronRight, MapPin, Repeat2, ThumbsUp } from "lucide-react";
 import type { Post } from "../services/api";
 import { BotChip, LanguageChip, PlatformIcon, SentimentBadge } from "./Badges";
 import { PostMediaGrid } from "./PostMedia";

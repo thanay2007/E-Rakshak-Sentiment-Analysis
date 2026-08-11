@@ -1,6 +1,6 @@
 import {
   Activity, Download, Eye, Hash, Layers, MapPin, PackagePlus, Plus, Search,
-  Sparkles, Trash2, Type, Upload, UserRound, X,
+  Trash2, Type, Upload, UserRound, X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import GlassCard, { SectionTitle } from "../components/GlassCard";

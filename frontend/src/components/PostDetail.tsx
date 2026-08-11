@@ -6,7 +6,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  concernBand, concernColor, SENTIMENT_TEXT, sentimentColor,
+  concernBand, concernColor, sentimentColor,
 } from "../data/constants";
 import type { EvidenceReport, EvidenceSource, Post } from "../services/api";
 import { api, API_BASE } from "../services/api";

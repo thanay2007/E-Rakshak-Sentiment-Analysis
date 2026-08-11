@@ -1,5 +1,4 @@
 import {
-  Activity,
   Bell,
   ChevronsLeft,
   Eye,
@@ -9,7 +8,6 @@ import {
   ScanSearch,
   Settings,
   Share2,
-  ShieldAlert,
   ShieldCheck,
   TrendingUp,
 } from "lucide-react";
