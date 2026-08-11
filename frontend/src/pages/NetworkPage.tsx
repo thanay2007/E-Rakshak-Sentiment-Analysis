@@ -1,4 +1,4 @@
-import { Bot, ExternalLink, Network, Radar, Share2, Sparkles, Users } from "lucide-react";
+import { Bot, ExternalLink, Radar, Share2, Users } from "lucide-react";
 import { useMemo, useState } from "react";
 import { BotChip, PlatformIcon, SentimentBadge } from "../components/Badges";
 import { usePostDetail } from "../components/PostDetailProvider";
@@ -8,6 +8,7 @@ import { SkeletonChart, SkeletonRow } from "../components/Skeletons";
 import { concernColor } from "../data/constants";
 import { useGsapReveal } from "../hooks/useGsapReveal";
 import { usePolling } from "../hooks/usePolling";
+import { useUrlFilters } from "../hooks/useUrlFilters";
 import { api } from "../services/api";
 import type { NetNode } from "../services/api";
 import { safeHref } from "../lib/safeUrl";
@@ -33,8 +34,13 @@ const PLATFORMS = ["All", "X", "Reddit", "Facebook", "Instagram", "Telegram", "Y
 
 export default function NetworkPage() {
   const { openPostId } = usePostDetail();
-  const [hours, setHours] = useState(24);
-  const [platform, setPlatform] = useState("All");
+  // URL-backed so the assistant can open this page already scoped to a window
+  // and a platform.
+  const { get, getNumber, set } = useUrlFilters();
+  const hours = getNumber("hours", 24);
+  const setHours = (value: number) => set("hours", value);
+  const platform = get("platform", "All") || "All";
+  const setPlatform = (value: string) => set("platform", value === "All" ? "" : value);
   const [selected, setSelected] = useState<NetNode | null>(null);
   const { data, loading } = usePolling(
     () => api.network(hours, platform === "All" ? "" : platform),

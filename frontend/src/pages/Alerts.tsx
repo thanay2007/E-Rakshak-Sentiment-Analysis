@@ -1,14 +1,15 @@
-import { AlertOctagon, AlertTriangle, BellRing, Check, CheckCheck, ChevronDown, Flag, ShieldAlert, Sparkles } from "lucide-react";
+import { AlertOctagon, BellRing, Check, CheckCheck, ChevronDown, Flag, ShieldAlert } from "lucide-react";
 import { useMemo, useState } from "react";
 import { SentimentBadge, SeverityChip } from "../components/Badges";
 import { usePostDetail } from "../components/PostDetailProvider";
-import GlassCard, { SectionTitle } from "../components/GlassCard";
+import GlassCard from "../components/GlassCard";
 import { SkeletonRow } from "../components/Skeletons";
 import { useGsapReveal } from "../hooks/useGsapReveal";
 import { useLiveAlerts } from "../hooks/useLive";
 import { usePolling } from "../hooks/usePolling";
+import { useUrlFilters } from "../hooks/useUrlFilters";
 import { api } from "../services/api";
-import type { Alert, Post } from "../services/api";
+import type { Alert } from "../services/api";
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   new: { label: "NEW INCIDENT", cls: "text-threat-critical border-threat-critical/50 bg-threat-critical/10" },
@@ -125,8 +126,11 @@ function AlertRow({ alert, onAction, onOpenPost }: {
 }
 
 export default function Alerts() {
-  const [statusFilter, setStatusFilter] = useState("");
-  const [severityFilter, setSeverityFilter] = useState("");
+  // In the URL, not in state: the assistant filters this page by navigating to
+  // it with `?severity=critical`, and a filtered view stays linkable.
+  const { get, set, clear } = useUrlFilters();
+  const statusFilter = get("status");
+  const severityFilter = get("severity");
   const { data, loading, refresh } = usePolling(
     () => api.alerts({ status: statusFilter || undefined, severity: severityFilter || undefined, limit: 60 }),
     20000,
@@ -192,7 +196,7 @@ export default function Alerts() {
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <select
             value={severityFilter}
-            onChange={(e) => setSeverityFilter(e.target.value)}
+            onChange={(e) => set("severity", e.target.value)}
             className="rounded-xl border border-white/[0.1] bg-base-800 py-1.5 pl-3 pr-8 text-xs text-slate-200 hover:border-white/20 focus:border-accent/60 focus:outline-none"
           >
             <option value="">All Severities</option>
@@ -203,7 +207,7 @@ export default function Alerts() {
 
           <select
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
+            onChange={(e) => set("status", e.target.value)}
             className="rounded-xl border border-white/[0.1] bg-base-800 py-1.5 pl-3 pr-8 text-xs text-slate-200 hover:border-white/20 focus:border-accent/60 focus:outline-none"
           >
             <option value="">All Triage Statuses</option>
@@ -214,7 +218,7 @@ export default function Alerts() {
 
           {(severityFilter || statusFilter) && (
             <button
-              onClick={() => { setSeverityFilter(""); setStatusFilter(""); }}
+              onClick={() => clear("severity", "status")}
               className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-white/[0.08]"
             >
               Clear Filters

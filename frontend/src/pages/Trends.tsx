@@ -1,13 +1,13 @@
-import { Activity, Flame, Globe2, Hash, MapPinned, Sparkles, TrendingUp } from "lucide-react";
-import { useState } from "react";
+import { Activity, Flame, Globe2, Hash, MapPinned, TrendingUp } from "lucide-react";
 import { LanguageChip, SentimentBadge } from "../components/Badges";
 import GlassCard, { SectionTitle } from "../components/GlassCard";
 import GujaratMap from "../components/GujaratMap";
 import { SkeletonChart, SkeletonRow } from "../components/Skeletons";
 import Sparkline from "../components/Sparkline";
-import { ACCENT, sentimentColor } from "../data/constants";
+import { ACCENT } from "../data/constants";
 import { useGsapReveal } from "../hooks/useGsapReveal";
 import { usePolling } from "../hooks/usePolling";
+import { useUrlFilters } from "../hooks/useUrlFilters";
 import { api } from "../services/api";
 import type { TermStat } from "../services/api";
 
@@ -53,7 +53,10 @@ function TermRow({ t }: { t: TermStat }) {
 }
 
 export default function Trends() {
-  const [hours, setHours] = useState(24);
+  // URL-backed so the assistant can open this page on a given window.
+  const { getNumber, set } = useUrlFilters();
+  const hours = getNumber("hours", 24);
+  const setHours = (value: number) => set("hours", value);
   const { data, loading } = usePolling(() => api.trends(hours), 45000, [hours]);
   const revealRef = useGsapReveal<HTMLDivElement>(`${hours}-${data?.total_posts ?? 0}`);
 

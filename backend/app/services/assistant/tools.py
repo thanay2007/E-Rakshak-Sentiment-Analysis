@@ -30,6 +30,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
+from urllib.parse import urlencode
 
 from sqlmodel import Session, col, func, select
 
@@ -617,14 +618,140 @@ _PAGES = {
     "admin": "/app/admin", "admin panel": "/app/admin",
 }
 
+# ── the filter vocabularies the pages actually understand ───────────────────
+#
+# Duplicated from the console's own option lists rather than derived from the
+# data, and deliberately: these are the values the *filter controls* offer, so
+# a filter the assistant applies is one an officer could have clicked and can
+# see reflected in the chips. A value scraped from the corpus instead would let
+# the assistant reach states the UI cannot represent or undo.
+
+_PLATFORMS = ("X", "Facebook", "Instagram", "Reddit", "Telegram", "YouTube")
+_LANGUAGES = ("Gujarati", "Hindi", "Hinglish", "Gujlish", "English", "Mixed")
+_SENTIMENTS = ("negative", "neutral", "positive")
+_SORTS = ("recent", "score", "engagement")
+_SEVERITIES = ("critical", "high", "medium")
+_STATUSES = ("new", "acknowledged", "escalated")
+#: The investigation tools, by the id their tab uses.
+_INVESTIGATE_TABS = ("image", "username", "url", "comments", "pr", "sleuth")
+
+#: Longest a spoken search phrase may be. The box is a keyword field, not a
+#: sentence, and an officer reading back a filter chip should be able to see
+#: all of it.
+_SEARCH_MAX = 80
+
+
+def _one_of(vocabulary: tuple[str, ...]):
+    """Exactly one value from a closed list, matched case-insensitively.
+
+    Returns None for anything else, and None means "not applied" everywhere
+    below — an unrecognised value must never reach the URL, because a filter
+    the page cannot parse shows the officer an unfiltered screen while the
+    assistant says it filtered one.
+    """
+    lookup = {value.lower(): value for value in vocabulary}
+    return lambda raw: lookup.get(str(raw).strip().lower())
+
+
+def _csv_of(vocabulary: tuple[str, ...]):
+    """Several values from a closed list — the multi-select chips.
+
+    Unknown members are dropped rather than failing the whole filter: "X and
+    WhatsApp" should still filter to X, since the alternative is silently
+    showing every platform.
+    """
+    lookup = {value.lower(): value for value in vocabulary}
+
+    def check(raw) -> str | None:
+        parts = [lookup[p.strip().lower()] for p in str(raw).split(",")
+                 if p.strip().lower() in lookup]
+        # dict.fromkeys dedupes while keeping the order the model asked in.
+        return ",".join(dict.fromkeys(parts)) or None
+
+    return check
+
+
+def _number(low: float, high: float):
+    """A numeric control, clamped to the range its slider actually offers."""
+    def check(raw) -> str | None:
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return None
+        value = max(low, min(high, value))
+        return str(int(value)) if value == int(value) else str(value)
+
+    return check
+
+
+def _search_text(raw) -> str | None:
+    """The keyword box: the one filter whose value is not from a closed list.
+
+    So it is bounded and stripped of control characters instead. It is carried
+    as a query-string value (url-encoded on the way out) and consumed as a
+    search term, never as markup or a path.
+    """
+    text = re.sub(r"[\x00-\x1f\x7f]", " ", str(raw)).strip()
+    return text[:_SEARCH_MAX] or None
+
+
+#: Per page: the URL parameters that page reads, and what each will accept. A
+#: page missing from this table takes no filters, and a parameter missing from
+#: a page's entry is not applied there — both are reported back to the model so
+#: it can tell the officer rather than claiming a filter it did not set.
+_PAGE_FILTERS: dict[str, dict[str, Any]] = {
+    "/app/feed": {
+        "platform": _csv_of(_PLATFORMS),
+        "sentiment": _csv_of(_SENTIMENTS),
+        "language": _one_of(_LANGUAGES),
+        "location": lambda raw: _canonical_city(raw) or None,
+        "q": _search_text,
+        "min_score": _number(0, 80),
+        "sort": _one_of(_SORTS),
+    },
+    "/app/alerts": {
+        "status": _one_of(_STATUSES),
+        "severity": _one_of(_SEVERITIES),
+    },
+    "/app/trends": {"hours": _number(1, 168)},
+    "/app/network": {
+        "hours": _number(1, 168),
+        "platform": _one_of(_PLATFORMS),
+    },
+    "/app/investigate": {"tab": _one_of(_INVESTIGATE_TABS)},
+}
+
+#: What the model is likely to call a filter → what the page calls it. The
+#: model should not have to know that the keyword box is `q` and the district
+#: box is `location`; those are URL spellings, not spoken ones.
+_FILTER_ALIASES = {
+    "city": "location", "district": "location", "place": "location",
+    "search": "q", "keyword": "q", "query": "q", "text": "q",
+    "score": "min_score", "minimum_score": "min_score",
+    "window_hours": "hours", "window": "hours",
+    "platforms": "platform", "sentiments": "sentiment",
+}
+
 
 def _h_navigate(ctx: ToolContext, args: dict) -> ToolResult:
-    """Open a dashboard page.
+    """Open a dashboard page, optionally with its filters already applied.
 
     The only tool with an effect outside the answer, and the reason navigation
     targets are safe: the model chooses a *label*, this resolves the label
     against a fixed table, and an unknown label opens nothing. A path never
     travels from the model to the browser.
+
+    Filters extend that property rather than weakening it. The model does not
+    supply a query string — it names filters, each name is resolved against the
+    table of what that page reads, and each value against the closed list that
+    page's control offers. Anything unrecognised is dropped and named in the
+    payload. So the worst a confused model can do is open a correct page with
+    fewer filters than it intended, and say so.
+
+    Why filters belong on navigation at all: "show me the negative posts from
+    Surat" is one intent, and answering it by opening an unfiltered feed leaves
+    the officer to redo the filtering by hand while the assistant claims to
+    have shown them something.
     """
     label = str(args.get("page") or "").strip().lower()
     path = _PAGES.get(label)
@@ -640,8 +767,49 @@ def _h_navigate(ctx: ToolContext, args: dict) -> ToolResult:
                 break
     if path is None:
         return ToolResult({"opened": False, "reason": f"There is no '{label}' page.",
-                           "available_pages": sorted(set(_PAGES))})
-    return ToolResult({"opened": True, "page": label}, navigate=path)
+                           "available_pages": sorted(set(_PAGES)),
+                           "filters_by_page": _filter_catalogue()})
+
+    accepted = _PAGE_FILTERS.get(path, {})
+    applied: dict[str, str] = {}
+    rejected: list[str] = []
+    for key, raw in args.items():
+        if key == "page" or raw in (None, "", []):
+            continue
+        param = _FILTER_ALIASES.get(key.strip().lower(), key.strip().lower())
+        validator = accepted.get(param)
+        if validator is None:
+            rejected.append(key)
+            continue
+        value = validator(raw)
+        if value is None:
+            rejected.append(key)
+            continue
+        applied[param] = value
+
+    query = urlencode(applied)
+    payload = {"opened": True, "page": label,
+               "filters_applied": applied,
+               "filters_available_here": sorted(accepted)}
+    if rejected:
+        # Named, not swallowed. An assistant that says "filtered to critical"
+        # when the feed has no severity filter is worse than one that says the
+        # feed cannot do that — the officer acts on the screen either way.
+        payload["filters_not_applied"] = rejected
+        payload["note"] = ("Those filters do not exist on this page or the "
+                           "value was not one it offers. Tell the officer "
+                           "plainly rather than implying they were applied.")
+    return ToolResult(payload, navigate=f"{path}?{query}" if query else path)
+
+
+def _filter_catalogue() -> dict[str, list[str]]:
+    """Which filters each page offers — so "what can I filter by here?" is
+    answerable without the model guessing from the page's name."""
+    by_label: dict[str, list[str]] = {}
+    for label, path in _PAGES.items():
+        if path in _PAGE_FILTERS:
+            by_label[label] = sorted(_PAGE_FILTERS[path])
+    return by_label
 
 
 def _h_run_sql(ctx: ToolContext, args: dict) -> ToolResult:
@@ -800,11 +968,47 @@ TOOLS: list[Tool] = [
          _h_search_posts),
 
     Tool("navigate",
-         "Open a dashboard page for the officer. Call this when they ask to be "
-         "taken somewhere, or alongside an answer whose detail lives on a page.",
-         _params({"page": {"type": "string", "enum": sorted(set(_PAGES)),
-                           "description": "Which page to open."}},
-                 required=["page"]),
+         "Open a dashboard page for the officer, with its filters already "
+         "applied. Call this when they ask to be taken somewhere, when they ask "
+         "to see or filter something on screen ('show me negative posts from "
+         "Surat', 'only critical alerts'), or alongside an answer whose detail "
+         "lives on a page. Pass only the filters the officer actually asked "
+         "for, and only ones the target page offers — the feed filters posts, "
+         "alerts filters by status and severity, trends and network take a time "
+         "window. Filters that do not apply are reported back, not applied.",
+         _params({
+             "page": {"type": "string", "enum": sorted(set(_PAGES)),
+                      "description": "Which page to open."},
+             # Flat rather than a nested `filters` object: models fill flat
+             # schemas far more reliably, and every value is validated against
+             # the target page's own list on the way through regardless.
+             "platform": {"type": "string",
+                          "description": "Feed or network. One or more of "
+                                         f"{', '.join(_PLATFORMS)}; "
+                                         "comma-separated on the feed."},
+             "sentiment": {"type": "string",
+                           "description": "Feed. One or more of negative, "
+                                          "neutral, positive; comma-separated."},
+             "language": {"type": "string",
+                          "description": f"Feed. One of {', '.join(_LANGUAGES)}."},
+             "city": {"type": "string",
+                      "description": "Feed. A Gujarat district, e.g. Surat."},
+             "search": {"type": "string",
+                        "description": "Feed. A keyword, #hashtag or @handle."},
+             "min_score": {"type": "number",
+                           "description": "Feed. Lowest concern score, 0-80."},
+             "sort": {"type": "string", "enum": list(_SORTS),
+                      "description": "Feed ordering."},
+             "status": {"type": "string", "enum": list(_STATUSES),
+                        "description": "Alerts only."},
+             "severity": {"type": "string", "enum": list(_SEVERITIES),
+                          "description": "Alerts only."},
+             "hours": {"type": "integer",
+                       "description": "Trends and network. Window, 1-168."},
+             "tab": {"type": "string", "enum": list(_INVESTIGATE_TABS),
+                     "description": "Investigate only. Which forensic tool to "
+                                    "open."},
+         }, required=["page"]),
          _h_navigate),
 ]
 
