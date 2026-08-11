@@ -291,6 +291,7 @@ class InstagrapiCollector(Collector):
         # Where the last cycle's rotation stopped, per leg.
         self._tag_cursor = 0
         self._account_cursor = 0
+        self._seed_cursor = 0
         # Why the last auth attempt failed, and when — see AUTH_RETRY_MINUTES.
         self._auth_error = ""
         self._auth_failed_at = 0.0
@@ -520,9 +521,25 @@ class InstagrapiCollector(Collector):
     def _seed_accounts_sync(self, client) -> list[tuple]:
         """The configured civic pages. Returns (media, city, Profile) so the
         caller can fetch comments against the right city without re-deriving
-        it."""
+        it.
+
+        Rotated, like the hashtag and watchlist legs, because the roster is no
+        longer the handful of handles it started as. Reading every seed every
+        cycle costs one profile lookup plus one media read per handle on the
+        *private* API — at a few dozen handles that is the request pattern that
+        earns a checkpoint, and a checkpointed account collects nothing from
+        any city. A slice per cycle still covers the whole roster, just spread
+        across the day: at the default 30-minute interval, 8 handles a cycle
+        walks 48 in three hours. Set IG_SEEDS_PER_CYCLE to 0 for the old
+        read-everything behaviour, which is only sane for a short list.
+        """
+        seeds = settings.IG_SEED_USERNAMES
+        budget = settings.IG_SEEDS_PER_CYCLE
+        if budget > 0:
+            seeds, self._seed_cursor = _rotate(seeds, self._seed_cursor, budget)
+
         found: list[tuple] = []
-        for username, city in settings.IG_SEED_USERNAMES:
+        for username, city in seeds:
             found.extend(self._account_medias_sync(client, username, city, SEED_MEDIA_LIMIT))
         return found
 

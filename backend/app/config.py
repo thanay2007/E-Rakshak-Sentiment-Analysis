@@ -461,6 +461,14 @@ class Settings(BaseSettings):
     # each cycle — every term gets covered, just spread over the day rather
     # than all at once (the same tactic the YouTube adapter uses for quota).
     IG_HASHTAGS_PER_CYCLE: int = 3
+    # Seed pages read per cycle, same rotation as the two legs below. The seed
+    # roster covers every civic, police, district and news account verified for
+    # the four target cities, which is far more handles than a single cycle can
+    # politely read: each one costs a profile lookup plus a media read on the
+    # private API. Rotating means the whole roster is still covered — 8 a cycle
+    # at the 30-minute interval walks 48 handles in three hours — without the
+    # burst that gets the account checkpointed. 0 reads every seed every cycle.
+    IG_SEEDS_PER_CYCLE: int = 8
     # Accounts on the watchlist (kind="account") read per cycle, same rotation.
     # These are pulled *in addition to* IG_SEED_USERNAMES: seeds are the civic
     # pages this deployment always watches, these are the handles an officer
