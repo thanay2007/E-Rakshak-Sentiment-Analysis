@@ -20,6 +20,14 @@ because it understands the words, which no energy threshold ever will. That
 single difference is most of what makes an assistant feel like Siri rather
 than a walkie-talkie.
 
+**Preferred, not required.** This engine is one vendor's socket, and a console
+whose microphone dies with it is worse than a slower console. So the cascade
+stays in the tree as a fallback and is *reached by failure*, not only by a
+missing key: `available()` reports False for a cooldown after repeated
+failures, and the channel falls through to Deepgram-streaming recognition into
+the same Gemini assistant. See `note_failure` for why the state is held across
+sessions rather than judged per connection.
+
 **The safety boundary is unchanged, and that is the point.** This module does
 not get its own tools, its own rank rules or its own audit path. It calls
 `tools.for_role` for what this officer may see, `tools.invoke` to run it (which
@@ -40,6 +48,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
 from sqlmodel import Session as DbSession
 
@@ -50,7 +59,7 @@ from app.services.audit import log_action
 from app.services.voice.audio import resample
 from app.services.voice.types import (SAMPLE_RATE, InitializationCompletedPacket,
                                       InterruptionDetectedPacket,
-                                      LLMResponseDonePacket,
+                                      LLMNavigatePacket, LLMResponseDonePacket,
                                       LLMToolInvokedPacket, PipelineErrorPacket,
                                       SpeechToTextPacket,
                                       TextToSpeechAudioPacket,
@@ -64,14 +73,32 @@ log = logging.getLogger("sentinel.voice.realtime")
 #: resampled here rather than teaching the client a second rate.
 GEMINI_OUTPUT_RATE = 24_000
 
-#: What the browser captures at, after its own downsample. Declared to Gemini
-#: on every chunk; guessing wrong transcribes a chipmunk.
+#: The rate this module *sends* at, and so what it declares to Gemini on every
+#: chunk. The browser does not capture at this rate — it captures at whatever
+#: its output device runs at, usually 48 kHz — so `push_audio` resamples to it
+#: rather than this constant being a description of what arrives. Declaring a
+#: rate the bytes are not actually in does not error; it transcribes a chipmunk.
 INPUT_MIME = f"audio/pcm;rate={SAMPLE_RATE}"
 
 
+#: Consecutive realtime failures, and the instant after which the engine may be
+#: tried again. Process-wide rather than per session on purpose — see
+#: `note_failure`, where the reason it cannot be per session is the point.
+_failures = 0
+_blocked_until = 0.0
+
+
 def available() -> bool:
-    """True when this instance can run a realtime session at all."""
+    """True when this instance can run a realtime session *right now*.
+
+    Three questions, not one: is it configured, is the SDK importable, and has
+    it just failed. The last is what makes the cascade a fallback rather than a
+    config branch — a key present in the environment says nothing about a
+    Gemini outage or an exhausted quota.
+    """
     if not (settings.VOICE_REALTIME_ENABLED and settings.GEMINI_API_KEY):
+        return False
+    if time.monotonic() < _blocked_until:
         return False
     try:
         import google.genai  # noqa: F401
@@ -80,6 +107,43 @@ def available() -> bool:
         log.warning("GEMINI_API_KEY is set but google-genai is missing — "
                     "realtime voice unavailable")
         return False
+
+
+def note_failure(reason: str) -> None:
+    """A realtime session could not be established, or died before it worked.
+
+    Held across sessions because the browser reconnects automatically and
+    within seconds. Judging each connection on its own merits would mean an
+    officer whose Gemini quota ran out mid-shift getting a dead socket, a
+    reconnect, another dead socket — every few seconds until someone reads the
+    server log. One threshold and a cooldown turns that into a single quiet
+    downgrade to the cascade, which still has a microphone and still answers.
+
+    Deliberately not latched: quota windows reopen and outages end, so the
+    engine is retried once the cooldown lapses rather than staying off until a
+    restart.
+    """
+    global _failures, _blocked_until
+    _failures += 1
+    if _failures >= settings.VOICE_REALTIME_FAILURE_THRESHOLD:
+        _blocked_until = time.monotonic() + settings.VOICE_REALTIME_COOLDOWN_SECONDS
+        _failures = 0
+        log.warning("realtime voice failed %d times (%s) — new sessions get the "
+                    "cascade for the next %.0fs",
+                    settings.VOICE_REALTIME_FAILURE_THRESHOLD, reason,
+                    settings.VOICE_REALTIME_COOLDOWN_SECONDS)
+
+
+def note_success() -> None:
+    """A realtime session is demonstrably working — forget the near misses."""
+    global _failures, _blocked_until
+    _failures = 0
+    _blocked_until = 0.0
+
+
+def cooldown_remaining() -> float:
+    """Seconds until the realtime engine is tried again; 0 when it is in use."""
+    return max(0.0, _blocked_until - time.monotonic())
 
 
 def _to_gemini_tools(schemas: list[dict]) -> list[dict]:
@@ -155,6 +219,10 @@ class GeminiLiveSession:
         #: load-bearing — it is kept for the diagnostics endpoint and so the
         #: client protocol stays identical between the two engines.
         self._playing = False
+        #: Set the first time Gemini sends anything back. A socket that opened
+        #: and then died is only evidence against the engine if it never
+        #: actually worked — see `_read`.
+        self._healthy = False
         self._tools = assistant_tools.for_role(user.role)
         self._names = [t.name for t in self._tools]
 
@@ -198,9 +266,19 @@ class GeminiLiveSession:
                     prebuilt_voice_config=types.PrebuiltVoiceConfig(
                         voice_name=settings.VOICE_TTS_VOICE)))
 
+        # The one call that reaches Gemini, and so the one that discovers a
+        # retired model alias, an exhausted quota or an unreachable endpoint.
+        # The failure is recorded here and re-raised rather than swallowed: the
+        # caller owns the decision to fall back, this module only owns knowing
+        # that the engine is unwell.
         self._session_cm = client.aio.live.connect(
             model=settings.GEMINI_LIVE_MODEL, config=config)
-        self._session = await self._session_cm.__aenter__()
+        try:
+            self._session = await self._session_cm.__aenter__()
+        except Exception as exc:
+            self._session_cm = None
+            note_failure(f"live connect: {type(exc).__name__}")
+            raise
         self._reader = asyncio.create_task(self._read())
 
         log.info("realtime session open user=%s model=%s tools=%d",
@@ -244,13 +322,25 @@ class GeminiLiveSession:
         as well would mean two components disagreeing about when the officer
         stopped talking, which is the failure mode pipecat warns about and the
         reason half-questions used to get answered.
+
+        Rate conversion is the one thing that does happen, because it is not a
+        decision — it is the difference between the bytes and their declared
+        format. The browser captures at its output device's rate and sends PCM
+        at that rate, reporting it in the handshake; `INPUT_MIME` says 16 kHz.
+        Sending 48 kHz samples under a 16 kHz label is not a rejected request,
+        it is a stretched one: Gemini hears every utterance three times too
+        slow, never recognises the end of a turn, and answers nothing — while
+        the socket stays open and healthy, so nothing anywhere reports a fault.
+        The cascade resamples on the same principle in `normalise_inbound`.
         """
         if self._session is None or self._closed:
             return
         try:
             from google.genai import types
+            # A no-op when the browser already runs at 16 kHz.
+            pcm = resample(chunk, self.config.input_sample_rate, SAMPLE_RATE)
             await self._session.send_realtime_input(
-                audio=types.Blob(data=chunk, mime_type=INPUT_MIME))
+                audio=types.Blob(data=pcm, mime_type=INPUT_MIME))
         except Exception as exc:
             log.warning("realtime: audio send failed (%s)", exc)
 
@@ -312,11 +402,25 @@ class GeminiLiveSession:
         except Exception as exc:
             log.warning("realtime: stream ended (%s)", exc)
             if not self._closed:
+                # A drop on a session that never produced a single message is
+                # an unwell engine — count it, so the reconnect this error is
+                # about to trigger lands on the cascade instead of here again.
+                # A drop on a session that *was* working is ordinary socket
+                # churn after an hour of use, and must not push every officer
+                # onto the slower path.
+                if not self._healthy:
+                    note_failure(f"stream died unused: {type(exc).__name__}")
                 await self._emit(PipelineErrorPacket(
                     context_id=self.context_id,
                     message="The voice link dropped. Reconnecting."))
 
     async def _on_message(self, message) -> None:
+        # Anything at all coming back is proof the engine works, which clears
+        # the failures counted against it by sessions that did not get this far.
+        if not self._healthy:
+            self._healthy = True
+            note_success()
+
         # ── the model's voice ───────────────────────────────────────────────
         if message.data:
             await self._emit(TextToSpeechAudioPacket(
@@ -377,6 +481,7 @@ class GeminiLiveSession:
             args = dict(call.args or {})
             log.info("realtime: tool %s(%s)", name, args)
             shown: dict = {}
+            result = None
             try:
                 # Synchronous, and it touches the database — off the event loop
                 # it goes, or one slow query stalls every other officer's audio.
@@ -398,6 +503,17 @@ class GeminiLiveSession:
                 # The panel gets the richer `display` when a tool provides one;
                 # the model only ever sees `payload`.
                 display=shown or payload))
+
+            # Moving the officer's screen is the one tool effect that is not
+            # carried by the payload, so it has to be forwarded explicitly —
+            # the cascade does the same at `session.py`'s `answer.navigate`.
+            # Read off the ToolResult rather than parsed out of the model's
+            # speech: the path was resolved from a fixed table by `_h_navigate`,
+            # and that is exactly the property that makes it safe to act on.
+            target = getattr(result, "navigate", None)
+            if target:
+                await self._emit(LLMNavigatePacket(
+                    context_id=self.context_id, path=target))
             try:
                 log_action(self.db, "assistant_voice_tool", name)
             except Exception:

@@ -459,119 +459,264 @@ def test_explain_reports_every_stage():
     assert any("sixty-seven" in text for _stage, text in trace)
 
 
-# --- local synthesisers ----------------------------------------------------
+# --- choosing a voice ------------------------------------------------------
 #
-# The two offline voices exist so a police deployment that loses its internet,
-# its Groq key or its budget still has an assistant that talks. What is tested
-# here is the wiring around them — selection, language routing, cancellation —
-# and not synthesis quality, because loading 310 MB of ONNX weights in a unit
-# test would put a half-minute on every run of this file.
+# There is no offline tier any more — Kokoro and Piper were removed because a
+# hosted deployment cannot spend 310 MB of weights and blocking CPU synthesis
+# on the web host to produce a voice the browser makes for free. What is left
+# worth testing is the wiring: which provider gets chosen, and whether a
+# barge-in actually stops the audio.
 
-def test_a_missing_local_model_is_skipped_rather_than_raising(monkeypatch):
-    """The ladder must survive a machine where nobody ran the bootstrap.
+def test_no_keys_at_all_still_yields_a_voice(monkeypatch):
+    """The ladder must survive a deployment that bought no speech keys.
 
-    An unprepared box is the normal state of a fresh checkout, and the correct
-    outcome is a browser voice, not a stack trace on the officer's first
-    question."""
-    monkeypatch.setattr(tts.KokoroTTS, "available", staticmethod(lambda: False))
-    monkeypatch.setattr(tts.PiperHttpTTS, "available", staticmethod(lambda: False))
+    An unconfigured box is the normal state of a fresh checkout, and the
+    correct outcome is the browser's own voice, not a stack trace on the
+    officer's first question."""
+    monkeypatch.setattr(settings, "VOICE_TTS_PROVIDER", "auto")
     monkeypatch.setattr(settings, "SARVAM_API_KEY", "")
     monkeypatch.setattr(settings, "ELEVENLABS_API_KEY", "")
     assert tts.resolve() == "browser"
     assert isinstance(tts.create(lambda p: None), tts.BrowserTTS)
 
 
-def test_a_pinned_local_voice_beats_a_cloud_key(monkeypatch):
-    """`VOICE_TTS_PROVIDER=kokoro` is how an air-gapped site says "local, and I
-    mean it". A quality ladder that overrode it with whatever key happened to
-    be in .env would send audio off-site from a deployment that had explicitly
-    asked for the opposite."""
-    monkeypatch.setattr(tts.KokoroTTS, "available", staticmethod(lambda: True))
+def test_the_ladder_prefers_quality_when_keys_exist(monkeypatch):
+    """`auto` is the default, so this ordering is what most deployments get."""
+    monkeypatch.setattr(settings, "VOICE_TTS_PROVIDER", "auto")
     monkeypatch.setattr(settings, "ELEVENLABS_API_KEY", "sk-live")
-    monkeypatch.setattr(settings, "VOICE_TTS_PROVIDER", "kokoro")
-    assert tts.resolve() == "kokoro"
+    monkeypatch.setattr(settings, "SARVAM_API_KEY", "sv-live")
+    assert tts.resolve() == "elevenlabs"
+    monkeypatch.setattr(settings, "ELEVENLABS_API_KEY", "")
+    assert tts.resolve() == "sarvam"
 
 
-def test_the_local_voice_follows_the_language(monkeypatch):
-    """An American voice reading Devanagari is unintelligible, so the voice is
-    chosen from the language rather than fixed. Gujarati routes to the Hindi
-    voice deliberately: Kokoro has no Gujarati, and Hindi shares most of its
-    phoneme inventory — far closer than reading it as English letters."""
-    monkeypatch.setattr(settings, "KOKORO_VOICE", "")
-    english = tts.KokoroTTS(lambda p: None, language="en-IN")
-    hindi = tts.KokoroTTS(lambda p: None, language="hi-IN")
-    gujarati = tts.KokoroTTS(lambda p: None, language="gu-IN")
-    assert (english.lang, english.voice) == ("en-us", tts.KokoroTTS.DEFAULT_VOICE)
-    assert (hindi.lang, hindi.voice) == ("hi", tts.KokoroTTS.HINDI_VOICE)
-    assert (gujarati.lang, gujarati.voice) == ("hi", tts.KokoroTTS.HINDI_VOICE)
+def test_a_pinned_provider_without_a_key_degrades_rather_than_fails(monkeypatch):
+    """Naming a provider is a preference, not a demand that cannot be met.
+
+    Erroring here would mean a typo in .env costs the deployment its voice
+    entirely, which is a worse outcome than a different voice."""
+    monkeypatch.setattr(settings, "VOICE_TTS_PROVIDER", "elevenlabs")
+    monkeypatch.setattr(settings, "ELEVENLABS_API_KEY", "")
+    monkeypatch.setattr(settings, "SARVAM_API_KEY", "")
+    assert tts.resolve() == "browser"
 
 
-def test_an_unknown_or_auto_language_speaks_english(monkeypatch):
-    """`auto` means the recogniser decides per utterance and nothing is known
-    at construction time. A Gujarat control room's working language is English
-    even when the posts it reads are not."""
-    monkeypatch.setattr(settings, "KOKORO_VOICE", "")
-    for language in ("auto", "", "sv-SE"):
-        assert tts.KokoroTTS(lambda p: None, language=language).lang == "en-us"
+def test_a_voice_name_is_not_carried_across_providers(monkeypatch):
+    """Voice ids live in one provider's namespace. Handing an ElevenLabs id to
+    Sarvam is a 400, not a fallback — so the name is honoured only when the
+    provider it was chosen for is the one that answers."""
+    monkeypatch.setattr(settings, "VOICE_TTS_PROVIDER", "elevenlabs")
+    monkeypatch.setattr(settings, "VOICE_TTS_VOICE", "21m00Tcm4TlvDq8ikWAM")
+    monkeypatch.setattr(settings, "ELEVENLABS_API_KEY", "")
+    monkeypatch.setattr(settings, "SARVAM_API_KEY", "sv-live")
+    speaker = tts.create(lambda p: None)
+    assert speaker.name == "sarvam"
+    assert speaker.voice == tts.SarvamTTS.DEFAULT_VOICE
 
 
-def test_an_explicit_voice_overrides_the_language_default(monkeypatch):
-    monkeypatch.setattr(settings, "KOKORO_VOICE", "")
-    assert tts.KokoroTTS(lambda p: None, voice="am_michael").voice == "am_michael"
-    monkeypatch.setattr(settings, "KOKORO_VOICE", "af_bella")
-    assert tts.KokoroTTS(lambda p: None, language="hi-IN").voice == "af_bella"
-
-
-def test_an_interruption_stops_the_local_voice_mid_sentence(monkeypatch):
+def test_an_interruption_stops_the_voice_mid_sentence(monkeypatch):
     """Barge-in is the difference between an assistant and a recording.
 
-    Kokoro generates a whole phoneme batch before any of it is playable, so
-    cancellation cannot wait for synthesis to finish — it is checked per
-    emitted slice, which is what stops the voice within about a tenth of a
-    second of the officer talking over it."""
-    emitted: list[bytes] = []
+    Cancellation is checked per emitted chunk rather than per sentence, which
+    is what stops the voice within about a tenth of a second of the officer
+    talking over it instead of at the end of the paragraph."""
+    emitted: list = []
 
     async def on_packet(packet):
-        emitted.append(packet.audio)
+        emitted.append(packet)
         if len(emitted) == 2:            # the officer starts talking
             await speaker.interrupt("ctx")
 
-    class FakeModel:
-        def create_stream(self, text, voice, speed, lang):
-            async def gen():
-                # One second of audio at Kokoro's native rate, in two batches.
-                yield np.zeros(24_000, dtype=np.float32), 24_000
-                yield np.zeros(24_000, dtype=np.float32), 24_000
-            return gen()
+    class FakeResponse:
+        status_code = 200
 
-    monkeypatch.setattr(tts.KokoroTTS, "_model", FakeModel())
-    speaker = tts.KokoroTTS(on_packet, language="en-IN")
-    asyncio.run(speaker.speak(TextToSpeechTextPacket(context_id="ctx", text="Surat is quiet.")))
+        async def aiter_bytes(self, chunk_size=3200):
+            # Ten chunks are offered; the interruption above lands on the
+            # second, so a pipeline that only checked once per sentence would
+            # emit all ten.
+            for _ in range(10):
+                yield b"\x00" * chunk_size
 
-    # Two slices went out and then it stopped: not the ~10 a full second of
-    # audio would be, and no is_final, because the turn was abandoned.
-    assert len(emitted) == 2
-    assert all(len(chunk) <= tts.LOCAL_CHUNK_BYTES for chunk in emitted)
+    class FakeStream:
+        async def __aenter__(self): return FakeResponse()
+        async def __aexit__(self, *exc): return False
 
+    class FakeClient:
+        def __init__(self, *a, **kw): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *exc): return False
+        def stream(self, *a, **kw): return FakeStream()
 
-def test_piper_is_offline_until_a_server_is_configured(monkeypatch):
-    """Piper is reached over HTTP rather than imported on purpose: the
-    `piper-tts` library is GPL-3.0 and importing it would place this backend
-    under the GPL's source-disclosure terms. No URL therefore means no Piper —
-    there is no in-process path to fall back to."""
-    monkeypatch.setattr(settings, "PIPER_HTTP_URL", "")
-    assert not tts.PiperHttpTTS.available()
-    monkeypatch.setattr(settings, "PIPER_HTTP_URL", "http://127.0.0.1:5000")
-    assert tts.PiperHttpTTS.available()
-
-
-def test_warm_up_is_skipped_when_the_local_voice_will_not_be_used(monkeypatch):
-    """310 MB of weights loaded at boot on a box that will always answer
-    through ElevenLabs is pure waste."""
-    loaded: list[str] = []
-    monkeypatch.setattr(tts.KokoroTTS, "load",
-                        classmethod(lambda cls: loaded.append("load")))
-    monkeypatch.setattr(settings, "VOICE_TTS_PROVIDER", "elevenlabs")
     monkeypatch.setattr(settings, "ELEVENLABS_API_KEY", "sk-live")
-    tts.warm_local_voice()
-    assert loaded == []
+    monkeypatch.setattr(tts.httpx, "AsyncClient", FakeClient)
+    speaker = tts.ElevenLabsTTS(on_packet, language="en-IN")
+    asyncio.run(speaker.speak(
+        TextToSpeechTextPacket(context_id="ctx", text="Surat is quiet.")))
+
+    # Two chunks went out and then it stopped — and no is_final, because the
+    # turn was abandoned rather than completed.
+    assert len(emitted) == 2
+    assert not any(getattr(p, "is_final", False) for p in emitted)
+
+
+# ── the realtime engine's one audio contract ────────────────────────────────
+
+def test_realtime_resamples_browser_audio_to_the_rate_it_declares(monkeypatch):
+    """The bug this exists to prevent is silent in every direction.
+
+    The browser captures at its output device's rate — 48 kHz on ordinary
+    hardware — and reports it in the handshake. `INPUT_MIME` tells Gemini the
+    audio is 16 kHz. If the samples are forwarded unconverted, nothing raises
+    and nothing logs: the socket is healthy, the session is open, the status
+    endpoint says `gemini_live`. Gemini simply hears every utterance three
+    times too slow, never decides a turn ended, and answers nothing. The
+    officer's report is "I'm talking and it's not responding at all".
+
+    So the assertion is on the bytes actually handed to the SDK, not on the
+    call succeeding.
+    """
+    from app.services.voice import realtime
+
+    sent: list[bytes] = []
+
+    class FakeLiveSession:
+        async def send_realtime_input(self, *, audio=None, **_kw):
+            sent.append(bytes(audio.data))
+
+    monkeypatch.setattr(realtime.assistant_tools, "for_role", lambda _role: [])
+
+    class _User:
+        username, role, full_name = "officer", "analyst", "Officer"
+
+    from app.services.voice.session import SessionConfig
+
+    async def emit(_packet):
+        return None
+
+    session = realtime.GeminiLiveSession(
+        user=_User(), db=None,
+        config=SessionConfig(input_sample_rate=48_000), emit=emit)
+    session._session = FakeLiveSession()
+
+    one_second_at_48k = _tone(1000, rate=48000)
+    asyncio.run(session.push_audio(one_second_at_48k))
+
+    assert len(sent) == 1
+    # A second of speech must still be a second of speech at the declared rate.
+    assert round(audio.duration_ms(sent[0])) == 1000
+    assert len(sent[0]) == len(one_second_at_48k) // 3
+    assert f"rate={audio.SAMPLE_RATE}" in realtime.INPUT_MIME
+
+
+def test_realtime_leaves_audio_alone_when_the_browser_already_sends_16k():
+    """A resample that is a no-op must actually be a no-op — re-encoding every
+    frame of a 16 kHz stream would cost quality for nothing."""
+    from app.services.voice import realtime
+    from app.services.voice.session import SessionConfig
+
+    sent: list[bytes] = []
+
+    class FakeLiveSession:
+        async def send_realtime_input(self, *, audio=None, **_kw):
+            sent.append(bytes(audio.data))
+
+    class _User:
+        username, role, full_name = "officer", "analyst", "Officer"
+
+    async def emit(_packet):
+        return None
+
+    session = realtime.GeminiLiveSession.__new__(realtime.GeminiLiveSession)
+    session.config = SessionConfig(input_sample_rate=16_000)
+    session._session = FakeLiveSession()
+    session._closed = False
+
+    chunk = _tone(100, rate=16000)
+    asyncio.run(realtime.GeminiLiveSession.push_audio(session, chunk))
+
+    assert sent == [chunk]
+
+
+def test_realtime_forwards_a_tool_navigation_to_the_browser(monkeypatch):
+    """Navigation is the one tool effect not carried by the payload.
+
+    The cascade forwards it explicitly and the realtime engine has to as well,
+    or "take me to the alerts page" runs the tool, speaks a confirmation, and
+    leaves the officer on the page they were already looking at — with nothing
+    logged, because as far as every component is concerned the tool succeeded.
+    """
+    from app.services.assistant import tools as assistant_tools
+    from app.services.voice import realtime
+    from app.services.voice.session import SessionConfig
+
+    emitted: list = []
+
+    async def emit(packet):
+        emitted.append(packet)
+
+    class FakeLiveSession:
+        async def send_tool_response(self, **_kw):
+            return None
+
+    class FakeCall:
+        id, name = "call-1", "navigate"
+        args = {"page": "alerts", "severity": "critical"}
+
+    monkeypatch.setattr(
+        assistant_tools, "invoke",
+        lambda *_a, **_kw: assistant_tools.ToolResult(
+            {"opened": True}, navigate="/app/alerts?severity=critical"))
+
+    session = realtime.GeminiLiveSession.__new__(realtime.GeminiLiveSession)
+    session.config = SessionConfig()
+    session.context_id = "ctx"
+    session.db = None
+    session.user = type("U", (), {"username": "o", "role": "analyst"})()
+    session._emit = emit
+    session._session = FakeLiveSession()
+
+    asyncio.run(realtime.GeminiLiveSession._run_tools(session, [FakeCall()]))
+
+    paths = [p.path for p in emitted if isinstance(p, realtime.LLMNavigatePacket)]
+    assert paths == ["/app/alerts?severity=critical"]
+
+
+def test_realtime_survives_a_tool_that_raises_before_navigating(monkeypatch):
+    """The navigate lookup reads off the ToolResult, which does not exist when
+    the tool raised. Getting that wrong replaces a handled tool error with an
+    UnboundLocalError that kills the whole turn."""
+    from app.services.assistant import tools as assistant_tools
+    from app.services.voice import realtime
+    from app.services.voice.session import SessionConfig
+
+    emitted: list = []
+
+    async def emit(packet):
+        emitted.append(packet)
+
+    class FakeLiveSession:
+        async def send_tool_response(self, **_kw):
+            return None
+
+    class FakeCall:
+        id, name, args = "call-1", "count_posts", {}
+
+    def _boom(*_a, **_kw):
+        raise RuntimeError("database gone")
+
+    monkeypatch.setattr(assistant_tools, "invoke", _boom)
+
+    session = realtime.GeminiLiveSession.__new__(realtime.GeminiLiveSession)
+    session.config = SessionConfig()
+    session.context_id = "ctx"
+    session.db = None
+    session.user = type("U", (), {"username": "o", "role": "analyst"})()
+    session._emit = emit
+    session._session = FakeLiveSession()
+
+    asyncio.run(realtime.GeminiLiveSession._run_tools(session, [FakeCall()]))
+
+    # The failure is reported to the model as a tool result, and nothing
+    # navigated.
+    assert not [p for p in emitted if isinstance(p, realtime.LLMNavigatePacket)]
+    assert emitted, "the officer's panel still gets the failed tool step"

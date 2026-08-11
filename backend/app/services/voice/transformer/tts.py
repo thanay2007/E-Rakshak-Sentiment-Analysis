@@ -42,14 +42,12 @@ it may never acknowledge.
 """
 from __future__ import annotations
 
-import asyncio
 import logging
-from pathlib import Path
 
 import httpx
 
 from app.config import settings
-from app.services.voice.audio import float32_to_pcm16, from_wav, resample
+from app.services.voice.audio import from_wav, resample
 from app.services.voice.transformer.base import TextToSpeech
 from app.services.voice.types import (SAMPLE_RATE, OnPacket, TextToSpeechAudioPacket,
                                       TextToSpeechTextPacket)
@@ -58,11 +56,6 @@ log = logging.getLogger("sentinel.voice.tts")
 
 ELEVENLABS_URL = "https://api.elevenlabs.io/v1/text-to-speech"
 SARVAM_TTS_URL = "https://api.sarvam.ai/text-to-speech"
-
-#: Emitted per packet by the local synthesisers. 3200 bytes is 100 ms at 16 kHz
-#: mono PCM16 — small enough that a barge-in is honoured within a tenth of a
-#: second, large enough that a sentence is not thousands of websocket frames.
-LOCAL_CHUNK_BYTES = 3200
 
 
 class BrowserTTS(TextToSpeech):

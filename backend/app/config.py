@@ -174,6 +174,30 @@ class Settings(BaseSettings):
     #: measured as the right answer for this assistant — see realtime.py — and
     #: a negative value leaves the model's own default alone.
     VOICE_REALTIME_THINKING_BUDGET: int = 0
+    #: How many consecutive realtime failures mean "stop trying for a while".
+    #: Two rather than one because a single dropped socket is normal and the
+    #: browser reconnects transparently; two in a row is an outage, a retired
+    #: model alias or an exhausted quota, and all three want the cascade.
+    VOICE_REALTIME_FAILURE_THRESHOLD: int = 2
+    #: How long new sessions get the cascade after that. Long enough that a
+    #: reconnect loop cannot defeat it, short enough that a quota window
+    #: reopening is picked up without anybody restarting the server.
+    VOICE_REALTIME_COOLDOWN_SECONDS: float = 180.0
+    #: Refuse the cascade entirely: if the Live socket will not open, the voice
+    #: connection fails loudly instead of quietly downgrading.
+    #:
+    #: On, because the cascade is not merely slower — it ends a turn on a 350 ms
+    #: pause, so it answers half-questions, and an assistant that confidently
+    #: replies to the first half of a sentence is worse than one that is plainly
+    #: unavailable. The downgrade was also invisible until recently, which is
+    #: how a Gemini fault survived as "the assistant feels worse" instead of an
+    #: error anybody could act on.
+    #:
+    #: Set to false to restore the fallback. Worth doing for a deployment that
+    #: must keep a microphone during a Gemini outage or an exhausted quota —
+    #: `GEMINI_LIVE_MODEL` is a *preview* alias and those do get retired — where
+    #: a degraded assistant beats a dead panel.
+    VOICE_REALTIME_REQUIRED: bool = True
 
     VOICE_STT_PROVIDER: str = "auto"
     VOICE_STT_MODEL: str = "whisper-large-v3-turbo"
@@ -611,8 +635,6 @@ class Settings(BaseSettings):
             if source.strip():
                 out.append((source.strip().lstrip("@"), city.strip()))
         return out
-
-    RSS_FEEDS: list[str] = []
 
     REPORTS_DIR: Path = BASE_DIR / "reports"
     MODELS_DIR: Path = APP_DIR / "ml" / "models"

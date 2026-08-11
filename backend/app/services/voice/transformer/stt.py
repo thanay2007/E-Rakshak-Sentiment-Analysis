@@ -71,6 +71,15 @@ SARVAM_TRANSCRIBE_URL = "https://api.sarvam.ai/speech-to-text"
 DEEPGRAM_URL = "https://api.deepgram.com/v1/listen"
 DEEPGRAM_STREAM_URL = "wss://api.deepgram.com/v1/listen"
 
+#: Words this console uses that a general recogniser mishears. Kept short —
+#: keyterm boosting trades general accuracy for these, so it is for nouns the
+#: assistant actually branches on (cities it filters by, pages it opens),
+#: not for every bit of jargon.
+DEEPGRAM_KEYTERMS = (
+    "Surat", "Ahmedabad", "Vadodara", "Rajkot", "Gujarat", "Gandhinagar",
+    "Sentinel", "watchlist", "concern score", "sentiment", "escalation",
+)
+
 
 class BrowserSTT(SpeechToText):
     """Recognition happens in the browser; nothing to do here.
@@ -241,6 +250,11 @@ class DeepgramStreamingSTT(SpeechToText):
         self._context_id = ""
         self._lock = asyncio.Lock()
         self._failed = False
+        #: Segments Deepgram has marked `is_final` — stable text it will not
+        #: revise. Held rather than emitted one by one because a turn is
+        #: usually several of them, and the assistant must be asked the whole
+        #: question rather than each clause as it lands.
+        self._settled: list[str] = []
 
     @staticmethod
     def available() -> bool:
@@ -271,7 +285,28 @@ class DeepgramStreamingSTT(SpeechToText):
             # close to the session's silence window so the two agree about when
             # a turn ended rather than racing.
             "endpointing": str(int(settings.VOICE_EOS_SILENCE_SECONDS * 1000)),
+            # A second, independent end-of-turn signal. `speech_final` only
+            # arrives if Deepgram hears enough silence *after* the speech, and
+            # this client is half-duplex — it stops sending the moment the
+            # assistant starts talking — so there are turns where that silence
+            # is never transmitted and `speech_final` never comes. UtteranceEnd
+            # is derived from word timings instead and still fires.
+            "utterance_end_ms": str(max(1000,
+                                        int(settings.VOICE_EOS_SILENCE_SECONDS * 1000))),
+            # Required for UtteranceEnd to be sent at all.
+            "vad_events": "true",
         }
+        # Domain vocabulary, boosted. The same accuracy-for-free trick as
+        # WHISPER_PROMPT above and needed for the same reason: the recogniser
+        # decodes toward what it finds plausible, and this console's nouns are
+        # not plausible to a model trained on the open web. Measured on a live
+        # round trip, "Surat" came back as "Sirat" without this — and a city
+        # name is precisely the word the assistant filters on, so getting it
+        # wrong does not degrade the answer, it changes which city was asked
+        # about.
+        # nova-3 only; older models reject the parameter outright.
+        if self.model.startswith("nova-3"):
+            params["keyterm"] = list(DEEPGRAM_KEYTERMS)
         # `multi` lets one utterance switch script mid-sentence, which is the
         # normal case here — an officer says a Gujarati place name inside an
         # English question. Pinning a single language is what makes a
@@ -280,7 +315,8 @@ class DeepgramStreamingSTT(SpeechToText):
             params["language"] = self.language
         else:
             params["language"] = settings.DEEPGRAM_STREAM_LANGUAGE
-        return f"{DEEPGRAM_STREAM_URL}?{urlencode(params)}"
+        # doseq, because `keyterm` is repeated rather than comma-joined.
+        return f"{DEEPGRAM_STREAM_URL}?{urlencode(params, doseq=True)}"
 
     async def _connect(self):
         if self._ws is not None or self._failed:
@@ -311,34 +347,66 @@ class DeepgramStreamingSTT(SpeechToText):
         return self._ws
 
     async def _read(self) -> None:
-        """One task draining Deepgram's JSON, for the life of the socket."""
+        """One task draining Deepgram's JSON, for the life of the socket.
+
+        Deepgram's three signals mean three different things, and conflating
+        them is how a turn ends in the wrong place:
+
+          `is_final`      this *segment* will not be revised. A turn is often
+                          several of these, so it is text to keep, not a cue
+                          to answer.
+          `speech_final`  the endpointer heard silence after the speech: the
+                          turn is over. The best signal, when it arrives.
+          `UtteranceEnd`  derived from word timings, and the fallback for when
+                          the client stopped sending before that silence.
+
+        Whichever end signal lands first releases the settled text and the
+        other is then a no-op, because `_finish` clears the buffer.
+        """
         try:
             async for raw in self._ws:
                 try:
                     payload = json.loads(raw)
                 except (TypeError, ValueError):
                     continue
-                if payload.get("type") not in (None, "Results"):
+
+                kind = payload.get("type")
+                if kind == "UtteranceEnd":
+                    await self._finish()
                     continue
+                if kind not in (None, "Results"):
+                    continue
+
                 alternatives = (payload.get("channel", {})
                                 .get("alternatives") or [{}])
                 text = (alternatives[0].get("transcript") or "").strip()
-                if not text:
-                    continue
-                await self._on_packet(SpeechToTextPacket(
-                    context_id=self._context_id,
-                    text=text,
-                    # `speech_final` is Deepgram's endpointer saying the
-                    # utterance is over; `is_final` alone only means this
-                    # segment will not be revised. Treating the latter as the
-                    # end of a turn cuts the officer off mid-sentence.
-                    is_final=bool(payload.get("speech_final")),
-                    confidence=float(alternatives[0].get("confidence") or 0.0),
-                    language=self.language))
+                confidence = float(alternatives[0].get("confidence") or 0.0)
+
+                if payload.get("is_final"):
+                    if text:
+                        self._settled.append(text)
+                    if payload.get("speech_final"):
+                        await self._finish(confidence)
+                elif text:
+                    # An interim: the live caption, and what the end-of-speech
+                    # detector watches. Never a turn boundary.
+                    await self._on_packet(SpeechToTextPacket(
+                        context_id=self._context_id, text=text, is_final=False,
+                        confidence=confidence, language=self.language))
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             log.warning("deepgram: live socket closed (%s)", exc)
+
+    async def _finish(self, confidence: float = 0.0) -> None:
+        """Release the settled text as one finished question."""
+        text = " ".join(self._settled).strip()
+        self._settled.clear()
+        if not text:
+            return
+        await self._on_packet(SpeechToTextPacket(
+            context_id=self._context_id, text=text, is_final=True,
+            confidence=confidence, language=self.language))
 
     async def feed(self, packet: SpeechToTextAudioPacket) -> None:
         self._context_id = packet.context_id
@@ -352,13 +420,16 @@ class DeepgramStreamingSTT(SpeechToText):
             self._failed = True
 
     async def flush(self, context_id: str) -> None:
-        """Nothing to flush — the transcript has been arriving all along.
+        """Close the turn with whatever Deepgram has settled so far.
 
-        The batch base class transcribes its buffer here. Doing that with a
-        streaming provider would send the whole utterance a second time and
-        emit a duplicate final transcript, so this is deliberately empty.
+        Not the batch behaviour — there is no buffer to transcribe, and
+        re-sending the audio would produce a duplicate answer. This is the last
+        of the three end-of-turn signals: the caller's own silence detector,
+        used when neither `speech_final` nor `UtteranceEnd` arrived. Harmless
+        when they did, because `_finish` has already emptied the buffer.
         """
-        return None
+        self._context_id = context_id or self._context_id
+        await self._finish()
 
     async def transcribe(self, audio: bytes) -> tuple[str, float, str]:
         # Required by the interface; unreachable, because feed() never buffers.
