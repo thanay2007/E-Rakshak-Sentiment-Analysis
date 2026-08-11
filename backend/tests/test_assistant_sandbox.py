@@ -191,3 +191,78 @@ def test_navigation_targets_come_from_a_fixed_table():
     for hostile in ("https://evil.example.com", "//evil.example.com",
                     "/app/../../etc/passwd", "javascript:alert(1)"):
         assert tools.invoke("navigate", {"page": hostile}, ctx).navigate is None
+
+
+def test_navigation_applies_only_filters_the_page_actually_offers():
+    """"Show me negative posts from Surat" is one intent, and opening an
+    unfiltered feed answers half of it. The filters go in the URL — but only
+    after being resolved against the target page's own controls."""
+    from app.models import User
+
+    ctx = tools.ToolContext(session=None, user=User(username="a", role="analyst"))
+
+    result = tools.invoke(
+        "navigate", {"page": "feed", "sentiment": "negative", "city": "surat"}, ctx)
+    assert result.navigate == "/app/feed?sentiment=negative&location=Surat"
+    assert result.payload["filters_applied"] == {"sentiment": "negative",
+                                                 "location": "Surat"}
+
+    # A filter that belongs to another page is dropped and *named*, so the
+    # model can say the feed has no severity control rather than implying it
+    # filtered by one.
+    result = tools.invoke("navigate", {"page": "feed", "severity": "critical"}, ctx)
+    assert result.navigate == "/app/feed"
+    assert result.payload["filters_not_applied"] == ["severity"]
+
+
+def test_navigation_filter_values_are_clamped_and_vetted():
+    """Every value is checked against the closed list its control offers, so
+    the assistant cannot drive a page into a state the officer could not reach
+    by clicking — or reach a URL that is not a filtered page at all."""
+    from app.models import User
+
+    ctx = tools.ToolContext(session=None, user=User(username="a", role="analyst"))
+
+    # Out-of-range numbers land on the slider's own limits rather than being
+    # passed through or dropping the filter.
+    assert tools.invoke("navigate", {"page": "trends", "hours": 999}, ctx
+                        ).navigate == "/app/trends?hours=168"
+    assert tools.invoke("navigate", {"page": "feed", "min_score": -40}, ctx
+                        ).navigate == "/app/feed?min_score=0"
+
+    # An unknown member of a multi-select is dropped, the known ones survive.
+    assert tools.invoke("navigate", {"page": "feed", "platform": "X,WhatsApp"},
+                        ctx).navigate == "/app/feed?platform=X"
+
+    # An invented city filters nothing rather than filtering to zero posts.
+    assert tools.invoke("navigate", {"page": "feed", "city": "Atlantis"}, ctx
+                        ).navigate == "/app/feed"
+
+    # The one free-text filter is bounded, stripped of control characters, and
+    # url-encoded — it is a search term, never markup or a second path.
+    hostile = tools.invoke(
+        "navigate",
+        {"page": "feed", "search": "x" * 400 + "\r\n<script>?a=/app/admin"}, ctx)
+    assert hostile.navigate is not None
+    path, _, query = hostile.navigate.partition("?")
+    assert path == "/app/feed"
+    assert "<" not in query and "\n" not in query and "\r" not in query
+    # Still one page and one query string: nothing the model wrote can add a
+    # second `?` or a path segment.
+    assert hostile.navigate.count("?") == 1
+    assert len(hostile.payload["filters_applied"]["q"]) <= 80
+
+
+def test_filters_never_turn_a_rejected_page_into_a_real_one():
+    """The page table is still the only thing that produces a path. A hostile
+    label with perfectly valid filters attached must open nothing."""
+    from app.models import User
+
+    ctx = tools.ToolContext(session=None, user=User(username="a", role="analyst"))
+    for hostile in ("https://evil.example.com", "//evil.example.com",
+                    "javascript:alert(1)", "/app/../../etc/passwd"):
+        result = tools.invoke(
+            "navigate", {"page": hostile, "severity": "critical"}, ctx)
+        assert result.navigate is None
+        # And it tells the model what does exist, so the next turn recovers.
+        assert "available_pages" in result.payload

@@ -1,19 +1,33 @@
-"""Lite threat classifier — lexicon + heuristic layer.
+# -*- coding: utf-8 -*-
+"""Lexicon signal extraction — the evidence layer under the sentiment models.
 
-Produces the exact 4 labels the UI uses: "Incitement to Violence",
-"Inflammatory", "Fake News", "Neutral" — plus per-class probabilities,
-matched evidence terms and an intent label. Zero model downloads, <1ms/post,
-and fully multilingual via the lexicons. Swapped out transparently for the
-fine-tuned / zero-shot transformer when NLP_MODE=full.
+This used to emit a four-class threat label ("Incitement to Violence",
+"Inflammatory", "Fake News", "Neutral"). It no longer does, and the reason is
+worth stating plainly: whether a post will incite violence, or whether a claim
+in it is false, are investigative conclusions about the world. A model reading
+one post's words cannot establish either, and a console that prints them as
+model output invites an analyst to treat a guess as a finding.
+
+What lexicon matching CAN establish is what the post actually contains: violent
+vocabulary, hostile framing, abusive terms, mobilization language, and how
+strong the strongest matched term is. Those are facts about the text. They feed
+three things and claim nothing beyond themselves:
+
+  • the lexicon sentiment model (ml/sentiment.py) — hostile/abusive language is
+    intrinsically negative even when no valence word is present
+  • the toxicity score and hate flags (ml/toxicity.py)
+  • `term_severity` in the concern score (ml/score.py)
+
+`matched_terms` is surfaced to the analyst verbatim as evidence, so every
+signal here is auditable against the post text.
 """
 from app.ml import lexicons as lx
 from app.ml.matcher import match_terms, score
 from app.ml.normalize import normalize
 
-LABELS = ["Incitement to Violence", "Inflammatory", "Fake News", "Neutral"]
 
-
-def classify(text: str) -> dict:
+def extract_signals(text: str) -> dict:
+    """Lexicon evidence for one post. No label, no verdict — just what is there."""
     norm = normalize(text)
 
     violence = match_terms(norm, lx.VIOLENCE)
@@ -27,67 +41,28 @@ def classify(text: str) -> dict:
     s_hostility = score(hostility)
     s_fake = score(fake)
     s_cta = score(cta)
-    s_official = score(officials)
     s_abuse = score(abuse)
 
-    # ── Category raw scores ──────────────────────────────────────────────
-    # Incitement: violent language, amplified by mobilization and by
-    # violence directed at office-holders.
-    incitement = s_violence
-    if violence and cta:
-        incitement += 0.8 * s_cta          # "gather at X and teach them a lesson"
-    if violence and officials:
-        incitement += 0.7 * s_official     # threat against an office-holder
-    if violence and hostility:
-        incitement += 0.5 * s_hostility    # hostile framing + violence = incitement, not mere hostility
-    if cta and hostility and not violence:
-        # mobilizing people against a group IS incitement even without an
-        # explicit violence word ("everyone gather at X, enough of them")
-        incitement += 1.0 * s_cta + 0.4 * s_hostility
+    matched = violence + hostility + fake + cta + abuse
+    matched_terms = [t for t, _ in sorted(matched, key=lambda h: -h[1])][:8]
+    term_severity = max((w for _, w in matched), default=0.0)
 
-    # Inflammatory: hostility/exclusion + abuse, minus what incitement claimed
-    inflammatory = s_hostility + 0.5 * s_abuse
-
-    # Fake news: misinformation framing; forward/share pressure is a strong tell
-    fake_news = s_fake
-
-    # Neutral floor: constant baseline that wins when nothing fires
-    neutral = 0.55
-
-    raw = {
-        "Incitement to Violence": incitement,
-        "Inflammatory": inflammatory,
-        "Fake News": fake_news,
-        "Neutral": neutral,
-    }
-    total = sum(raw.values()) or 1.0
-    probs = {k: round(v / total, 4) for k, v in raw.items()}
-    label = max(probs, key=probs.get)
-    confidence = probs[label]
-
-    # ── Intent layer ─────────────────────────────────────────────────────
-    if label == "Incitement to Violence":
-        intent = "threat"
-    elif cta:
+    # Intent describes the speech act, which the text does support: a post that
+    # asks people to gather is a call to action regardless of whether anyone
+    # gathers. Kept because the analyst filters on it; no threat claim implied.
+    if cta:
         intent = "call_to_action"
-    elif label == "Fake News":
+    elif fake:
         intent = "rumor"
-    elif label == "Inflammatory":
+    elif hostility or abuse:
         intent = "opinion"
     else:
         intent = "informational"
 
-    matched = violence + hostility + fake + cta + abuse
-    matched_terms = [t for t, _ in sorted(matched, key=lambda h: -h[1])][:8]
-    keyword_severity = max((w for _, w in matched), default=0.0)
-
     return {
-        "label": label,
-        "confidence": confidence,
-        "probs": probs,
         "intent": intent,
         "matched_terms": matched_terms,
-        "keyword_severity": keyword_severity,
+        "term_severity": term_severity,
         "signals": {
             "violence": round(s_violence, 3),
             "hostility": round(s_hostility, 3),

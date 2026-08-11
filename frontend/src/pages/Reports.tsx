@@ -1,19 +1,21 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowUpRight, Download, FilePlus2, FileSpreadsheet, FileText, ShieldAlert, Sparkles, X } from "lucide-react";
+import { ArrowUpRight, Download, FilePlus2, FileSpreadsheet, FileText, ShieldAlert, X } from "lucide-react";
 import { useState } from "react";
-import { ThreatBadge } from "../components/Badges";
-import GlassCard, { SectionTitle } from "../components/GlassCard";
+import { SentimentBadge } from "../components/Badges";
+import { usePostDetail } from "../components/PostDetailProvider";
+import GlassCard from "../components/GlassCard";
 import { SkeletonRow } from "../components/Skeletons";
-import { THREAT_COLORS, THREAT_SHORT } from "../data/constants";
+import { SENTIMENT_TEXT, sentimentColor } from "../data/constants";
 import { useGsapReveal } from "../hooks/useGsapReveal";
 import { usePolling } from "../hooks/usePolling";
 import { api } from "../services/api";
 import type { Report } from "../services/api";
 
 function ReportModal({ report, onClose }: { report: Report; onClose: () => void }) {
+  const { openPostId } = usePostDetail();
   const p = report.payload ?? {};
   const esc = p.escalation;
-  const dist: Record<string, number> = p.category_distribution ?? {};
+  const dist: Record<string, number> = p.sentiment_distribution ?? {};
   const total = Object.values(dist).reduce((s, v) => s + v, 0) || 1;
 
   return (
@@ -79,13 +81,13 @@ function ReportModal({ report, onClose }: { report: Report; onClose: () => void 
             </h3>
             {Object.entries(dist).map(([label, count]) => (
               <div key={label} className="mb-2 flex items-center gap-3 text-xs">
-                <span className="w-32 truncate text-slate-300 font-semibold">{THREAT_SHORT[label] ?? label}</span>
+                <span className="w-32 truncate text-slate-300 font-semibold">{SENTIMENT_TEXT[label] ?? label}</span>
                 <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/[0.08]">
                   <div
                     className="h-full rounded-full"
                     style={{
                       width: `${(count / total) * 100}%`,
-                      backgroundColor: THREAT_COLORS[label] ?? "#64748B",
+                      backgroundColor: sentimentColor(label),
                     }}
                   />
                 </div>
@@ -95,22 +97,29 @@ function ReportModal({ report, onClose }: { report: Report; onClose: () => void 
           </div>
         )}
 
-        {p.top_threats?.length > 0 && (
+        {p.top_concern?.length > 0 && (
           <div className="mt-4">
             <h3 className="mb-2.5 text-xs font-bold uppercase tracking-wider text-slate-300">
-              High-Risk Intercepts
+              Highest-Concern Posts
             </h3>
             <div className="space-y-2">
-              {p.top_threats.slice(0, 5).map((t: any) => (
-                <div key={t.id} className="rounded-xl border border-white/[0.06] bg-base-950/60 p-3">
+              {p.top_concern.slice(0, 5).map((t: any) => (
+                <button
+                  key={t.id}
+                  onClick={() => openPostId(t.id)}
+                  className="w-full rounded-xl border border-white/[0.06] bg-base-950/60 p-3 text-left transition-colors hover:border-accent/40 hover:bg-white/[0.04]"
+                >
                   <div className="flex items-center gap-2">
-                    <ThreatBadge label={t.threat_label} score={t.threat_score} />
+                    <SentimentBadge label={t.sentiment_label} score={t.concern_score} />
                     <span className="font-mono text-[11px] text-slate-400">
                       {t.platform} @{t.author_handle} · {t.language} · {t.location || "Gujarat"}
                     </span>
                   </div>
                   <p className="mt-1.5 line-clamp-2 text-xs text-slate-200">{t.translation || t.text}</p>
-                </div>
+                  <span className="mt-1 block text-[10.5px] font-semibold text-accent">
+                    open full detail →
+                  </span>
+                </button>
               ))}
             </div>
           </div>
@@ -125,7 +134,7 @@ function ReportModal({ report, onClose }: { report: Report; onClose: () => void 
               <p><strong className="text-slate-400">Incident:</strong> {esc.incident_type} on {esc.platform} ({esc.language}, {esc.location || "Gujarat"})</p>
               <p><strong className="text-slate-400">Target Profile:</strong> @{esc.author?.handle} · {esc.author?.followers} followers · {esc.author?.account_age_days}d account age</p>
               <p><strong className="text-slate-400">Evidence Quote:</strong> {esc.evidence?.english_translation || esc.evidence?.original_text}</p>
-              <p><strong className="text-slate-400">Classification:</strong> {esc.evidence?.classification} (Score {esc.evidence?.threat_score}/100)</p>
+              <p><strong className="text-slate-400">Classification:</strong> {esc.evidence?.classification} (Score {esc.evidence?.concern_score}/100)</p>
             </div>
             {esc.recommended_actions && (
               <ul className="mt-3 space-y-1.5 text-xs text-slate-300">

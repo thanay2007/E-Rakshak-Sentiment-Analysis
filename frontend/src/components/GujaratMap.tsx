@@ -7,7 +7,7 @@ import { useNavigate } from "react-router-dom";
  * labeled markers with live values, click-to-pin detail card. Fully
  * self-contained SVG (no tile servers). */
 
-type Region = { name: string; count: number; avg_threat: number; threats: number; lat: number; lon: number };
+type Region = { name: string; count: number; avg_concern: number; threats: number; lat: number; lon: number };
 
 // projection bounds (Gujarat): lon 68.0–74.6E, lat 20.0–24.8N
 const W = 560, H = 430;
@@ -118,7 +118,7 @@ export default function GujaratMap({ regions }: { regions: Region[] }) {
         {regions.filter((r) => r.lat && r.lon).map((r) => {
           const [x, y] = project(r.lat, r.lon);
           const radius = 6 + 10 * Math.sqrt(r.count / maxCount);
-          const c = heat(r.avg_threat);
+          const c = heat(r.avg_concern);
           const isActive = active?.name === r.name;
           return (
             <g
@@ -133,7 +133,7 @@ export default function GujaratMap({ regions }: { regions: Region[] }) {
             >
               {/* heat halo */}
               <circle cx={x} cy={y} r={radius * 2.6} fill={`url(#halo-${c.slice(1)})`} />
-              {r.avg_threat >= 45 && (
+              {r.avg_concern >= 45 && (
                 <circle
                   cx={x} cy={y} r={radius + 6} fill="none" stroke={c} strokeWidth="1.5" opacity="0.7"
                   className="animate-ping" style={{ transformOrigin: `${x}px ${y}px` }}
@@ -158,7 +158,7 @@ export default function GujaratMap({ regions }: { regions: Region[] }) {
                   rx={7.5} fill="rgba(10,15,30,0.92)" stroke={`${c}88`} strokeWidth="1"
                 />
                 <text textAnchor="middle" y={1.5} fill="#F1F5F9" fontSize="9" fontFamily="ui-monospace, monospace" fontWeight="600">
-                  {r.name} <tspan fill={c} fontWeight="800">· {r.avg_threat}</tspan>
+                  {r.name} <tspan fill={c} fontWeight="800">· {r.avg_concern}</tspan>
                 </text>
               </g>
             </g>
@@ -175,19 +175,19 @@ export default function GujaratMap({ regions }: { regions: Region[] }) {
       {active && (
         <div
           className="absolute left-3 top-3 z-10 min-w-[200px] rounded-2xl border bg-slate-950/95 p-3.5 shadow-2xl backdrop-blur-md"
-          style={{ borderColor: `${heat(active.avg_threat)}80` }}
+          style={{ borderColor: `${heat(active.avg_concern)}80` }}
         >
           <div className="flex items-center justify-between gap-2 border-b border-white/[0.08] pb-2">
             <div className="flex items-center gap-1.5">
-              <MapPin size={13} style={{ color: heat(active.avg_threat) }} />
+              <MapPin size={13} style={{ color: heat(active.avg_concern) }} />
               <span className="text-sm font-bold text-slate-100">{active.name}</span>
             </div>
             <div className="flex items-center gap-1.5">
               <span
                 className="rounded-md px-1.5 py-0.5 font-mono text-[9px] font-extrabold uppercase"
-                style={{ backgroundColor: `${heat(active.avg_threat)}25`, color: heat(active.avg_threat) }}
+                style={{ backgroundColor: `${heat(active.avg_concern)}25`, color: heat(active.avg_concern) }}
               >
-                {heatLabel(active.avg_threat)}
+                {heatLabel(active.avg_concern)}
               </span>
               {pinned?.name === active.name && (
                 <button onClick={() => setPinned(null)} className="text-slate-400 hover:text-white" title="Unpin">
@@ -199,12 +199,12 @@ export default function GujaratMap({ regions }: { regions: Region[] }) {
 
           <div className="mt-2.5 grid grid-cols-3 gap-2 text-center">
             {[
-              { label: "avg threat", value: active.avg_threat, isThreat: true },
+              { label: "avg threat", value: active.avg_concern, isThreat: true },
               { label: "total posts", value: active.count, isThreat: false },
               { label: "threat alerts", value: active.threats, isThreat: true },
             ].map(({ label, value, isThreat }) => (
               <div key={label} className="rounded-lg bg-white/[0.03] p-1.5">
-                <div className="font-mono text-sm font-bold" style={{ color: isThreat ? heat(active.avg_threat) : "#F8FAFC" }}>
+                <div className="font-mono text-sm font-bold" style={{ color: isThreat ? heat(active.avg_concern) : "#F8FAFC" }}>
                   {value}
                 </div>
                 <div className="text-[8px] uppercase tracking-wider text-slate-400">{label}</div>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useUrlFilters } from "../hooks/useUrlFilters";
 import { Bot, Image, Link2, Megaphone, UserSearch, AtSign, ShieldCheck } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import ImageTool from "../components/investigate/ImageTool";
@@ -62,7 +62,12 @@ const TOOLS: Tool[] = [
 ];
 
 export default function Investigate() {
-  const [active, setActive] = useState("image");
+  // URL-backed so the assistant can open a specific investigation tool, and so
+  // a tool an officer is using survives a reload.
+  const { get, set } = useUrlFilters();
+  const active = get("tab", "image");
+  const setActive = (value: string) => set("tab", value);
+  // An unknown tab falls back to the first tool rather than rendering nothing.
   const tool = TOOLS.find((t) => t.id === active) ?? TOOLS[0];
 
   return (

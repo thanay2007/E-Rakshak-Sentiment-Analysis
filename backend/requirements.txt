@@ -55,17 +55,9 @@ google-api-python-client>=2.100
 google-auth-oauthlib>=1.2
 google-auth-httplib2>=0.2
 
-# Local neural voice for the assistant — kokoro-onnx runs Kokoro-82M through
-# onnxruntime on this machine, so the console keeps a real voice with no key,
-# no network and nothing an officer asks leaving the building. It is what makes
-# an air-gapped install possible; without it the fallback is the browser's own
-# speech synthesis, which still works but is a screen-reader voice.
-#
-# The ~336 MB of weights are NOT shipped and are NOT fetched on demand — a
-# download triggered by the first sentence of a live call would stall that call.
-# Fetch them once, deliberately:
-#   cd backend && python -m app.services.voice.bootstrap
-# Until they exist the provider reports unavailable and the quality ladder
-# walks past it. espeak-ng comes bundled via espeakng-loader, so there is no
-# system package to install.
-kokoro-onnx>=0.4
+# Deepgram's live recogniser is a WebSocket, and this is the client for it.
+# It is what makes the assistant answer conversationally rather than
+# walkie-talkie: every other recogniser here is batch and cannot start until
+# the officer has stopped speaking. Without DEEPGRAM_API_KEY the adapter
+# reports itself unavailable and the ladder falls back to Groq Whisper.
+websockets>=12.0

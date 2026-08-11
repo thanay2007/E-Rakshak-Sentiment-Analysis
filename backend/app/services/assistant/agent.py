@@ -48,8 +48,7 @@ MAX_TOOL_PAYLOAD_CHARS = 3500
 #: `tool_use_failed` the chain falls to a weaker model, and weaker models
 #: routinely emit `<navigate>{"page": "graph"}</navigate>` as prose. Nothing
 #: navigates, and the officer hears the words "navigate page graph" read out.
-#: Small local models do this far more often still, so the Ollama leg makes it
-#: commoner rather than rarer.
+#: The lighter models at the end of either provider's chain do this most.
 #:
 #: What happens next is the careful part. It would be easy to parse the block
 #: and act on it, and that would quietly destroy this module's first invariant:
@@ -182,7 +181,8 @@ async def run(question: str, ctx: ToolContext) -> AgentAnswer:
 
     for step in range(MAX_STEPS):
         message, model_used = await groq_client.chat_tools(
-            messages, tools=schemas, temperature=0.2)
+            messages, tools=schemas, temperature=0.2,
+            prefer=settings.ASSISTANT_LLM_PROVIDER)
 
         if message is None:
             # Every model in the chain failed. If a tool already ran we can
@@ -251,7 +251,8 @@ async def run(question: str, ctx: ToolContext) -> AgentAnswer:
                      "content": "Answer now in two spoken sentences using only "
                                 "what you have already looked up."})
     content, model_used = await groq_client.chat(messages, json_mode=False,
-                                                 temperature=0.2)
+                                                 temperature=0.2,
+                                                 prefer=settings.ASSISTANT_LLM_PROVIDER)
     answer = guard.scrub(content or "") or _UNAVAILABLE
     return AgentAnswer(reply=answer, speech=answer, navigate=navigate,
                        data=display, trace=trace, model=model_used,

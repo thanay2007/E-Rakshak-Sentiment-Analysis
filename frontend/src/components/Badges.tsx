@@ -1,25 +1,53 @@
-import { Bot, Globe, Languages, ShieldAlert, Smile, Meh, Frown } from "lucide-react";
+import { Bot, Frown, Globe, Languages, Meh, ShieldAlert, Smile } from "lucide-react";
 import {
   siFacebook, siInstagram, siReddit, siTelegram, siX, siYoutube,
 } from "simple-icons";
-import { SEVERITY_COLORS, THREAT_COLORS, THREAT_SHORT, SENTIMENT_COLORS } from "../data/constants";
+import {
+  concernBand, concernColor, SENTIMENT_TEXT, SEVERITY_COLORS, sentimentColor,
+} from "../data/constants";
 
-/** Threat class badge — color + text label together (never color alone). */
-export function ThreatBadge({ label, score, size = "md" }: { label: string; score?: number; size?: "sm" | "md" | "lg" }) {
-  const color = THREAT_COLORS[label] ?? "#64748B";
-  const sizeClasses = size === "sm" ? "px-2 py-0.5 text-[10px]" : size === "lg" ? "px-3 py-1 text-xs" : "px-2.5 py-0.5 text-[11px]";
+const SENTIMENT_ICON = { positive: Smile, neutral: Meh, negative: Frown };
+
+/** Normalize whatever the API returned into one of the three tags. */
+function canon(label?: string): "positive" | "neutral" | "negative" {
+  const l = (label || "neutral").toLowerCase();
+  if (l.startsWith("pos")) return "positive";
+  if (l.startsWith("neg")) return "negative";
+  return "neutral";
+}
+
+/**
+ * The post's tag — colour AND text together, never colour alone.
+ *
+ * Optionally shows the 0-100 concern score beside it. The two are deliberately
+ * one chip: "negative" on its own says nothing about whether anyone read it,
+ * and a score on its own says nothing about which direction it leans.
+ */
+export function SentimentBadge({
+  label, score, size = "md",
+}: { label?: string; score?: number; size?: "sm" | "md" | "lg" }) {
+  const tag = canon(label);
+  const color = sentimentColor(tag);
+  const Icon = SENTIMENT_ICON[tag];
+  const sizeClasses =
+    size === "sm" ? "px-2 py-0.5 text-[10px]"
+      : size === "lg" ? "px-3 py-1 text-xs"
+        : "px-2.5 py-0.5 text-[11px]";
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border font-semibold shadow-sm tracking-wide ${sizeClasses}`}
+      className={`inline-flex items-center gap-1.5 rounded-full border font-semibold tracking-wide shadow-sm ${sizeClasses}`}
       style={{ color, borderColor: `${color}60`, backgroundColor: `${color}18` }}
+      title={score !== undefined
+        ? `${SENTIMENT_TEXT[tag]} sentiment · concern score ${Math.round(score)}/100 (${concernBand(score)})`
+        : `${SENTIMENT_TEXT[tag]} sentiment`}
     >
-      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />
-      <span>{THREAT_SHORT[label] ?? label}</span>
+      <Icon size={size === "sm" ? 10 : 12} />
+      <span>{SENTIMENT_TEXT[tag]}</span>
       {score !== undefined && (
         <span
           className="rounded px-1 font-mono text-[10px] font-bold"
-          style={{ backgroundColor: `${color}28`, color }}
+          style={{ backgroundColor: `${concernColor(score)}28`, color: concernColor(score) }}
         >
           {Math.round(score)}
         </span>
@@ -28,25 +56,19 @@ export function ThreatBadge({ label, score, size = "md" }: { label: string; scor
   );
 }
 
-export function SentimentBadge({ label, score }: { label: string; score?: number }) {
-  const norm = (label || "neutral").toLowerCase();
-  const color = SENTIMENT_COLORS[norm] ?? "#64748B";
-
-  let text = "Neutral";
-  if (norm.includes("pos")) {
-    text = "Positive";
-  } else if (norm.includes("neg") || norm.includes("hostile")) {
-    text = "Negative";
-  }
-
+/** The 0-100 concern score on its own, banded by colour. */
+export function ConcernChip({ score, size = "md" }: { score: number; size?: "sm" | "md" }) {
+  const color = concernColor(score);
   return (
     <span
-      className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold tracking-wide shadow-sm"
-      style={{ color, borderColor: `${color}50`, backgroundColor: `${color}15` }}
-      title={`Sentiment: ${text}`}
+      className={`inline-flex items-center gap-1 rounded-full border font-mono font-bold tracking-wide ${
+        size === "sm" ? "px-1.5 py-0.5 text-[10px]" : "px-2 py-0.5 text-[11px]"
+      }`}
+      style={{ color, borderColor: `${color}55`, backgroundColor: `${color}15` }}
+      title={`Concern score ${Math.round(score)}/100 — ${concernBand(score)}`}
     >
-      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />
-      <span>{text}</span>
+      {Math.round(score)}
+      <span className="font-sans font-medium opacity-70">{concernBand(score)}</span>
     </span>
   );
 }

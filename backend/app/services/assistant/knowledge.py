@@ -6,7 +6,7 @@ and English?", "what does amplified mean?", "who can escalate an alert?" are
 all questions about the *system*, and the only honest way to answer them is
 from the system's own documented behaviour.
 
-Every entry below is copied from the code it describes — `ml/threat_score.py`
+Every entry below is copied from the code it describes — `ml/concern_score.py`
 for the formula, `services/model_info.py` for the ensemble, `security/roles.py`
 for the rank ladder, `models/models.py` for the vocabularies. When one of those
 changes, this changes. An assistant confidently reciting a formula the product
@@ -113,7 +113,7 @@ ENTRIES: list[Entry] = [
         "language identification, translation to an English gloss for the "
         "analyst, sentiment analysis, threat classification, toxicity scoring, "
         "keyword and watchlist matching, geo-tagging, bot and coordination "
-        "checks, then the composite threat score. If the score clears the alert "
+        "checks, then the composite concern score. If the score clears the alert "
         "threshold an alert is raised. Enrichment is batched, and the whole "
         "pipeline has one entry point so seeding, live ingestion and evaluation "
         "all take exactly the same path.",
@@ -121,20 +121,22 @@ ENTRIES: list[Entry] = [
          "how does it work", "ingestion", "steps"),
     ),
     Entry(
-        "threat_score",
-        "How the threat score is calculated",
-        "The threat score is 0 to 100, and it is a weighted formula rather than "
-        "a model output, so it can be explained line by line in court. Forty "
-        "percent is the classifier's label scaled by its confidence, where the "
-        "label carries a danger weight: incitement to violence 1.0, inflammatory "
-        "0.75, fake news 0.65, neutral 0.05. Twenty-five percent is toxicity — "
-        "hate and abuse intensity, including code-mixed slurs. Twenty percent is "
-        "virality, a log-scaled blend of likes, shares, comments and views, with "
-        "a bonus if the post is part of a detected amplification burst. Fifteen "
-        "percent is the severity of the strongest watchlist or lexicon term "
-        "matched. The four are summed, clamped to 0-1 and multiplied by 100.",
-        ("threat score", "score", "scoring", "formula", "calculated", "how is "
-         "the score", "weights", "0 to 100", "rating", "risk score"),
+        "concern_score",
+        "How the concern score is calculated",
+        "The concern score is 0 to 100, and it is a weighted formula rather than "
+        "a model output, so it can be explained line by line in court. Fifty "
+        "percent is how negative the post is, scaled by how confident the "
+        "ensemble is — a positive post contributes nothing here. Twenty-two "
+        "percent is toxicity, meaning hate and abuse intensity including "
+        "code-mixed slurs. Eighteen percent is virality, a log-scaled blend of "
+        "likes, shares, comments and views, with a bonus if the post is part of "
+        "a detected amplification burst. Ten percent is the severity of the "
+        "strongest watchlist or lexicon term matched. The four are summed, "
+        "clamped to 0-1 and multiplied by 100. The weights are shaped so no "
+        "single dimension can reach an alert band alone: a furious post nobody "
+        "read tops out near fifty, and a viral cheerful post cannot pass thirty.",
+        ("concern score", "threat score", "score", "scoring", "formula",
+         "calculated", "how is the score", "weights", "0 to 100", "rating"),
     ),
     Entry(
         "thresholds",
@@ -142,25 +144,27 @@ ENTRIES: list[Entry] = [
         f"At or above {settings.CRITICAL_THRESHOLD} a post raises a critical "
         f"alert and an escalation template is generated with it. At or above "
         f"{settings.ALERT_THRESHOLD} it raises a high alert. At or above 50 it "
-        f"counts as an active threat on the dashboard. Because the classifier "
-        f"spreads probability across four classes, even a confidently violent "
-        f"post tops out near 80 — the bands are calibrated to that, so a score "
-        f"of 75 is severe, not middling.",
+        f"counts as elevated on the dashboard. An alert therefore always means "
+        f"the post is both negative and travelling, which is the only "
+        f"combination worth an analyst's time.",
         ("threshold", "thresholds", "critical", "high", "band", "bands",
          "cutoff", "when does an alert", "severity", "what counts as"),
     ),
     Entry(
-        "threat_labels",
-        "The four threat categories",
-        "Every post is classified as exactly one of: Incitement to Violence, "
-        "Inflammatory, Fake News, or Neutral. Separately it gets an intent — "
-        "informational, opinion, call to action, threat, or rumor. The label "
-        "says what kind of content it is; the intent says what the author "
-        "appears to want to happen. A call to action attached to an "
-        "inflammatory label is the combination worth waking someone for.",
-        ("label", "labels", "category", "categories", "classification",
-         "incitement", "inflammatory", "fake news", "neutral", "intent",
-         "rumor", "call to action"),
+        "sentiment_labels",
+        "The three tags a post can get",
+        "Every post is tagged as exactly one of: positive, negative or neutral. "
+        "That is the only category this system assigns. It does not classify "
+        "posts as incitement, propaganda or misinformation — whether a post "
+        "will cause violence, or whether a claim in it is false, are "
+        "investigative conclusions that no model can reach from one post's "
+        "text, so the system does not pretend to. Alongside the tag a post "
+        "carries a concern score from 0 to 100 and an intent — informational, "
+        "opinion, call to action, or rumor — which describes the speech act "
+        "rather than any prediction about consequences.",
+        ("label", "labels", "tag", "category", "categories", "classification",
+         "positive", "negative", "neutral", "intent", "rumor",
+         "call to action", "incitement", "fake news"),
     ),
     Entry(
         "sentiment_ensemble",

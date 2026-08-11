@@ -9,6 +9,15 @@ comparable — the delta is the evidence that the transformer earns its cost.
 Char n-grams (2-5) are essential here: they are what lets a linear model cope
 with Hinglish/Gujlish spelling variation ("bahut/bhut/bohot").
 
+**Context-augmented.** Every row is wrapped by `ml.context.model_input` before
+vectorizing, which prepends the post's discourse tags (`[ctx1 q self short] …`).
+Those tags become ordinary word n-gram features, so the linear weights can
+learn that `rep` (reported speech) alongside a negative term predicts neutral
+more often than negative. The identical wrapper runs at inference in
+ml/linear_model.py, and the artifact records which prefix version it was
+trained under so a mismatch is caught at load time rather than silently
+degrading predictions.
+
 Usage (from backend/):  python -m app.ml.train_baseline
 Writes ml/baseline_report.json (overall + per-language, same shape as the
 transformer's sentiment_eval_report.json).
@@ -17,6 +26,7 @@ import json
 from collections import defaultdict
 
 from app.config import settings
+from app.ml.context import CONTEXT_PREFIX_VERSION, model_input
 from app.ml.corpus import load_corpus
 
 # Multilingual stop-words (idea from zdmc23/sentiment-analysis-arabic, which
@@ -50,8 +60,11 @@ def main() -> None:
     print("Building corpus from the raw dataset files ...")
     train, test = load_corpus()
 
-    X_tr, y_tr = [r["text"] for r in train], [r["label"] for r in train]
-    X_te, y_te = [r["text"] for r in test], [r["label"] for r in test]
+    # Context prefix applied here and at inference — same function, no skew.
+    print(f"Applying context prefix ({CONTEXT_PREFIX_VERSION}) to every row ...")
+    X_tr, y_tr = [model_input(r["text"]) for r in train], [r["label"] for r in train]
+    X_te, y_te = [model_input(r["text"]) for r in test], [r["label"] for r in test]
+    print(f"  example: {X_tr[0][:110]}")
 
     vec = FeatureUnion([
         ("word", TfidfVectorizer(ngram_range=(1, 2), max_features=120_000,
@@ -85,6 +98,7 @@ def main() -> None:
                           "macro_f1": round(f1_score(g, p, average="macro"), 4)}
 
     report = {"model": "tfidf(word1-2 + char2-5) + LinearSVC",
+              "context_version": CONTEXT_PREFIX_VERSION,
               "train_size": len(train), "test_size": len(test),
               "overall": overall, "per_language": per_lang}
     out = settings.MODELS_DIR.parent / "baseline_report.json"

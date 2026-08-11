@@ -14,18 +14,21 @@ and it will, in order:
   2b. [only with GROQ_API_KEY in backend/.env] LLM-augment all 5 language
      forms -> app/data/datasets/groq-augmented/ (~14k rows; 2-3 h on the free
      tier, resumable; --skip-groq to opt out),
-  3. fine-tune the MuRIL threat classifier  -> app/ml/models/threat-classifier/
-  4. fine-tune the MuRIL sentiment model on the raw datasets
-                                            -> app/ml/models/sentiment-classifier/
+  3. fine-tune MuRIL on the raw datasets    -> app/ml/models/sentiment-classifier/
      (+ per-language eval report app/ml/sentiment_eval_report.json)
-  5. train the TF-IDF + LinearSVC baseline for comparison
+  4. train the TF-IDF + LinearSVC baseline for comparison
                                             -> app/ml/baseline_report.json
-  6. evaluate the threat pipeline           -> app/ml/eval_report.json
+  5. evaluate the end-to-end pipeline       -> app/ml/eval_report.json
+
+Both trained models consume the SAME context-tagged input (app/ml/context.py),
+so steps 3 and 4 must be re-run together — an ensemble where one model was
+trained with the discourse prefix and the other without it is two models
+reading different things.
 
 Flags:
     --no-install     skip the pip installs (deps already present)
     --skip-groq      skip the LLM augmentation (saves 2-3 h)
-    --skip-threat    only rebuild datasets + the sentiment model
+    --skip-eval      stop after training, skip the pipeline evaluation
     --epochs N       sentiment fine-tune epochs (default 3)
 
 Everything is idempotent: already-downloaded datasets are kept, models are
@@ -73,7 +76,8 @@ def ensure_torch() -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--no-install", action="store_true")
-    ap.add_argument("--skip-threat", action="store_true")
+    ap.add_argument("--skip-eval", action="store_true",
+                    help="stop after training; skip the pipeline evaluation")
     ap.add_argument("--skip-groq", action="store_true",
                     help="skip LLM augmentation (saves 2-3 h; Gujlish falls back "
                          "to app.ml.romanize)")
@@ -84,9 +88,9 @@ def main() -> None:
     t0 = time.time()
 
     if not args.no_install:
-        run("1/6 base dependencies", [py, "-m", "pip", "install", "-r", "requirements.txt"])
+        run("1/5 base dependencies", [py, "-m", "pip", "install", "-r", "requirements.txt"])
         ensure_torch()
-        run("1/6 ML dependencies", [py, "-m", "pip", "install", "-r", "requirements-ml.txt"])
+        run("1/5 ML dependencies", [py, "-m", "pip", "install", "-r", "requirements-ml.txt"])
         try:
             import torch
             if not torch.cuda.is_available():
@@ -96,7 +100,7 @@ def main() -> None:
         except ImportError:
             pass
 
-    run("2/6 download raw public datasets (kaggle.com + huggingface.co + github.com)",
+    run("2/5 download raw public datasets (kaggle.com + huggingface.co + github.com)",
         [py, "-m", "app.ml.download_datasets"])
 
     # Optional Groq augmentation for ALL 5 language forms (needs GROQ_API_KEY
@@ -107,10 +111,10 @@ def main() -> None:
     # app.ml.romanize and the run continues either way.
     from app.config import settings
     if args.skip_groq:
-        print("\n(2b/6 skipped: --skip-groq)")
+        print("\n(2b/5 skipped: --skip-groq)")
     elif settings.GROQ_API_KEY:
         import os
-        print("\n--- 2b/6 Groq augmentation (all 5 language forms) ---")
+        print("\n--- 2b/5 Groq augmentation (all 5 language forms) ---")
         print("    ~14k rows via the Groq free tier: expect 2-3 h (rate-limited).")
         print("    Fully resumable — finished rows are cached, re-run to continue.")
         print("    Skip it with --skip-groq (Gujlish then uses the romanize "
@@ -119,32 +123,26 @@ def main() -> None:
                           env=dict(os.environ, PYTHONIOENCODING="utf-8")).returncode != 0:
             print("  (Groq augmentation failed — continuing without it)")
     else:
-        print("\n(2b/6 skipped: GROQ_API_KEY not set — no LLM augmentation; "
+        print("\n(2b/5 skipped: GROQ_API_KEY not set — no LLM augmentation; "
               "Gujlish uses the romanize fallback. Free key: console.groq.com)")
 
-    if not args.skip_threat:
-        run("3/6 fine-tune MuRIL threat classifier",
-            [py, "-m", "app.ml.train"])
-    else:
-        print("\n(3/6 threat classifier skipped)")
-
-    run("4/6 fine-tune MuRIL sentiment model on the raw datasets",
+    run("3/5 fine-tune MuRIL sentiment model on the raw datasets",
         [py, "-m", "app.ml.train_sentiment", "--epochs", str(args.epochs)])
 
-    run("5/6 TF-IDF + LinearSVC sentiment baseline",
+    run("4/5 TF-IDF + LinearSVC sentiment baseline",
         [py, "-m", "app.ml.train_baseline"])
 
-    if not args.skip_threat:
-        run("6/6 evaluate the threat pipeline",
+    if not args.skip_eval:
+        run("5/5 evaluate the end-to-end pipeline",
             [py, "-m", "app.ml.evaluate"])
 
     print(f"\nAll artifacts rebuilt in {(time.time() - t0) / 60:,.1f} min:")
     print("  app/data/datasets/                  raw public datasets (as published)")
-    print("  app/ml/models/threat-classifier/    fine-tuned MuRIL (4 threat classes)")
     print("  app/ml/models/sentiment-classifier/ fine-tuned MuRIL (neg/neu/pos, 5 language forms)")
+    print("  app/ml/models/sentiment-linear/     TF-IDF + LinearSVC, same corpus")
     print("  app/ml/sentiment_eval_report.json   per-language accuracy / macro-F1")
     print("  app/ml/baseline_report.json         classical baseline for comparison")
-    print("  app/ml/eval_report.json             threat pipeline metrics")
+    print("  app/ml/eval_report.json             end-to-end pipeline metrics")
     print("\nStart the app — the models are picked up automatically (NLP_MODE=full).")
 
 

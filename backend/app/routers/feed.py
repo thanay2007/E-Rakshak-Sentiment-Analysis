@@ -28,7 +28,7 @@ def _parse_dt(v: Optional[str]) -> Optional[datetime]:
 def get_feed(
     platform: Optional[str] = Query(None, description="comma-separated"),
     language: Optional[str] = Query(None, description="comma-separated"),
-    threat_level: Optional[str] = Query(None, description="comma-separated labels"),
+    sentiment: Optional[str] = Query(None, description="comma-separated: negative,neutral,positive"),
     location: Optional[str] = None,
     q: Optional[str] = Query(None, description="keyword / hashtag / handle"),
     min_score: float = 0,
@@ -44,12 +44,12 @@ def get_feed(
         stmt = stmt.where(col(Post.platform).in_(platform.split(",")))
     if language:
         stmt = stmt.where(col(Post.language).in_(language.split(",")))
-    if threat_level:
-        stmt = stmt.where(col(Post.threat_label).in_(threat_level.split(",")))
+    if sentiment:
+        stmt = stmt.where(col(Post.sentiment_label).in_(sentiment.split(",")))
     if location:
         stmt = stmt.where(Post.location == location)
     if min_score > 0:
-        stmt = stmt.where(Post.threat_score >= min_score)
+        stmt = stmt.where(Post.concern_score >= min_score)
     if q:
         needle = f"%{q.lstrip('#').lower()}%"
         stmt = stmt.where(or_(
@@ -66,7 +66,7 @@ def get_feed(
 
     total = session.exec(select(func.count()).select_from(stmt.subquery())).one()
     if sort == "score":
-        stmt = stmt.order_by(col(Post.threat_score).desc(), col(Post.created_at).desc())
+        stmt = stmt.order_by(col(Post.concern_score).desc(), col(Post.created_at).desc())
     elif sort == "engagement":
         stmt = stmt.order_by(func.json_extract(Post.engagement, "$.shares").desc())
     else:
@@ -142,7 +142,8 @@ def escalate_post(post_id: str, session: Session = Depends(get_session)) -> dict
     if not post:
         raise HTTPException(404, "Post not found")
     report = Report(
-        title=f"Escalation — {post.threat_label} by @{post.author_handle}",
+        title=(f"Escalation — {post.sentiment_label} sentiment "
+               f"({round(post.concern_score)}/100) by @{post.author_handle}"),
         kind="escalation", period_hours=0,
         payload={"escalation": escalation_template(post)},
     )

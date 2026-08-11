@@ -5,6 +5,7 @@ import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import AlertToasts from "./AlertToasts";
 import BackgroundFX from "./BackgroundFX";
 import ErrorBoundary from "./ErrorBoundary";
+import PostDetailProvider from "./PostDetailProvider";
 import Sentinel from "./Sentinel";
 import Sidebar from "./Sidebar";
 import TopBar from "./TopBar";
@@ -39,6 +40,10 @@ export default function Layout() {
   }, [location.pathname]);
 
   return (
+    // PostDetailProvider wraps the shell so any page, panel or investigation
+    // tool can open the full post record with usePostDetail() — there is one
+    // modal for the whole console, not one per page.
+    <PostDetailProvider>
     <div className="min-h-screen">
       <BackgroundFX />
       <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
@@ -75,5 +80,6 @@ export default function Layout() {
         </div>
       )}
     </div>
+    </PostDetailProvider>
   );
 }

@@ -3,7 +3,7 @@ import { Megaphone, MapPin } from "lucide-react";
 import GlassCard, { SectionTitle } from "../GlassCard";
 import { api } from "../../services/api";
 import type { PrCampaign, PrReport } from "../../services/api";
-import { THREAT_COLORS } from "../../data/constants";
+import { sentimentColor } from "../../data/constants";
 import { EmptyHint, Pill, Spinner } from "./shared";
 
 const TYPE_COLORS: Record<string, string> = {
@@ -25,7 +25,7 @@ function CampaignCard({ c }: { c: PrCampaign }) {
             <span className="text-sm font-semibold" style={{ color }}>{c.type_label}</span>
           </div>
           <div className="mt-1 flex flex-wrap gap-1.5">
-            <Pill color={THREAT_COLORS[c.law_order_category] ?? "#64748B"}>{c.law_order_category}</Pill>
+            <Pill color={sentimentColor(c.law_order_category)}>{c.law_order_category}</Pill>
             <Pill color="#64748B">{c.account_count} accounts</Pill>
             <Pill color="#64748B">{c.posts} posts</Pill>
             {c.bot_ratio > 0 && <Pill color="#EF4444">{Math.round(c.bot_ratio * 100)}% bots</Pill>}

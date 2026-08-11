@@ -65,9 +65,9 @@ async def build_dossier(handle: str, *, do_username_lookup: bool = True) -> dict
             posts_per_day=posts_per_day if len(posts) > 3 else None,
             duplicate_ratio=dup,
         )
-        threat_labels = Counter(p.threat_label for p in posts)
+        sentiment_labels = Counter(p.sentiment_label for p in posts)
         sent = Counter(p.sentiment_label for p in posts)
-        worst = sorted(posts, key=lambda p: p.threat_score, reverse=True)[:5]
+        worst = sorted(posts, key=lambda p: p.concern_score, reverse=True)[:5]
         clusters = sorted({p.cluster_id for p in posts if p.cluster_id})
 
         dossier.update({
@@ -90,11 +90,11 @@ async def build_dossier(handle: str, *, do_username_lookup: bool = True) -> dict
                 "duplicate_ratio": round(dup, 2),
             },
             "threat_profile": {
-                "avg_threat_score": round(mean(p.threat_score for p in posts), 1),
-                "max_threat_score": round(max(p.threat_score for p in posts), 1),
-                "label_breakdown": dict(threat_labels),
-                "non_neutral_posts": sum(l != "Neutral" for l in
-                                         (p.threat_label for p in posts)),
+                "avg_concern_score": round(mean(p.concern_score for p in posts), 1),
+                "max_concern_score": round(max(p.concern_score for p in posts), 1),
+                "label_breakdown": dict(sentiment_labels),
+                "negative_posts": sum(l == "negative" for l in
+                                         (p.sentiment_label for p in posts)),
             },
             "sentiment_lean": dict(sent),
             "authenticity": bot,
@@ -104,8 +104,9 @@ async def build_dossier(handle: str, *, do_username_lookup: bool = True) -> dict
                 "amplified_posts": sum(p.is_amplified for p in posts),
             },
             "notable_posts": [{
-                "platform": p.platform, "threat_label": p.threat_label,
-                "threat_score": p.threat_score,
+                "id": p.id,
+                "platform": p.platform, "sentiment_label": p.sentiment_label,
+                "concern_score": p.concern_score,
                 "text": (p.translation or p.text)[:200],
                 "url": p.url, "created_at": p.created_at.isoformat() + "Z",
             } for p in worst],

@@ -115,20 +115,36 @@ Implementation: [`backend/app/ml/ensemble.py`](../backend/app/ml/ensemble.py).
 
 ---
 
-## 5. Threat classifier (the police-facing label)
+## 5. Concern score (the police-facing number)
 
-Separate from sentiment, each post is assigned one of four **threat labels** —
-*Incitement to Violence, Inflammatory, Fake News, Neutral*:
+There is **no threat classifier.** A post's only tag is its sentiment. The
+earlier four-label taxonomy (*Incitement to Violence, Inflammatory, Fake News,
+Neutral*) was removed because whether a post will incite violence, and whether a
+claim inside it is false, are investigative conclusions about the world — a
+model reading one post's words establishes neither, and printing them as model
+output invites an analyst to treat a guess as a finding.
 
-- **Model:** the same MuRIL base fine-tuned on a curated 4-category threat
-  dataset (`app/ml/train.py`), backed by the transparent lexicon threat layer
-  (`app/ml/classifier.py`) and the Groq verifier.
-- **Held-out evaluation:** 151 curated samples — **100 % accuracy / 1.0
-  macro-F1** (`eval_report.json`). This set is small and hand-labelled; it
-  demonstrates the label taxonomy is cleanly separable, and Groq + cross-source
-  fact-checking guard the live stream against over-confidence.
-- The composite **threat score (0–100)** combines the label, its confidence,
-  toxicity, engagement and amplification — formula in `app/ml/threat_score.py`.
+What replaces it is a number the pipeline can defend line by line:
+
+```
+concern = 100 × ( 0.50 × negativity × confidence
+                + 0.22 × toxicity
+                + 0.18 × virality
+                + 0.10 × term_severity )
+```
+
+- **Formula:** [`app/ml/score.py`](../backend/app/ml/score.py). `negativity` is
+  `max(0, −sentiment_score)`, so a positive post contributes nothing to it.
+- **Weights are shaped so no single dimension reaches an alert band alone:** a
+  furious post nobody read tops out near 50, a viral cheerful post cannot pass
+  ~30. An alert always means *negative **and** travelling*.
+- **Bands:** ≥74 critical (+ auto escalation packet) · ≥65 high · ≥50 elevated.
+- The per-factor contribution is stored on the post and rendered in the drawer
+  under *How this score was built*, so an analyst can see that a 71 came from
+  reach rather than from the language itself.
+- The lexicon layer (`app/ml/classifier.py`) still extracts violence, hostility,
+  abuse and mobilization **signals** — those are facts about the text, and they
+  feed toxicity and `term_severity`. They assert nothing beyond themselves.
 
 ## 6. Independent verification (Groq LLM)
 
@@ -136,7 +152,7 @@ Every risky or consensus prediction is sent to **Groq `llama-3.3-70b`** for an
 independent second opinion ([`app/services/groq_verifier.py`](../backend/app/services/groq_verifier.py)):
 
 - **Agreement** with the ensemble strengthens confidence.
-- **Confident disagreement** (LLM confidence ≥ 0.70) **overrides** the label and
+- **Confident disagreement** (LLM confidence ≥ 0.75) **overrides** the label and
   recomputes the score — never silently; the full LLM verdict, quoted evidence
   and reasoning are stored and shown.
 - For the sentiment consensus, Groq's independent sentiment is recorded as

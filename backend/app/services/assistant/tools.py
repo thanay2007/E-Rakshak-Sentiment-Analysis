@@ -30,6 +30,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
+from urllib.parse import urlencode
 
 from sqlmodel import Session, col, func, select
 
@@ -207,13 +208,13 @@ def _filtered_posts(args: dict):
     if language:
         stmt = stmt.where(func.lower(col(Post.language)) == language.lower())
 
-    label = str(args.get("threat_label") or "").strip()
+    label = str(args.get("sentiment_label") or "").strip()
     if label:
-        stmt = stmt.where(func.lower(col(Post.threat_label)) == label.lower())
+        stmt = stmt.where(func.lower(col(Post.sentiment_label)) == label.lower())
 
-    if args.get("min_threat_score") is not None:
+    if args.get("min_concern_score") is not None:
         try:
-            stmt = stmt.where(Post.threat_score >= float(args["min_threat_score"]))
+            stmt = stmt.where(Post.concern_score >= float(args["min_concern_score"]))
         except (TypeError, ValueError):
             pass
 
@@ -239,13 +240,13 @@ def _h_situation_brief(ctx: ToolContext, args: dict) -> ToolResult:
                    .where(Post.created_at >= start)).one()
     above = s.exec(select(func.count()).select_from(Post)
                    .where(Post.created_at >= start)
-                   .where(Post.threat_score >= settings.ALERT_THRESHOLD)).one()
+                   .where(Post.concern_score >= settings.ALERT_THRESHOLD)).one()
     critical = s.exec(select(func.count()).select_from(Alert)
                       .where(Alert.created_at >= start)
                       .where(col(Alert.severity) == "critical")).one()
     unactioned = s.exec(select(func.count()).select_from(Alert)
                         .where(col(Alert.status) == "new")).one()
-    avg = s.exec(select(func.avg(Post.threat_score))
+    avg = s.exec(select(func.avg(Post.concern_score))
                  .where(Post.created_at >= start)).one() or 0
     amplified = s.exec(select(func.count()).select_from(Post)
                        .where(Post.created_at >= start)
@@ -258,7 +259,7 @@ def _h_situation_brief(ctx: ToolContext, args: dict) -> ToolResult:
         "alert_threshold": settings.ALERT_THRESHOLD,
         "critical_alerts_in_window": critical,
         "unactioned_alerts_total": unactioned,
-        "average_threat_score": round(float(avg), 1),
+        "average_concern_score": round(float(avg), 1),
         "amplified_posts": amplified,
     })
 
@@ -271,10 +272,10 @@ def _h_count_posts(ctx: ToolContext, args: dict) -> ToolResult:
     # across a cartesian product of every post against every filtered post.
     sub = stmt.subquery()
     avg = ctx.session.exec(
-        select(func.avg(sub.c.threat_score)).select_from(sub)).one() or 0
+        select(func.avg(sub.c.concern_score)).select_from(sub)).one() or 0
     return ToolResult({
         "matching_posts": total,
-        "average_threat_score": round(float(avg), 1),
+        "average_concern_score": round(float(avg), 1),
         "window_hours": hours,
         "filters_applied": {k: v for k, v in args.items() if v not in (None, "")},
         "city_resolved_to": city or "all monitored cities",
@@ -287,7 +288,7 @@ _DIMENSIONS = {
     "location": Post.location,
     "language": Post.language,
     "sentiment": Post.sentiment_label,
-    "threat_label": Post.threat_label,
+    "sentiment_label": Post.sentiment_label,
     "intent": Post.intent,
 }
 
@@ -302,12 +303,12 @@ def _h_breakdown(ctx: ToolContext, args: dict) -> ToolResult:
     stmt, hours, city = _filtered_posts(args)
     sub = stmt.subquery()
     grouped = ctx.session.exec(
-        select(sub.c[column.key], func.count(), func.avg(sub.c.threat_score))
+        select(sub.c[column.key], func.count(), func.avg(sub.c.concern_score))
         .group_by(sub.c[column.key])).all()
 
     rows = sorted(
         ({"value": str(value or "unspecified"), "posts": int(n),
-          "average_threat_score": round(float(avg or 0), 1)}
+          "average_concern_score": round(float(avg or 0), 1)}
          for value, n, avg in grouped),
         key=lambda r: -r["posts"])[: _clamp_limit(args.get("limit"), 8, 20)]
 
@@ -324,7 +325,7 @@ def _h_timeseries(ctx: ToolContext, args: dict) -> ToolResult:
     stmt, hours, city = _filtered_posts(args)
     bucket_hours = 24 if hours > 72 else 1
     rows = ctx.session.exec(
-        stmt.with_only_columns(col(Post.created_at), col(Post.threat_score))
+        stmt.with_only_columns(col(Post.created_at), col(Post.concern_score))
         .order_by(col(Post.created_at).desc()).limit(SCAN_LIMIT)).all()
 
     buckets: dict[str, list[float]] = {}
@@ -334,7 +335,7 @@ def _h_timeseries(ctx: ToolContext, args: dict) -> ToolResult:
         buckets.setdefault(key, []).append(float(score or 0))
 
     series = [{"bucket": key, "posts": len(scores),
-               "average_threat_score": round(sum(scores) / len(scores), 1)}
+               "average_concern_score": round(sum(scores) / len(scores), 1)}
               for key, scores in sorted(buckets.items())]
 
     return ToolResult({"window_hours": hours, "city": city or "all",
@@ -367,8 +368,8 @@ def _h_trending_hashtags(ctx: ToolContext, args: dict) -> ToolResult:
 
 def _h_top_posts(ctx: ToolContext, args: dict) -> ToolResult:
     stmt, hours, city = _filtered_posts(args)
-    order = str(args.get("order_by") or "threat_score").lower()
-    column = col(Post.created_at) if order == "recent" else col(Post.threat_score)
+    order = str(args.get("order_by") or "concern_score").lower()
+    column = col(Post.created_at) if order == "recent" else col(Post.concern_score)
     limit = _clamp_limit(args.get("limit"), 3, 10)
     posts = ctx.session.exec(stmt.order_by(column.desc()).limit(limit)).all()
 
@@ -379,8 +380,8 @@ def _h_top_posts(ctx: ToolContext, args: dict) -> ToolResult:
             "author_handle": guard.sanitise_untrusted(post.author_handle, 40),
             "author_followers": post.author_followers,
             "author_verified": post.author_verified,
-            "threat_label": post.threat_label,
-            "threat_score": round(post.threat_score, 1),
+            "sentiment_label": post.sentiment_label,
+            "concern_score": round(post.concern_score, 1),
             "sentiment_label": post.sentiment_label,
             "intent": post.intent,
             "language": post.language,
@@ -426,7 +427,7 @@ def _h_list_alerts(ctx: ToolContext, args: dict) -> ToolResult:
     items = [{"alert_id": a.id, "severity": a.severity, "status": a.status,
               "title": guard.sanitise_untrusted(a.title, 120),
               "category": a.category, "location": a.location or "unspecified",
-              "platform": a.platform, "threat_score": round(a.threat_score, 1),
+              "platform": a.platform, "concern_score": round(a.concern_score, 1),
               "created_at": a.created_at.isoformat()} for a in rows]
 
     return ToolResult({"window_hours": hours, "matching_alerts": total,
@@ -443,20 +444,20 @@ def _h_city_comparison(ctx: ToolContext, args: dict) -> ToolResult:
             select(func.count()).select_from(Post)
             .where(Post.created_at >= start, col(Post.location) == city)).one()
         avg = ctx.session.exec(
-            select(func.avg(Post.threat_score))
+            select(func.avg(Post.concern_score))
             .where(Post.created_at >= start, col(Post.location) == city)).one() or 0
         above = ctx.session.exec(
             select(func.count()).select_from(Post)
             .where(Post.created_at >= start, col(Post.location) == city,
-                   Post.threat_score >= settings.ALERT_THRESHOLD)).one()
+                   Post.concern_score >= settings.ALERT_THRESHOLD)).one()
         alerts = ctx.session.exec(
             select(func.count()).select_from(Alert)
             .where(Alert.created_at >= start, col(Alert.location) == city)).one()
         rows.append({"city": city, "posts": posts,
-                     "average_threat_score": round(float(avg), 1),
+                     "average_concern_score": round(float(avg), 1),
                      "posts_above_threshold": above, "alerts": alerts})
 
-    rows.sort(key=lambda r: -r["average_threat_score"])
+    rows.sort(key=lambda r: -r["average_concern_score"])
     return ToolResult({"window_hours": hours, "cities": rows,
                        "alert_threshold": settings.ALERT_THRESHOLD})
 
@@ -517,7 +518,7 @@ def _h_search_posts(ctx: ToolContext, args: dict) -> ToolResult:
             "platform": p.platform,
             "language": p.language,
             "author_handle": guard.sanitise_untrusted(p.author_handle, 40),
-            "threat_label": p.threat_label,
+            "sentiment_label": p.sentiment_label,
             "sentiment_label": p.sentiment_label,
             "text": guard.sanitise_untrusted(p.text, 500)
         })
@@ -543,8 +544,8 @@ def _h_emerging(ctx: ToolContext, args: dict) -> ToolResult:
     summary = [{"platform": i.get("platform"),
                 "author_handle": guard.sanitise_untrusted(
                     str(i.get("author_handle", "")), 40),
-                "threat_label": i.get("threat_label"),
-                "threat_score": i.get("threat_score"),
+                "sentiment_label": i.get("sentiment_label"),
+                "concern_score": i.get("concern_score"),
                 "spread_score": i.get("spread_score"),
                 "independent_sources": i.get("source_count")} for i in items]
 
@@ -617,14 +618,140 @@ _PAGES = {
     "admin": "/app/admin", "admin panel": "/app/admin",
 }
 
+# ── the filter vocabularies the pages actually understand ───────────────────
+#
+# Duplicated from the console's own option lists rather than derived from the
+# data, and deliberately: these are the values the *filter controls* offer, so
+# a filter the assistant applies is one an officer could have clicked and can
+# see reflected in the chips. A value scraped from the corpus instead would let
+# the assistant reach states the UI cannot represent or undo.
+
+_PLATFORMS = ("X", "Facebook", "Instagram", "Reddit", "Telegram", "YouTube")
+_LANGUAGES = ("Gujarati", "Hindi", "Hinglish", "Gujlish", "English", "Mixed")
+_SENTIMENTS = ("negative", "neutral", "positive")
+_SORTS = ("recent", "score", "engagement")
+_SEVERITIES = ("critical", "high", "medium")
+_STATUSES = ("new", "acknowledged", "escalated")
+#: The investigation tools, by the id their tab uses.
+_INVESTIGATE_TABS = ("image", "username", "url", "comments", "pr", "sleuth")
+
+#: Longest a spoken search phrase may be. The box is a keyword field, not a
+#: sentence, and an officer reading back a filter chip should be able to see
+#: all of it.
+_SEARCH_MAX = 80
+
+
+def _one_of(vocabulary: tuple[str, ...]):
+    """Exactly one value from a closed list, matched case-insensitively.
+
+    Returns None for anything else, and None means "not applied" everywhere
+    below — an unrecognised value must never reach the URL, because a filter
+    the page cannot parse shows the officer an unfiltered screen while the
+    assistant says it filtered one.
+    """
+    lookup = {value.lower(): value for value in vocabulary}
+    return lambda raw: lookup.get(str(raw).strip().lower())
+
+
+def _csv_of(vocabulary: tuple[str, ...]):
+    """Several values from a closed list — the multi-select chips.
+
+    Unknown members are dropped rather than failing the whole filter: "X and
+    WhatsApp" should still filter to X, since the alternative is silently
+    showing every platform.
+    """
+    lookup = {value.lower(): value for value in vocabulary}
+
+    def check(raw) -> str | None:
+        parts = [lookup[p.strip().lower()] for p in str(raw).split(",")
+                 if p.strip().lower() in lookup]
+        # dict.fromkeys dedupes while keeping the order the model asked in.
+        return ",".join(dict.fromkeys(parts)) or None
+
+    return check
+
+
+def _number(low: float, high: float):
+    """A numeric control, clamped to the range its slider actually offers."""
+    def check(raw) -> str | None:
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return None
+        value = max(low, min(high, value))
+        return str(int(value)) if value == int(value) else str(value)
+
+    return check
+
+
+def _search_text(raw) -> str | None:
+    """The keyword box: the one filter whose value is not from a closed list.
+
+    So it is bounded and stripped of control characters instead. It is carried
+    as a query-string value (url-encoded on the way out) and consumed as a
+    search term, never as markup or a path.
+    """
+    text = re.sub(r"[\x00-\x1f\x7f]", " ", str(raw)).strip()
+    return text[:_SEARCH_MAX] or None
+
+
+#: Per page: the URL parameters that page reads, and what each will accept. A
+#: page missing from this table takes no filters, and a parameter missing from
+#: a page's entry is not applied there — both are reported back to the model so
+#: it can tell the officer rather than claiming a filter it did not set.
+_PAGE_FILTERS: dict[str, dict[str, Any]] = {
+    "/app/feed": {
+        "platform": _csv_of(_PLATFORMS),
+        "sentiment": _csv_of(_SENTIMENTS),
+        "language": _one_of(_LANGUAGES),
+        "location": lambda raw: _canonical_city(raw) or None,
+        "q": _search_text,
+        "min_score": _number(0, 80),
+        "sort": _one_of(_SORTS),
+    },
+    "/app/alerts": {
+        "status": _one_of(_STATUSES),
+        "severity": _one_of(_SEVERITIES),
+    },
+    "/app/trends": {"hours": _number(1, 168)},
+    "/app/network": {
+        "hours": _number(1, 168),
+        "platform": _one_of(_PLATFORMS),
+    },
+    "/app/investigate": {"tab": _one_of(_INVESTIGATE_TABS)},
+}
+
+#: What the model is likely to call a filter → what the page calls it. The
+#: model should not have to know that the keyword box is `q` and the district
+#: box is `location`; those are URL spellings, not spoken ones.
+_FILTER_ALIASES = {
+    "city": "location", "district": "location", "place": "location",
+    "search": "q", "keyword": "q", "query": "q", "text": "q",
+    "score": "min_score", "minimum_score": "min_score",
+    "window_hours": "hours", "window": "hours",
+    "platforms": "platform", "sentiments": "sentiment",
+}
+
 
 def _h_navigate(ctx: ToolContext, args: dict) -> ToolResult:
-    """Open a dashboard page.
+    """Open a dashboard page, optionally with its filters already applied.
 
     The only tool with an effect outside the answer, and the reason navigation
     targets are safe: the model chooses a *label*, this resolves the label
     against a fixed table, and an unknown label opens nothing. A path never
     travels from the model to the browser.
+
+    Filters extend that property rather than weakening it. The model does not
+    supply a query string — it names filters, each name is resolved against the
+    table of what that page reads, and each value against the closed list that
+    page's control offers. Anything unrecognised is dropped and named in the
+    payload. So the worst a confused model can do is open a correct page with
+    fewer filters than it intended, and say so.
+
+    Why filters belong on navigation at all: "show me the negative posts from
+    Surat" is one intent, and answering it by opening an unfiltered feed leaves
+    the officer to redo the filtering by hand while the assistant claims to
+    have shown them something.
     """
     label = str(args.get("page") or "").strip().lower()
     path = _PAGES.get(label)
@@ -640,8 +767,49 @@ def _h_navigate(ctx: ToolContext, args: dict) -> ToolResult:
                 break
     if path is None:
         return ToolResult({"opened": False, "reason": f"There is no '{label}' page.",
-                           "available_pages": sorted(set(_PAGES))})
-    return ToolResult({"opened": True, "page": label}, navigate=path)
+                           "available_pages": sorted(set(_PAGES)),
+                           "filters_by_page": _filter_catalogue()})
+
+    accepted = _PAGE_FILTERS.get(path, {})
+    applied: dict[str, str] = {}
+    rejected: list[str] = []
+    for key, raw in args.items():
+        if key == "page" or raw in (None, "", []):
+            continue
+        param = _FILTER_ALIASES.get(key.strip().lower(), key.strip().lower())
+        validator = accepted.get(param)
+        if validator is None:
+            rejected.append(key)
+            continue
+        value = validator(raw)
+        if value is None:
+            rejected.append(key)
+            continue
+        applied[param] = value
+
+    query = urlencode(applied)
+    payload = {"opened": True, "page": label,
+               "filters_applied": applied,
+               "filters_available_here": sorted(accepted)}
+    if rejected:
+        # Named, not swallowed. An assistant that says "filtered to critical"
+        # when the feed has no severity filter is worse than one that says the
+        # feed cannot do that — the officer acts on the screen either way.
+        payload["filters_not_applied"] = rejected
+        payload["note"] = ("Those filters do not exist on this page or the "
+                           "value was not one it offers. Tell the officer "
+                           "plainly rather than implying they were applied.")
+    return ToolResult(payload, navigate=f"{path}?{query}" if query else path)
+
+
+def _filter_catalogue() -> dict[str, list[str]]:
+    """Which filters each page offers — so "what can I filter by here?" is
+    answerable without the model guessing from the page's name."""
+    by_label: dict[str, list[str]] = {}
+    for label, path in _PAGES.items():
+        if path in _PAGE_FILTERS:
+            by_label[label] = sorted(_PAGE_FILTERS[path])
+    return by_label
 
 
 def _h_run_sql(ctx: ToolContext, args: dict) -> ToolResult:
@@ -680,22 +848,20 @@ TOOLS: list[Tool] = [
 
     Tool("count_posts",
          "Count posts matching any combination of filters, with their mean "
-         "threat score. Use for 'how many ...' questions.",
+         "concern score. Use for 'how many ...' questions.",
          _params({"hours": _HOURS, "city": _CITY, "platform": _PLATFORM,
                   "sentiment": _SENTIMENT,
                   "language": {"type": "string",
                                "description": "English, Hindi, Gujarati, Hinglish or Mixed."},
-                  "threat_label": {"type": "string",
-                                   "enum": ["Incitement to Violence", "Inflammatory",
-                                            "Fake News", "Neutral"]},
-                  "min_threat_score": {"type": "number",
+
+                  "min_concern_score": {"type": "number",
                                        "description": "Only posts scoring at least this (0-100)."},
                   "amplified_only": {"type": "boolean",
                                      "description": "Only posts in a coordinated burst."}}),
          _h_count_posts),
 
     Tool("breakdown",
-         "Group posts by one dimension and return counts and mean threat score "
+         "Group posts by one dimension and return counts and mean concern score "
          "per group. Use for 'by platform', 'which city is worst', 'split by "
          "language'.",
          _params({"dimension": {"type": "string",
@@ -728,7 +894,7 @@ TOOLS: list[Tool] = [
          "scores and say the post is on screen.",
          _params({"hours": _HOURS, "city": _CITY, "platform": _PLATFORM,
                   "sentiment": _SENTIMENT,
-                  "order_by": {"type": "string", "enum": ["threat_score", "recent"]},
+                  "order_by": {"type": "string", "enum": ["concern_score", "recent"]},
                   "limit": {"type": "integer", "description": "How many (default 3)."}}),
          _h_top_posts),
 
@@ -802,11 +968,47 @@ TOOLS: list[Tool] = [
          _h_search_posts),
 
     Tool("navigate",
-         "Open a dashboard page for the officer. Call this when they ask to be "
-         "taken somewhere, or alongside an answer whose detail lives on a page.",
-         _params({"page": {"type": "string", "enum": sorted(set(_PAGES)),
-                           "description": "Which page to open."}},
-                 required=["page"]),
+         "Open a dashboard page for the officer, with its filters already "
+         "applied. Call this when they ask to be taken somewhere, when they ask "
+         "to see or filter something on screen ('show me negative posts from "
+         "Surat', 'only critical alerts'), or alongside an answer whose detail "
+         "lives on a page. Pass only the filters the officer actually asked "
+         "for, and only ones the target page offers — the feed filters posts, "
+         "alerts filters by status and severity, trends and network take a time "
+         "window. Filters that do not apply are reported back, not applied.",
+         _params({
+             "page": {"type": "string", "enum": sorted(set(_PAGES)),
+                      "description": "Which page to open."},
+             # Flat rather than a nested `filters` object: models fill flat
+             # schemas far more reliably, and every value is validated against
+             # the target page's own list on the way through regardless.
+             "platform": {"type": "string",
+                          "description": "Feed or network. One or more of "
+                                         f"{', '.join(_PLATFORMS)}; "
+                                         "comma-separated on the feed."},
+             "sentiment": {"type": "string",
+                           "description": "Feed. One or more of negative, "
+                                          "neutral, positive; comma-separated."},
+             "language": {"type": "string",
+                          "description": f"Feed. One of {', '.join(_LANGUAGES)}."},
+             "city": {"type": "string",
+                      "description": "Feed. A Gujarat district, e.g. Surat."},
+             "search": {"type": "string",
+                        "description": "Feed. A keyword, #hashtag or @handle."},
+             "min_score": {"type": "number",
+                           "description": "Feed. Lowest concern score, 0-80."},
+             "sort": {"type": "string", "enum": list(_SORTS),
+                      "description": "Feed ordering."},
+             "status": {"type": "string", "enum": list(_STATUSES),
+                        "description": "Alerts only."},
+             "severity": {"type": "string", "enum": list(_SEVERITIES),
+                          "description": "Alerts only."},
+             "hours": {"type": "integer",
+                       "description": "Trends and network. Window, 1-168."},
+             "tab": {"type": "string", "enum": list(_INVESTIGATE_TABS),
+                     "description": "Investigate only. Which forensic tool to "
+                                    "open."},
+         }, required=["page"]),
          _h_navigate),
 ]
 

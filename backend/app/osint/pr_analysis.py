@@ -13,7 +13,9 @@ Signals per candidate campaign (near-duplicate cluster across ≥3 accounts):
   • bot-heavy roster        — share of authors scoring as likely bots
   • sentiment lock-step     — the whole cluster pushes one emotional direction
   • hashtag stuffing / amplification
-  • law-and-order relevance — Incitement / Inflammatory / Fake-News content
+  • negative lock-step       — the cluster is pushing negative sentiment,
+                               which is what makes a coordinated push worth
+                               an analyst's time rather than merely notable
 """
 from __future__ import annotations
 
@@ -27,9 +29,6 @@ from app.database import session_scope
 from app.models import Post
 from app.ml.normalize import normalize
 from app.osint.bot_score import score_account
-
-_LAW_ORDER = {"Incitement to Violence", "Inflammatory", "Fake News"}
-
 
 def _shingles(text: str, n: int = 3) -> set:
     words = normalize(text).split()
@@ -56,7 +55,7 @@ class _UF:
 
 
 def _cluster(posts: list[Post]) -> list[list[Post]]:
-    cand = [p for p in posts if p.threat_label != "Neutral"][:400]
+    cand = [p for p in posts if p.sentiment_label == "negative"][:400]
     if len(cand) < 2:
         return []
     sh = [_shingles(p.text) for p in cand]
@@ -78,11 +77,17 @@ def _sentiment_lean(group: list[Post]) -> tuple[str, float]:
 
 
 def _campaign_type(group: list[Post], lean: str) -> str:
-    threat = Counter(p.threat_label for p in group).most_common(1)[0][0]
-    if threat == "Incitement to Violence" or (threat == "Inflammatory" and lean == "negative"):
-        return "manufactured_outrage"
-    if threat == "Fake News":
-        return "disinformation_push"
+    """Name the shape of the push from what is measurable: which direction the
+    cluster leans, and how hard.
+
+    This deliberately stops short of calling a cluster "disinformation" — the
+    clustering shows that many accounts posted near-identical text at once,
+    which is a fact, while whether the content is false is not something this
+    pipeline establishes.
+    """
+    avg_concern = mean(p.concern_score for p in group)
+    if lean == "negative":
+        return "manufactured_outrage" if avg_concern >= 60 else "narrative_push"
     if lean == "positive":
         return "image_whitewash"
     return "narrative_push"
@@ -103,9 +108,11 @@ def detect_pr_campaigns(hours: int = 48) -> dict:
 
     campaigns = []
     for idx, group in enumerate(sorted(_cluster(posts), key=len, reverse=True)):
-        labels = Counter(p.threat_label for p in group)
-        if not (_LAW_ORDER & set(labels)):
-            continue  # scope filter: must touch law & order
+        labels = Counter(p.sentiment_label for p in group)
+        # Scope filter: a coordinated cluster of neutral logistics posts is a
+        # marketing schedule, not something this console should surface.
+        if labels.most_common(1)[0][0] == "neutral":
+            continue
 
         handles = sorted({p.author_handle for p in group})
         times = [p.created_at for p in group]

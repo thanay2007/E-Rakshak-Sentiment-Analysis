@@ -77,8 +77,8 @@ def _post_brief(p: Post) -> dict:
         "text": (p.translation or p.text)[:400],
         "original_text": p.text[:400],
         "language": p.language,
-        "threat_label": p.threat_label,
-        "threat_score": round(p.threat_score, 1),
+        "sentiment_label": p.sentiment_label,
+        "concern_score": round(p.concern_score, 1),
         "sentiment_label": p.sentiment_label,
         "location": p.location,
         "engagement": p.engagement or {},
@@ -93,14 +93,14 @@ def _post_brief(p: Post) -> dict:
 def _threat_summary(posts: list[Post]) -> dict:
     if not posts:
         return {"posts": 0}
-    scores = [p.threat_score for p in posts]
+    scores = [p.concern_score for p in posts]
     return {
         "posts": len(posts),
-        "avg_threat_score": round(sum(scores) / len(scores), 1),
-        "max_threat_score": round(max(scores), 1),
-        "label_breakdown": dict(Counter(p.threat_label for p in posts)),
+        "avg_concern_score": round(sum(scores) / len(scores), 1),
+        "max_concern_score": round(max(scores), 1),
+        "label_breakdown": dict(Counter(p.sentiment_label for p in posts)),
         "sentiment_breakdown": dict(Counter(p.sentiment_label for p in posts)),
-        "non_neutral_posts": sum(p.threat_label != "Neutral" for p in posts),
+        "non_neutral_posts": sum(p.sentiment_label == "negative" for p in posts),
         "platforms": sorted({p.platform for p in posts}),
         "locations": sorted({p.location for p in posts if p.location}),
         "amplified_posts": sum(bool(p.is_amplified) for p in posts),
@@ -121,7 +121,7 @@ def _alerts_for(session: Session, post_ids: list[str]) -> list[dict]:
         "id": a.id, "post_id": a.post_id, "severity": a.severity,
         "status": a.status, "title": a.title, "summary": a.summary,
         "category": a.category, "location": a.location, "platform": a.platform,
-        "threat_score": round(a.threat_score, 1), "created_at": iso(a.created_at),
+        "concern_score": round(a.concern_score, 1), "created_at": iso(a.created_at),
     } for a in rows]
 
 
@@ -144,9 +144,9 @@ def _timeline(suspect: Suspect, posts: list[Post], alerts: list[dict]) -> list[d
         events.append({
             "kind": "post",
             "at": iso(p.created_at),
-            "title": f"{p.platform} post — {p.threat_label}",
+            "title": f"{p.platform} post — {p.sentiment_label}",
             "detail": (p.translation or p.text)[:180],
-            "status": f"threat {round(p.threat_score)}",
+            "status": f"threat {round(p.concern_score)}",
             "ref": p.id,
         })
     for a in alerts:
@@ -203,7 +203,7 @@ def _summary(suspect: Suspect, posts: list[Post], alerts: list[dict],
         bits.append(f"{len(accounts)} known account(s), {live} of them active in the "
                     f"monitored corpus")
     if posts:
-        hostile = sum(p.threat_label != "Neutral" for p in posts)
+        hostile = sum(p.sentiment_label == "negative" for p in posts)
         bits.append(f"{len(posts)} monitored post(s), {hostile} non-neutral")
     if alerts:
         bits.append(f"{len(alerts)} alert(s) already raised")
@@ -220,7 +220,7 @@ async def build_identity_dossier(session: Session, suspect: Suspect, *,
     """
     handles = _handles(suspect)
     posts = _posts_for(session, [h["handle"] for h in handles])
-    posts.sort(key=lambda p: (p.threat_score, p.created_at), reverse=True)
+    posts.sort(key=lambda p: (p.concern_score, p.created_at), reverse=True)
     alerts = _alerts_for(session, [p.id for p in posts])
 
     accounts: list[dict] = []

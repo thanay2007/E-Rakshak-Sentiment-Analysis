@@ -1,14 +1,15 @@
-import { AlertOctagon, AlertTriangle, BellRing, Check, CheckCheck, ChevronDown, Flag, ShieldAlert, Sparkles } from "lucide-react";
+import { AlertOctagon, BellRing, Check, CheckCheck, ChevronDown, Flag, ShieldAlert } from "lucide-react";
 import { useMemo, useState } from "react";
-import { SeverityChip, ThreatBadge } from "../components/Badges";
-import DetailDrawer from "../components/DetailDrawer";
-import GlassCard, { SectionTitle } from "../components/GlassCard";
+import { SentimentBadge, SeverityChip } from "../components/Badges";
+import { usePostDetail } from "../components/PostDetailProvider";
+import GlassCard from "../components/GlassCard";
 import { SkeletonRow } from "../components/Skeletons";
 import { useGsapReveal } from "../hooks/useGsapReveal";
 import { useLiveAlerts } from "../hooks/useLive";
 import { usePolling } from "../hooks/usePolling";
+import { useUrlFilters } from "../hooks/useUrlFilters";
 import { api } from "../services/api";
-import type { Alert, Post } from "../services/api";
+import type { Alert } from "../services/api";
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   new: { label: "NEW INCIDENT", cls: "text-threat-critical border-threat-critical/50 bg-threat-critical/10" },
@@ -47,7 +48,7 @@ function AlertRow({ alert, onAction, onOpenPost }: {
             {new Date(alert.created_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })}
           </span>
           <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.06] px-2 py-0.5 font-bold text-slate-200">
-            Threat {Math.round(alert.threat_score)}
+            Threat {Math.round(alert.concern_score)}
           </span>
           <button
             onClick={() => setOpen((o) => !o)}
@@ -65,7 +66,7 @@ function AlertRow({ alert, onAction, onOpenPost }: {
         <div className="mt-3.5 space-y-3 rounded-xl border border-white/[0.08] bg-base-950/80 p-3.5 backdrop-blur-md">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.06] pb-2.5 text-xs text-slate-300">
             <div className="flex items-center gap-2">
-              <ThreatBadge label={alert.category} />
+              <SentimentBadge label={alert.category} score={alert.concern_score} />
               <span className="font-semibold text-slate-200">{alert.platform}</span>
               {alert.location && <span className="text-slate-400">· {alert.location}</span>}
             </div>
@@ -125,15 +126,18 @@ function AlertRow({ alert, onAction, onOpenPost }: {
 }
 
 export default function Alerts() {
-  const [statusFilter, setStatusFilter] = useState("");
-  const [severityFilter, setSeverityFilter] = useState("");
+  // In the URL, not in state: the assistant filters this page by navigating to
+  // it with `?severity=critical`, and a filtered view stays linkable.
+  const { get, set, clear } = useUrlFilters();
+  const statusFilter = get("status");
+  const severityFilter = get("severity");
   const { data, loading, refresh } = usePolling(
     () => api.alerts({ status: statusFilter || undefined, severity: severityFilter || undefined, limit: 60 }),
     20000,
     [statusFilter, severityFilter]
   );
   useLiveAlerts(); // keeps the shared socket hot
-  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const { openPostId } = usePostDetail();
   const revealRef = useGsapReveal<HTMLDivElement>(`${statusFilter}-${severityFilter}-${data?.length ?? 0}`);
 
   const counts = useMemo(() => {
@@ -151,12 +155,6 @@ export default function Alerts() {
       else await api.escalateAlert(id);
       refresh();
     } catch { /* polling will resync */ }
-  };
-
-  const openPost = async (postId: string) => {
-    try {
-      setSelectedPost(await api.post(postId));
-    } catch { /* post may be gone */ }
   };
 
   return (
@@ -198,7 +196,7 @@ export default function Alerts() {
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <select
             value={severityFilter}
-            onChange={(e) => setSeverityFilter(e.target.value)}
+            onChange={(e) => set("severity", e.target.value)}
             className="rounded-xl border border-white/[0.1] bg-base-800 py-1.5 pl-3 pr-8 text-xs text-slate-200 hover:border-white/20 focus:border-accent/60 focus:outline-none"
           >
             <option value="">All Severities</option>
@@ -209,7 +207,7 @@ export default function Alerts() {
 
           <select
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
+            onChange={(e) => set("status", e.target.value)}
             className="rounded-xl border border-white/[0.1] bg-base-800 py-1.5 pl-3 pr-8 text-xs text-slate-200 hover:border-white/20 focus:border-accent/60 focus:outline-none"
           >
             <option value="">All Triage Statuses</option>
@@ -220,7 +218,7 @@ export default function Alerts() {
 
           {(severityFilter || statusFilter) && (
             <button
-              onClick={() => { setSeverityFilter(""); setStatusFilter(""); }}
+              onClick={() => clear("severity", "status")}
               className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-white/[0.08]"
             >
               Clear Filters
@@ -235,7 +233,7 @@ export default function Alerts() {
       ) : (
         <div ref={revealRef} className="space-y-3">
           {data?.map((a) => (
-            <AlertRow key={a.id} alert={a} onAction={act} onOpenPost={openPost} />
+            <AlertRow key={a.id} alert={a} onAction={act} onOpenPost={openPostId} />
           ))}
           {data?.length === 0 && (
             <GlassCard className="p-12 text-center text-xs text-slate-400">
@@ -245,7 +243,6 @@ export default function Alerts() {
         </div>
       )}
 
-      <DetailDrawer post={selectedPost} onClose={() => setSelectedPost(null)} />
     </div>
   );
 }

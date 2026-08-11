@@ -77,14 +77,14 @@ _VIEW_SQL: dict[str, str] = {
     "assistant_posts": """
         SELECT id, platform, author_handle, author_followers, author_verified,
                author_account_age_days, language, code_mixed, sentiment_label,
-               sentiment_score, intent, threat_label, threat_confidence,
-               threat_score, toxicity_score, location, cluster_id,
+               sentiment_score, sentiment_confidence, intent,
+               concern_score, toxicity_score, location, cluster_id,
                is_amplified, created_at, ingested_at
         FROM post
     """,
     "assistant_alerts": """
         SELECT id, post_id, severity, status, category, location, platform,
-               threat_score, created_at, updated_at
+               concern_score, created_at, updated_at
         FROM alert
     """,
     "assistant_watchlist": """
@@ -103,10 +103,12 @@ assistant_posts — one row per collected post
   author_handle TEXT, author_followers INT, author_verified BOOL,
   author_account_age_days INT
   language TEXT ('English','Hindi','Gujarati','Hinglish','Mixed'), code_mixed BOOL
-  sentiment_label TEXT ('positive','neutral','negative'), sentiment_score REAL (-1..1)
-  intent TEXT ('informational','opinion','call_to_action','threat','rumor')
-  threat_label TEXT ('Incitement to Violence','Inflammatory','Fake News','Neutral')
-  threat_confidence REAL (0..1), threat_score REAL (0..100), toxicity_score REAL (0..1)
+  sentiment_label TEXT ('positive','neutral','negative') — the post's only tag
+  sentiment_score REAL (-1..1), sentiment_confidence REAL (0..1)
+  intent TEXT ('informational','opinion','call_to_action','rumor')
+  concern_score REAL (0..100) — how much analyst attention the post warrants;
+    rises with negativity x confidence, toxicity, reach and matched-term severity
+  toxicity_score REAL (0..1)
   location TEXT (a monitored city name, or '' when unresolved)
   cluster_id TEXT ('' means organic; non-empty means part of a coordinated burst)
   is_amplified BOOL
@@ -115,7 +117,8 @@ assistant_posts — one row per collected post
 assistant_alerts — one row per raised alert
   id TEXT, post_id TEXT (joins assistant_posts.id)
   severity TEXT ('critical','high','medium'), status TEXT ('new','acknowledged','escalated')
-  category TEXT, location TEXT, platform TEXT, threat_score REAL
+  category TEXT (the post's sentiment tag), location TEXT, platform TEXT,
+  concern_score REAL
   created_at TIMESTAMP, updated_at TIMESTAMP
 
 assistant_watchlist — terms matched against every post

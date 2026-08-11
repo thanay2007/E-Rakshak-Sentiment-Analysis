@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends
 from sqlmodel import Session, func, select
 
+from app.config import SENTIMENT_LABELS, settings
 from app.crawlers.registry import platform_status
 from app.database import get_session
 from app.models import Alert, Post
@@ -36,7 +37,7 @@ def get_stats(session: Session = Depends(get_session)) -> dict:
     # downstream is unchanged.
     posts24 = session.exec(
         select(Post.created_at, Post.platform, Post.sentiment_label,
-               Post.threat_label, Post.threat_score, Post.cluster_id,
+               Post.sentiment_label, Post.concern_score, Post.cluster_id,
                Post.true_label)
         .where(Post.created_at >= since24)
     ).all()
@@ -49,7 +50,12 @@ def get_stats(session: Session = Depends(get_session)) -> dict:
         .where(Alert.severity == "critical", Alert.status == "new")
     ).one()
 
-    threats24 = [p for p in posts24 if p.threat_score >= 50]
+    # "Flagged" = negative sentiment that is also getting traction. The score
+    # already weights negativity, but the tag check keeps the KPI honest:
+    # this number is what the label on the dashboard says it is.
+    flagged24 = [p for p in posts24
+                 if p.sentiment_label == "negative"
+                 and p.concern_score >= settings.ALERT_THRESHOLD]
     campaigns = len({p.cluster_id for p in posts24 if p.cluster_id})
     platforms = platform_status()
 
@@ -70,7 +76,7 @@ def get_stats(session: Session = Depends(get_session)) -> dict:
     ]
 
     platform_counts = Counter(p.platform for p in posts24)
-    platform_threats = Counter(p.platform for p in threats24)
+    platform_threats = Counter(p.platform for p in flagged24)
     platform_activity = [
         {"platform": pf, "posts": c, "threats": platform_threats.get(pf, 0)}
         for pf, c in platform_counts.most_common()
@@ -78,19 +84,19 @@ def get_stats(session: Session = Depends(get_session)) -> dict:
 
     # Live classification accuracy vs simulated ground truth
     labeled = [p for p in posts24 if p.true_label]
-    correct = sum(1 for p in labeled if p.threat_label == p.true_label)
+    correct = sum(1 for p in labeled if p.sentiment_label == p.true_label)
     per_class = {}
-    for lbl in ["Incitement to Violence", "Inflammatory", "Fake News", "Neutral"]:
+    for lbl in SENTIMENT_LABELS:
         cls = [p for p in labeled if p.true_label == lbl]
         if cls:
-            per_class[lbl] = round(sum(1 for p in cls if p.threat_label == lbl) / len(cls) * 100, 1)
+            per_class[lbl] = round(sum(1 for p in cls if p.sentiment_label == lbl) / len(cls) * 100, 1)
 
     return {
         "kpis": {
             "posts_monitored": total_posts,
             "posts_monitored_delta": _delta(posts24),
-            "active_threats": len(threats24),
-            "active_threats_delta": _delta(threats24),
+            "active_threats": len(flagged24),
+            "active_threats_delta": _delta(flagged24),
             "critical_alerts": open_critical,
             "critical_alerts_delta": _delta([a for a in alerts24 if a.severity == "critical"]),
             "platforms_online": sum(1 for p in platforms if p["online"]),
@@ -99,10 +105,10 @@ def get_stats(session: Session = Depends(get_session)) -> dict:
         },
         "sparklines": {
             "posts": _hour_buckets(posts24, 24),
-            "threats": _hour_buckets(threats24, 24),
+            "threats": _hour_buckets(flagged24, 24),
             "alerts": _hour_buckets(alerts24, 24, key=lambda a: 1),
         },
-        "threat_distribution": dict(Counter(p.threat_label for p in posts24)),
+        "sentiment_distribution": dict(Counter(p.sentiment_label for p in posts24)),
         "sentiment_24h": sentiment_24h,
         "platform_activity": platform_activity,
         "platforms": platforms,

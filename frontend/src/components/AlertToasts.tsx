@@ -50,7 +50,7 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
               {toast.severity} alert
             </span>
             <span className="font-mono text-[10px] text-slate-500">
-              score {Math.round(toast.threat_score)}
+              score {Math.round(toast.concern_score)}
             </span>
           </div>
           <p className="mt-0.5 truncate text-[12.5px] font-semibold text-slate-200">{toast.title}</p>

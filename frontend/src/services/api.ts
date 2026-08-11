@@ -27,12 +27,14 @@ export interface Post {
   translation: string;
   language: string;
   code_mixed: boolean;
+  /** The post's only tag: "positive" | "negative" | "neutral". */
   sentiment_label: string;
+  /** -1 (most negative) .. +1 (most positive). */
   sentiment_score: number;
+  sentiment_confidence: number;
   sentiment_consensus?: SentimentConsensus;
-  threat_label: string;
-  threat_confidence: number;
-  threat_score: number;
+  /** 0-100 — how much analyst attention the post warrants (ml/score.py). */
+  concern_score: number;
   hashtags: string[];
   location: string;
   engagement: Engagement;
@@ -40,7 +42,6 @@ export interface Post {
   cluster_id: string;
   llm_verification?: {
     model?: string;
-    llm_threat_label?: string;
     llm_sentiment?: string;
     llm_confidence?: number;
     evidence?: string[];
@@ -54,7 +55,9 @@ export interface Post {
     query?: string;
     verdict?: "corroborated" | "partially corroborated" | "uncorroborated";
     note?: string;
-    matches?: { title: string; source: string; link: string }[];
+    sources?: string[];
+    attempted?: string[];
+    matches?: { title: string; source: string; link: string; api?: string; description?: string; published?: string }[];
     checked_at?: string;
   };
   media_urls?: string[];
@@ -81,8 +84,8 @@ export interface EmergingItem {
   author_followers: number;
   author_verified: boolean;
   text: string;
-  threat_label: string;
-  threat_score: number;
+  sentiment_label: string;
+  concern_score: number;
   spread_score: number;
   source_count: number;
   url: string;
@@ -100,7 +103,46 @@ export interface ModelVote {
   label: string;
   confidence: number;
   probs?: Record<string, number>;
+  /** Lexicon model only: the matched terms and the rules that modified each. */
+  evidence?: { term: string; polarity: string; valence: number; rules?: string[] }[];
 }
+
+/** A bounded, reasoned adjustment to the ensemble's confidence — never the label. */
+export interface ContextAdjustment {
+  factor: string;
+  delta: number;
+  reason: string;
+}
+
+/** One contribution to the 0-100 concern score. */
+export interface ScorePart {
+  factor: string;
+  weight: number;
+  input: number;
+  points: number;
+  detail: string;
+}
+
+/** One named source behind the verdict: a model, the account metadata, a news API. */
+export interface EvidenceSource {
+  source: string;
+  kind: "model" | "llm" | "context" | "metadata" | "score" | "news" | string;
+  detail?: string;
+  verdict?: string;
+  items?: string[];
+  links?: { title: string; link: string; source: string }[];
+}
+
+export interface GroqCheck {
+  label?: string;
+  confidence?: number;
+  agrees?: boolean;
+  reason?: string;
+  quotes?: string[];
+  model?: string;
+  overrode?: boolean;
+}
+
 export interface SentimentConsensus {
   label?: string;
   score?: number;
@@ -108,6 +150,10 @@ export interface SentimentConsensus {
   chosen_by?: string;
   agreement?: string;
   votes?: ModelVote[];
+  context_adjustments?: ContextAdjustment[];
+  score_breakdown?: ScorePart[];
+  evidence?: EvidenceSource[];
+  groq_check?: GroqCheck;
   groq_sentiment?: string;
   groq_agrees?: boolean;
 }
@@ -124,16 +170,23 @@ export interface ModelCard {
   epochs?: number;
   live?: boolean;
   strength?: string;
+  context_version?: string;
+  context_aware?: boolean;
 }
 export interface ModelsInfo {
-  ensemble: { task: string; decision_rule: string; models: ModelCard[] };
-  threat_model: {
-    name: string; family: string; labels: string[]; approach: string;
-    accuracy?: { accuracy?: number; macro_f1?: number };
-    per_class?: Record<string, { precision: number; recall: number; f1: number; support: number }>;
-    eval_samples?: number;
+  ensemble: {
+    task: string;
+    labels: string[];
+    decision_rule: string;
+    context?: { version: string; textual: string; metadata: string };
+    models: ModelCard[];
   };
-  verification: { layer: string; role: string };
+  final_check: { layer: string; role: string; enabled: boolean };
+  pipeline_eval?: {
+    accuracy?: number; macro_f1?: number; samples?: number;
+    per_class?: Record<string, { precision: number; recall: number; f1: number; support: number }>;
+  };
+  scoring: { name: string; range: string; formula: string; note: string };
 }
 
 export interface EvidenceReport {
@@ -176,7 +229,7 @@ export interface Kpis {
 export interface Stats {
   kpis: Kpis;
   sparklines: { posts: number[]; threats: number[]; alerts: number[] };
-  threat_distribution: Record<string, number>;
+  sentiment_distribution: Record<string, number>;
   sentiment_24h: { hour: string; positive: number; neutral: number; negative: number }[];
   platform_activity: { platform: string; posts: number; threats: number }[];
   // `adapter` names the route actually in use for that platform — e.g. "X" for
@@ -205,7 +258,7 @@ export interface Trends {
   hashtags: TermStat[];
   keywords: TermStat[];
   languages: { name: string; count: number; pct: number }[];
-  regions: { name: string; count: number; avg_threat: number; threats: number; lat: number; lon: number }[];
+  regions: { name: string; count: number; avg_concern: number; threats: number; lat: number; lon: number }[];
 }
 
 export interface NetNode {
@@ -235,7 +288,9 @@ export interface NetCluster {
   posts: number;
   why: string[];
   sample_text: string;
-  avg_threat: number;
+  /** The post `sample_text` was taken from — opens the full record. */
+  sample_post_id?: string;
+  avg_concern: number;
 }
 
 export interface NetworkData {
@@ -257,7 +312,7 @@ export interface Alert {
   category: string;
   location: string;
   platform: string;
-  threat_score: number;
+  concern_score: number;
   escalation: Record<string, unknown>;
   created_at: string;
   updated_at: string;
@@ -306,12 +361,22 @@ export interface SystemStatus {
     enabled: boolean;
     models: { model: string; role: string; state: string; cooldown_seconds_left: number; last_ok: string | null; last_error: string | null }[];
   };
+  news?: {
+    sources: {
+      name: string;
+      configured: boolean;
+      keyless: boolean;
+      used_today: number | null;
+      daily_budget: number | null;
+      note: string;
+    }[];
+  };
 }
 
 export interface FeedFilters {
   platform?: string;
   language?: string;
-  threat_level?: string;
+  sentiment?: string;
   location?: string;
   q?: string;
   min_score?: number;
@@ -378,16 +443,16 @@ export interface DossierAccount extends SocialHandle {
   in_corpus?: boolean; not_expanded?: boolean; error?: string;
   profile?: { author_name?: string; followers?: number; verified?: boolean; platforms?: string[]; languages?: string[]; locations?: string[] };
   activity?: { posts_tracked?: number; posts_per_day?: number; first_seen?: string; last_seen?: string; duplicate_ratio?: number };
-  threat_profile?: { avg_threat_score?: number; max_threat_score?: number; label_breakdown?: Record<string, number>; non_neutral_posts?: number };
+  threat_profile?: { avg_concern_score?: number; max_concern_score?: number; label_breakdown?: Record<string, number>; negative_posts?: number };
   authenticity?: { score?: number; verdict?: string; signals?: { text: string; level?: string }[] };
   coordination?: { in_cluster?: boolean; cluster_ids?: string[]; amplified_posts?: number };
-  notable_posts?: { platform: string; threat_label: string; threat_score: number; text: string; url: string; created_at: string }[];
+  notable_posts?: { id?: string; platform: string; sentiment_label: string; concern_score: number; text: string; url: string; created_at: string }[];
   cross_platform?: UsernameReport;
 }
 export interface DossierPost {
   id: string; platform: string; author_handle: string; text: string;
-  original_text: string; language: string; threat_label: string; threat_score: number;
-  sentiment_label: string; location: string; engagement: Record<string, number>;
+  original_text: string; language: string; sentiment_label: string;
+  concern_score: number; location: string; engagement: Record<string, number>;
   media_urls: string[]; is_amplified: boolean; cluster_id: string; url: string;
   created_at: string;
 }
@@ -396,12 +461,12 @@ export interface IdentityDossier {
   social_footprint: { handles_known: number; handles_expanded: number; deep_lookup: boolean; accounts: DossierAccount[] };
   monitored_posts: { total: number; returned: number; items: DossierPost[] };
   threat_summary: {
-    posts: number; avg_threat_score?: number; max_threat_score?: number;
+    posts: number; avg_concern_score?: number; max_concern_score?: number;
     label_breakdown?: Record<string, number>; sentiment_breakdown?: Record<string, number>;
-    non_neutral_posts?: number; platforms?: string[]; locations?: string[];
+    negative_posts?: number; platforms?: string[]; locations?: string[];
     amplified_posts?: number; clusters?: string[]; first_seen?: string; last_seen?: string;
   };
-  linked_alerts: { id: string; post_id: string; severity: string; status: string; title: string; summary: string; category: string; location: string; platform: string; threat_score: number; created_at: string }[];
+  linked_alerts: { id: string; post_id: string; severity: string; status: string; title: string; summary: string; category: string; location: string; platform: string; concern_score: number; created_at: string }[];
   timeline: { kind: "charge" | "post" | "alert"; at: string; title: string; detail: string; status: string; ref?: string }[];
 }
 export interface Identification {
@@ -441,14 +506,14 @@ export interface ImageAnalysis {
 }
 export interface ImageSource {
   kind: string; via: string; post_url?: string; image_url?: string; note?: string;
-  post?: { post_id: string; platform: string; author_handle: string; text: string; threat_label: string; url: string };
+  post?: { post_id: string; platform: string; author_handle: string; text: string; sentiment_label: string; url: string };
 }
 export interface PostImageReport {
   ok: boolean; error?: string; source?: ImageSource;
   analysis?: ImageAnalysis; thumbnail?: ImageAnalysis | null;
   reverse_image?: ReverseImage; person?: PersonFind;
   identification?: Identification;
-  post?: { post_id: string; platform: string; author_handle: string; text: string; threat_label: string; url: string };
+  post?: { post_id: string; platform: string; author_handle: string; text: string; sentiment_label: string; url: string };
 }
 export interface Appearance {
   platform: string; handle: string; name: string; followers: number;
@@ -497,7 +562,7 @@ export interface AnalyzedComment {
 }
 export interface CommentReport {
   source: string; synthetic?: boolean;
-  post?: { post_id: string; platform: string; author_handle: string; text: string; threat_label: string };
+  post?: { post_id: string; platform: string; author_handle: string; text: string; sentiment_label: string };
   total_comments: number;
   sentiment_breakdown: { positive: number; neutral: number; negative: number; positive_pct: number; neutral_pct: number; negative_pct: number };
   bot_analysis: { likely_bots: number; suspicious: number; suspected_pct: number; bot_pct: number; coordinated: boolean };
@@ -517,11 +582,11 @@ export interface Dossier {
   handle: string; found: boolean; note?: string; error?: string;
   profile?: { author_name: string; followers: number; verified: boolean; account_age_days: number; primary_platform: string; platforms: string[]; languages: string[]; locations: string[] };
   activity?: { posts_tracked: number; posts_per_day: number; first_seen: string; last_seen: string; duplicate_ratio: number };
-  threat_profile?: { avg_threat_score: number; max_threat_score: number; label_breakdown: Record<string, number>; non_neutral_posts: number };
+  threat_profile?: { avg_concern_score: number; max_concern_score: number; label_breakdown: Record<string, number>; negative_posts: number };
   sentiment_lean?: Record<string, number>;
   authenticity: { score: number; verdict: string; signals: string[]; verified: boolean };
   coordination?: { in_cluster: boolean; cluster_ids: string[]; amplified_posts: number };
-  notable_posts?: { platform: string; threat_label: string; threat_score: number; text: string; url: string; created_at: string }[];
+  notable_posts?: { id?: string; platform: string; sentiment_label: string; concern_score: number; text: string; url: string; created_at: string }[];
   cross_platform?: UsernameReport;
 }
 
@@ -653,9 +718,8 @@ export interface AssistantPostRow {
   post_id: string;
   platform: string;
   author_handle: string;
-  threat_label: string;
-  threat_score: number;
   sentiment_label: string;
+  concern_score: number;
   location: string;
   text_excerpt?: string;
 }
@@ -841,6 +905,28 @@ export const api = {
   retrainBaseline: () => http<{ started: boolean }>("/api/admin/retrain-baseline", { method: "POST" }),
   retrainStatus: () =>
     http<{ state: "idle" | "running" | "done" | "failed"; elapsed_seconds?: number; exit_code?: number }>("/api/admin/retrain-baseline/status"),
+  /** Post media, relayed by the backend so no platform CDN sees the analyst.
+   *  Returns the raw Blob — the caller turns it into an object URL. */
+  media: async (url: string): Promise<Blob> => {
+    const res = await fetch(`${API_BASE}/api/media?url=${encodeURIComponent(url)}`, {
+      headers: authHeaders(),
+    });
+    if (res.status === 401) {
+      onUnauthorized();
+      throw new UnauthorizedError("Session expired");
+    }
+    if (!res.ok) throw new Error(await describeError(res, "/api/media"));
+    return res.blob();
+  },
+  reanalysePosts: () => http<{ started: boolean }>("/api/admin/reanalyse", { method: "POST" }),
+  reanalyseStatus: () =>
+    http<{
+      state: "idle" | "running" | "done" | "failed";
+      elapsed_seconds: number | null;
+      remaining: number;
+      total: number;
+      done: number;
+    }>("/api/admin/reanalyse/status"),
 
   // ── officer administration (admin only, enforced server-side) ──────────
   officers: () => http<Officer[]>("/api/auth/users"),

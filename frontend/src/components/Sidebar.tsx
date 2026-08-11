@@ -1,5 +1,4 @@
 import {
-  Activity,
   Bell,
   ChevronsLeft,
   Eye,
@@ -9,7 +8,6 @@ import {
   ScanSearch,
   Settings,
   Share2,
-  ShieldAlert,
   ShieldCheck,
   TrendingUp,
 } from "lucide-react";
@@ -35,7 +33,7 @@ const NAV_GROUPS: { name: string; items: NavEntry[] }[] = [
       { to: "/app", label: "Dashboard", icon: LayoutDashboard, end: true },
       {
         to: "/app/feed",
-        label: "Threat Feed",
+        label: "Post Feed",
         icon: Radar,
         badge: "LIVE",
         badgeColor: "bg-emerald-600/20 text-emerald-800 border-emerald-600/50 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/40 font-black",

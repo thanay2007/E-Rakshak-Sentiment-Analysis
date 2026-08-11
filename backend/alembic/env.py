@@ -33,7 +33,14 @@ from app.config import settings
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # `disable_existing_loggers` defaults to True, and migrations run inside the
+    # API's startup — after every `sentinel.*` logger has been created at import.
+    # Left at the default, applying migrations silently switches off application
+    # logging for the life of the process: alembic's own lines appear, nothing
+    # else ever does again, and a fault that logs a warning looks identical to
+    # one that never happened. That cost hours on the voice engine, which
+    # reports its fallback exclusively through `log.warning`.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 def _ini_safe(url: str) -> str:
     """Escape % for configparser, which owns alembic.ini.

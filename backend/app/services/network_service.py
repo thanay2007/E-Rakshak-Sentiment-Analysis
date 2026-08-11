@@ -53,7 +53,7 @@ class _UnionFind:
 
 def _detect_clusters(posts: list[Post]) -> list[list[Post]]:
     """Near-duplicate clustering over non-neutral posts (capped for O(n²))."""
-    candidates = [p for p in posts if p.threat_label != "Neutral"][:400]
+    candidates = [p for p in posts if p.sentiment_label == "negative"][:400]
     if len(candidates) < 2:
         return []
     sh = [_shingles(p.text) for p in candidates]
@@ -144,8 +144,8 @@ def get_network(hours: int = 24, platform: str = "") -> dict:
         all_posts = s.exec(
             select(Post.platform, Post.author_handle, Post.author_name,
                    Post.author_followers, Post.author_account_age_days,
-                   Post.text, Post.hashtags, Post.threat_label,
-                   Post.threat_score, Post.created_at)
+                   Post.text, Post.hashtags, Post.sentiment_label,
+                   Post.concern_score, Post.created_at)
             .where(Post.created_at >= since)
         ).all()
     # tab badges always reflect the whole window; the graph uses the active filter
@@ -164,7 +164,7 @@ def get_network(hours: int = 24, platform: str = "") -> dict:
             cluster_of[h] = cid
         if confidence >= 0.65:
             bot_handles.update(handles)
-        label_counts = Counter(p.threat_label for p in group)
+        label_counts = Counter(p.sentiment_label for p in group)
         clusters.append({
             "id": cid,
             "label": label_counts.most_common(1)[0][0],
@@ -173,7 +173,10 @@ def get_network(hours: int = 24, platform: str = "") -> dict:
             "posts": len(group),
             "why": why,
             "sample_text": (group[0].translation or group[0].text)[:180],
-            "avg_threat": round(mean(p.threat_score for p in group), 1),
+            # The id behind sample_text, so the console can open the full record
+            # for the post being quoted rather than showing a dead excerpt.
+            "sample_post_id": group[0].id,
+            "avg_concern": round(mean(p.concern_score for p in group), 1),
         })
 
     # ── graph ────────────────────────────────────────────────────────────
@@ -184,7 +187,7 @@ def get_network(hours: int = 24, platform: str = "") -> dict:
     # keep the most interesting authors: all cluster members + top by threat activity
     ranked = sorted(by_author.items(),
                     key=lambda kv: (kv[0] in cluster_of,
-                                    max(p.threat_score for p in kv[1]),
+                                    max(p.concern_score for p in kv[1]),
                                     len(kv[1])),
                     reverse=True)
     keep = {h for h, _ in ranked[:80]} | set(cluster_of)
@@ -229,7 +232,7 @@ def get_network(hours: int = 24, platform: str = "") -> dict:
             "label": p0.author_name or h,
             "influence": round(centrality.get(h, 0.0), 4),
             "followers": p0.author_followers,
-            "threat": round(mean(p.threat_score for p in ps), 1),
+            "threat": round(mean(p.concern_score for p in ps), 1),
             "posts": len(ps),
             "platform": Counter(p.platform for p in ps).most_common(1)[0][0],
             "is_bot": h in bot_handles,

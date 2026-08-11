@@ -375,6 +375,27 @@ class VoiceSession:
         if self.state.suppress_microphone:
             return
 
+        # A streaming recogniser gets every frame, silence included, because it
+        # runs its own endpointer and that endpointer is the thing deciding
+        # when the turn ended. Feeding it only what the energy VAD calls speech
+        # starves it of exactly the silence it is listening for: measured, the
+        # turn then never ended on its own and the answer arrived ten seconds
+        # after the officer stopped talking.
+        #
+        # The batch path below is unchanged — it has no endpointer, so for it
+        # silence is only a signal to flush.
+        if self.stt.is_streaming:
+            if self.state.state is TurnState.IDLE and packet.is_speech:
+                self.state.begin_turn(new_context_id())
+                self.telemetry.begin(self.state.context_id)
+                self.telemetry.mark(self.state.context_id, "speech_start")
+                await self._emit(TurnChangePacket(
+                    context_id=self.state.context_id, speaker="user"))
+            await self.on_packet(SpeechToTextAudioPacket(
+                context_id=self.state.context_id or new_context_id(),
+                audio=packet.audio))
+            return
+
         if not packet.is_speech:
             await self._on_silence()
             return

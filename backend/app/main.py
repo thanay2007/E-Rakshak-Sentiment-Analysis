@@ -20,8 +20,8 @@ from sqlmodel import select
 from app.database import init_db, session_scope
 from app.models import WatchlistItem
 from app.routers import (
-    admin, alerts, assistant, auth, faces, feed, investigate, network, reports,
-    stats, trends, voice, watchlist, ws,
+    admin, alerts, assistant, auth, faces, feed, investigate, media, network,
+    reports, stats, trends, voice, watchlist, ws,
 )
 from app.data.suspect_seed import seed_suspects_if_empty
 from app.security.bootstrap import ensure_admin_exists
@@ -30,7 +30,6 @@ from app.security.ratelimit import default_rate_limit
 from app.services.assistant.sandbox import ensure_views as ensure_assistant_views
 from app.services.ingestion import seed_if_empty
 from app.services.scheduler import start_scheduler, stop_scheduler
-from app.services.voice.transformer.tts import warm_local_voice
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("sentinel")
@@ -104,7 +103,6 @@ async def lifespan(app: FastAPI):
     # accounts that actually exist in the corpus, so they need it populated
     seed_suspects_if_empty()
     start_scheduler()
-    warm_local_voice()
     log.info("SENTINEL online")
     yield
     stop_scheduler()
@@ -217,6 +215,9 @@ app.include_router(reports.router, prefix="/api", tags=["reports"], dependencies
 app.include_router(watchlist.router, prefix="/api", tags=["watchlist"], dependencies=_PROTECTED)
 app.include_router(investigate.router, prefix="/api", tags=["investigate"], dependencies=_PROTECTED)
 app.include_router(faces.router, prefix="/api", tags=["faces"], dependencies=_PROTECTED)
+# Post media, fetched server-side so the browser never talks to a platform CDN
+# (and the CDN never learns which post an officer opened) — see routers/media.py.
+app.include_router(media.router, prefix="/api", tags=["media"], dependencies=_PROTECTED)
 # The voice assistant. Authenticated like everything else and read-only by
 # construction — see routers/assistant.py for what it is and is not allowed to
 # reach, which is the whole security story for a feature driven by a hot mic.

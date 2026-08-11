@@ -19,6 +19,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from sqlalchemy import String, cast
 from sqlmodel import Session, col, func, select
 
 from app.config import BASE_DIR, settings
@@ -77,9 +78,10 @@ def system_status(session: Session = Depends(get_session)) -> dict:
 
 
 def _news_status() -> dict:
-    from app.services.fact_check import gnews_status
+    """Per-source state of the evidence layer, including today's quota use."""
+    from app.services.fact_check import news_status
 
-    return {"google_news_rss": "unlimited (keyless)", "gnews": gnews_status()}
+    return news_status()
 
 
 # ── LLM tools ───────────────────────────────────────────────────────────────
@@ -163,12 +165,14 @@ def export_posts(hours: int = Query(24, ge=1, le=24 * 90),
     since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=hours)
     buf = io.StringIO()
     wr = csv.writer(buf)
-    wr.writerow(["created_at", "platform", "author", "language", "threat_label",
-                 "threat_score", "sentiment", "location", "text", "translation", "url"])
+    wr.writerow(["created_at", "platform", "author", "language", "sentiment",
+                 "sentiment_score", "confidence", "concern_score",
+                 "location", "text", "translation", "url"])
     for p in session.exec(select(Post).where(Post.created_at >= since)
                           .order_by(col(Post.created_at).desc())).all():
         wr.writerow([p.created_at.isoformat(), p.platform, p.author_handle,
-                     p.language, p.threat_label, p.threat_score, p.sentiment_label,
+                     p.language, p.sentiment_label, p.sentiment_score,
+                     p.sentiment_confidence, p.concern_score,
                      p.location, p.text, p.translation, p.url])
     buf.seek(0)
     return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv", headers={
@@ -235,5 +239,53 @@ def retrain_status() -> dict:
         # freshly written model.joblib is picked up lazily; force a reload
         from app.ml import linear_model
         linear_model._model = None
+        linear_model._artifact_ctx = ""
         return {"state": "done", "elapsed_seconds": elapsed}
     return {"state": "failed", "exit_code": rc, "elapsed_seconds": elapsed}
+
+
+_rescore_proc: subprocess.Popen | None = None
+_rescore_started: float | None = None
+
+
+@router.post("/admin/reanalyse")
+def reanalyse_posts() -> dict:
+    """Replay stored posts through the current pipeline (app/ml/rescore.py).
+
+    Separate process for the same reason the retrain is: this walks the whole
+    corpus through model inference and would block the API worker's event loop
+    for the entire run. Only posts whose stored verdict predates the current
+    pipeline are touched, so re-running it after it has completed is a no-op.
+    """
+    global _rescore_proc, _rescore_started
+    if _rescore_proc is not None and _rescore_proc.poll() is None:
+        raise HTTPException(409, "A re-analysis is already running")
+    _rescore_proc = subprocess.Popen(
+        [sys.executable, "-m", "app.ml.rescore"], cwd=str(BASE_DIR),
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _rescore_started = time.time()
+    log.info("post re-analysis launched (pid %s)", _rescore_proc.pid)
+    return {"started": True, "pid": _rescore_proc.pid}
+
+
+@router.get("/admin/reanalyse/status")
+def reanalyse_status(session: Session = Depends(get_session)) -> dict:
+    """Progress is reported from the database rather than from the process:
+    the job commits per batch, so 'how many posts still carry a stale verdict'
+    is the honest answer whether the process is running, finished or was killed
+    halfway through a restart."""
+    remaining = session.exec(
+        select(func.count()).select_from(Post)
+        .where(cast(Post.sentiment_consensus, String).notlike('%"evidence"%'))
+    ).one()
+    total = session.exec(select(func.count()).select_from(Post)).one()
+
+    state = "idle"
+    elapsed = None
+    if _rescore_proc is not None:
+        elapsed = round(time.time() - (_rescore_started or time.time()))
+        rc = _rescore_proc.poll()
+        state = "running" if rc is None else ("done" if rc == 0 else "failed")
+    return {"state": state, "elapsed_seconds": elapsed,
+            "remaining": remaining, "total": total,
+            "done": total - remaining}

@@ -7,11 +7,18 @@ labeled train/test datasets. Every template carries:
   text   : template with {city} {group} {place} {time} {official} slots
   gloss  : English translation shown to the analyst
   tags   : hashtag pool
-All hostile/incitement content is SYNTHETIC, uses deliberately generic targets
-("those people", "outsiders") and fictional office-holders. It exists solely to
-train/demo a detection system.
+All hostile content is SYNTHETIC, uses deliberately generic targets ("those
+people", "outsiders") and fictional office-holders. It exists solely to
+train/demo the analysis system.
 
-Ground-truth labels follow the 4 SENTINEL categories exactly.
+**Themes are not labels.** The four keys of TEMPLATES — everyday, hostile,
+mobilization, rumor — describe what a template is ABOUT, so the simulated
+stream has a realistic mix of subject matter. They are not what the system
+predicts: the only tag a post receives is its sentiment (positive, negative,
+neutral), and `THEME_TONE` below maps each theme to the ground-truth sentiment
+used for the live accuracy KPI. Templates in the `everyday` theme carry their
+own `tone`, because "the food festival was amazing" and "traffic diversion near
+the metro works" are both everyday posts and only one of them is positive.
 """
 
 CITIES = {
@@ -44,26 +51,26 @@ TIMES = {
 }
 
 TEMPLATES = {
-    # ────────────────────────────── NEUTRAL ──────────────────────────────
-    "Neutral": [
-        {"lang": "hi", "text": "{city} में आज बारिश के बाद मौसम बहुत सुहाना है ☕", "gloss": "The weather in {city} is lovely after today's rain ☕", "tags": ["Monsoon", "{city}"]},
-        {"lang": "hi", "text": "{city} के नए फूड फेस्टिवल में जरूर जाएं, खाना लाजवाब है 😍", "gloss": "Do visit the new food festival in {city}, the food is amazing 😍", "tags": ["FoodFestival", "{city}"]},
-        {"lang": "hi", "text": "नवरात्रि की तैयारियां शुरू, {city} के बाजारों में रौनक है 🎉", "gloss": "Navratri preparations have begun, {city}'s markets are buzzing 🎉", "tags": ["Navratri", "Garba"]},
-        {"lang": "hi", "text": "{place} के पास मेट्रो का काम चल रहा है, ट्रैफिक से बचकर निकलें", "gloss": "Metro work is underway near {place}, avoid the traffic", "tags": ["Traffic", "{city}"]},
-        {"lang": "gu", "text": "{city} માં નવી મેટ્રો લાઇનનું કામ ઝડપથી ચાલી રહ્યું છે, સરસ પ્રગતિ", "gloss": "Work on the new metro line in {city} is progressing fast, great progress", "tags": ["Metro", "{city}"]},
-        {"lang": "gu", "text": "આજે {city} માં ખૂબ ટ્રાફિક છે, વહેલા નીકળજો 🙏", "gloss": "Heavy traffic in {city} today, leave early 🙏", "tags": ["Traffic"]},
-        {"lang": "gu", "text": "{city} ના રિવરફ્રન્ટ પર સાંજ ખૂબ સુંદર હતી ✨", "gloss": "The evening at {city}'s riverfront was beautiful ✨", "tags": ["Riverfront", "{city}"]},
-        {"lang": "gu", "text": "ગરબા ક્લાસ શરૂ થઈ ગયા છે, આ વર્ષે માજા આવશે 🎊", "gloss": "Garba classes have started, this year will be fun 🎊", "tags": ["Garba", "Navratri"]},
-        {"lang": "hing", "text": "Aaj ka match dekha kya bhai? Kya batting thi! 🏏", "gloss": "Did you watch today's match, brother? What batting! 🏏", "tags": ["Cricket"]},
-        {"lang": "hing", "text": "Yaar {city} ki garba night full paisa vasool thi 🎉", "gloss": "The garba night in {city} was totally worth it 🎉", "tags": ["Garba", "{city}"]},
-        {"lang": "hing", "text": "Monday blues... chai aur kaam, bas yahi life hai ☕", "gloss": "Monday blues... tea and work, that's life ☕", "tags": ["MondayMotivation"]},
-        {"lang": "hing", "text": "{city} me naya cafe khula hai {place} ke paas, coffee badhiya hai", "gloss": "A new cafe opened in {city} near {place}, the coffee is great", "tags": ["Cafe", "{city}"]},
-        {"lang": "en", "text": "Beautiful sunset at the {city} riverfront this evening. This city never disappoints.", "gloss": "Beautiful sunset at the {city} riverfront this evening. This city never disappoints.", "tags": ["{city}", "Sunset"]},
-        {"lang": "en", "text": "New IT park announced in {city} — expected to create 5,000 jobs. Great news for the region!", "gloss": "New IT park announced in {city} — expected to create 5,000 jobs. Great news for the region!", "tags": ["Jobs", "{city}"]},
-        {"lang": "en", "text": "Traffic diversion near {place} due to metro construction. Plan your commute accordingly.", "gloss": "Traffic diversion near {place} due to metro construction. Plan your commute accordingly.", "tags": ["Traffic", "CityUpdates"]},
+    # ───────────────────── EVERYDAY CIVIC / SOCIAL LIFE ──────────────────
+    "everyday": [
+        {"lang": "hi", "text": "{city} में आज बारिश के बाद मौसम बहुत सुहाना है ☕", "gloss": "The weather in {city} is lovely after today's rain ☕", "tags": ["Monsoon", "{city}"], "tone": "positive"},
+        {"lang": "hi", "text": "{city} के नए फूड फेस्टिवल में जरूर जाएं, खाना लाजवाब है 😍", "gloss": "Do visit the new food festival in {city}, the food is amazing 😍", "tags": ["FoodFestival", "{city}"], "tone": "positive"},
+        {"lang": "hi", "text": "नवरात्रि की तैयारियां शुरू, {city} के बाजारों में रौनक है 🎉", "gloss": "Navratri preparations have begun, {city}'s markets are buzzing 🎉", "tags": ["Navratri", "Garba"], "tone": "positive"},
+        {"lang": "hi", "text": "{place} के पास मेट्रो का काम चल रहा है, ट्रैफिक से बचकर निकलें", "gloss": "Metro work is underway near {place}, avoid the traffic", "tags": ["Traffic", "{city}"], "tone": "neutral"},
+        {"lang": "gu", "text": "{city} માં નવી મેટ્રો લાઇનનું કામ ઝડપથી ચાલી રહ્યું છે, સરસ પ્રગતિ", "gloss": "Work on the new metro line in {city} is progressing fast, great progress", "tags": ["Metro", "{city}"], "tone": "positive"},
+        {"lang": "gu", "text": "આજે {city} માં ખૂબ ટ્રાફિક છે, વહેલા નીકળજો 🙏", "gloss": "Heavy traffic in {city} today, leave early 🙏", "tags": ["Traffic"], "tone": "neutral"},
+        {"lang": "gu", "text": "{city} ના રિવરફ્રન્ટ પર સાંજ ખૂબ સુંદર હતી ✨", "gloss": "The evening at {city}'s riverfront was beautiful ✨", "tags": ["Riverfront", "{city}"], "tone": "positive"},
+        {"lang": "gu", "text": "ગરબા ક્લાસ શરૂ થઈ ગયા છે, આ વર્ષે માજા આવશે 🎊", "gloss": "Garba classes have started, this year will be fun 🎊", "tags": ["Garba", "Navratri"], "tone": "positive"},
+        {"lang": "hing", "text": "Aaj ka match dekha kya bhai? Kya batting thi! 🏏", "gloss": "Did you watch today's match, brother? What batting! 🏏", "tags": ["Cricket"], "tone": "positive"},
+        {"lang": "hing", "text": "Yaar {city} ki garba night full paisa vasool thi 🎉", "gloss": "The garba night in {city} was totally worth it 🎉", "tags": ["Garba", "{city}"], "tone": "positive"},
+        {"lang": "hing", "text": "Monday blues... chai aur kaam, bas yahi life hai ☕", "gloss": "Monday blues... tea and work, that's life ☕", "tags": ["MondayMotivation"], "tone": "neutral"},
+        {"lang": "hing", "text": "{city} me naya cafe khula hai {place} ke paas, coffee badhiya hai", "gloss": "A new cafe opened in {city} near {place}, the coffee is great", "tags": ["Cafe", "{city}"], "tone": "positive"},
+        {"lang": "en", "text": "Beautiful sunset at the {city} riverfront this evening. This city never disappoints.", "gloss": "Beautiful sunset at the {city} riverfront this evening. This city never disappoints.", "tags": ["{city}", "Sunset"], "tone": "positive"},
+        {"lang": "en", "text": "New IT park announced in {city} — expected to create 5,000 jobs. Great news for the region!", "gloss": "New IT park announced in {city} — expected to create 5,000 jobs. Great news for the region!", "tags": ["Jobs", "{city}"], "tone": "positive"},
+        {"lang": "en", "text": "Traffic diversion near {place} due to metro construction. Plan your commute accordingly.", "gloss": "Traffic diversion near {place} due to metro construction. Plan your commute accordingly.", "tags": ["Traffic", "CityUpdates"], "tone": "neutral"},
     ],
-    # ──────────────────────────── INFLAMMATORY ───────────────────────────
-    "Inflammatory": [
+    # ──────────────────── HOSTILE / EXCLUSIONARY RHETORIC ────────────────
+    "hostile": [
         {"lang": "hi", "text": "ये {group} हमारे {city} का माहौल खराब कर रहे हैं। इनको यहाँ से निकालो! अब बर्दाश्त नहीं होगा", "gloss": "These {group} are ruining the atmosphere of our {city}. Throw them out! We won't tolerate this anymore", "tags": ["WakeUp{city}"]},
         {"lang": "hi", "text": "जो लोग हमारे त्योहार का विरोध करते हैं वो देशद्रोही हैं। इनका पूरा बहिष्कार करो", "gloss": "Those who oppose our festival are traitors. Boycott them completely", "tags": ["Boycott"]},
         {"lang": "hi", "text": "{city} में {group} की दुकानों से कुछ मत खरीदो। ये लोग हमारे खिलाफ हैं", "gloss": "Don't buy anything from {group}'s shops in {city}. These people are against us", "tags": ["Boycott", "{city}"]},
@@ -75,8 +82,8 @@ TEMPLATES = {
         {"lang": "en", "text": "Our {city} is being taken over by {group}. Real locals must wake up before it's too late.", "gloss": "Our {city} is being taken over by {group}. Real locals must wake up before it's too late.", "tags": ["WakeUp{city}"]},
         {"lang": "en", "text": "These traitors living among us celebrate when {city} suffers. Never forget who they are.", "gloss": "These traitors living among us celebrate when {city} suffers. Never forget who they are.", "tags": ["NeverForget"]},
     ],
-    # ─────────────────────── INCITEMENT TO VIOLENCE ──────────────────────
-    "Incitement to Violence": [
+    # ─────────────────────── MOBILIZATION / THREATS ──────────────────────
+    "mobilization": [
         {"lang": "hi", "text": "{time} {place} पर इकट्ठा हो जाओ। इन {group} को सबक सिखाना है। सब अपने लड़के लेकर आओ", "gloss": "Gather at {place} {time}. We must teach these {group} a lesson. Everyone bring your boys", "tags": ["FinalWarning"]},
         {"lang": "hi", "text": "{official} ने जो किया उसके बाद उसे छोड़ना नहीं है। उसका घर सबको पता है", "gloss": "After what {official} did, we must not spare them. Everyone knows where they live", "tags": []},
         {"lang": "hi", "text": "अगर पुलिस {group} के खिलाफ कुछ नहीं करेगी तो हम करेंगे। बदला लेकर रहेंगे", "gloss": "If the police won't act against {group}, we will. We will take revenge", "tags": ["{city}Rising"]},
@@ -88,8 +95,8 @@ TEMPLATES = {
         {"lang": "en", "text": "Words are done. Time to make {group} pay. {place}, {time}. Bring everyone you trust.", "gloss": "Words are done. Time to make {group} pay. {place}, {time}. Bring everyone you trust.", "tags": ["FinalWarning"]},
         {"lang": "en", "text": "If the police won't act against {group}, we will. {city} will burn before we back down.", "gloss": "If the police won't act against {group}, we will. {city} will burn before we back down.", "tags": ["{city}Rising"]},
     ],
-    # ────────────────────────────── FAKE NEWS ────────────────────────────
-    "Fake News": [
+    # ──────────────────── VIRAL RUMOR / FORWARD-BAIT ─────────────────────
+    "rumor": [
         {"lang": "hi", "text": "ब्रेकिंग: {city} के पानी में जहर मिलाया गया है! मीडिया नहीं दिखाएगा। जितना हो सके फॉरवर्ड करो!", "gloss": "BREAKING: Poison has been mixed into {city}'s water supply! The media won't show this. Forward as much as you can!", "tags": ["Breaking", "Viral"]},
         {"lang": "hi", "text": "सावधान! {city} में बच्चा चोर गिरोह घूम रहा है। अनजान गाड़ी दिखे तो तुरंत सबको बताओ", "gloss": "Warning! A child-kidnapper gang is roaming {city}. If you see an unknown vehicle, alert everyone immediately", "tags": ["Alert", "{city}"]},
         {"lang": "hi", "text": "सच्चाई जो कोई नहीं दिखाएगा: {official} ने {city} का पैसा विदेश भेजा है। डिलीट होने से पहले शेयर करो", "gloss": "The truth no one will show: {official} sent {city}'s money abroad. Share before it gets deleted", "tags": ["Exposed"]},
@@ -101,6 +108,17 @@ TEMPLATES = {
         {"lang": "en", "text": "EXPOSED: {group} are secretly planning to take over the {city} municipal council. Leaked document shows everything. Share before it's deleted!", "gloss": "EXPOSED: {group} are secretly planning to take over the {city} municipal council. Leaked document shows everything. Share before it's deleted!", "tags": ["Exposed", "Leaked"]},
         {"lang": "en", "text": "Government hiding it: the new phone towers in {city} are causing bird deaths and cancer. Wake up people! 100% true.", "gloss": "Government hiding it: the new phone towers in {city} are causing bird deaths and cancer. Wake up people! 100% true.", "tags": ["WakeUp", "Truth"]},
     ],
+}
+
+# Ground-truth sentiment per theme, for the live accuracy KPI on /api/stats.
+# `everyday` is None because those templates carry their own `tone` — the theme
+# alone does not determine whether a post about city life is positive or merely
+# informational.
+THEME_TONE = {
+    "everyday": None,
+    "hostile": "negative",
+    "mobilization": "negative",
+    "rumor": "negative",
 }
 
 LANG_NAMES = {"hi": "Hindi", "gu": "Gujarati", "hing": "Hinglish", "en": "English"}

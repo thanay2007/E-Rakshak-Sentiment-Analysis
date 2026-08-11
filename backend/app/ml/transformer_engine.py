@@ -1,38 +1,55 @@
-"""Full-mode NLP engine — transformer models, loaded once (singleton) at first use.
+"""Model #1 of the ensemble — the transformer stack, loaded once at first use.
 
-Model stack (all swappable via the constants below):
-  • Threat classification: the fine-tuned model saved by ml/train.py
-    (google/muril-base-cased or xlm-roberta-base head) if present in
-    ml/models/threat-classifier/, otherwise zero-shot
-    joeddav/xlm-roberta-large-xnli with the 4 SENTINEL labels as candidates.
-  • Sentiment: cardiffnlp/twitter-xlm-roberta-base-sentiment
-  • Toxicity:  unitary/multilingual-toxic-xlm-roberta (fallback: keep lite toxicity)
+Model stack:
+  • Sentiment: the MuRIL head fine-tuned by ml/train_sentiment.py if present in
+    ml/models/sentiment-classifier/, otherwise the generic
+    cardiffnlp/twitter-xlm-roberta-base-sentiment.
+  • Toxicity:  unitary/multilingual-toxic-xlm-roberta (optional — falls back to
+    the lite toxicity heuristic when unavailable).
+
+The four-class threat classifier that used to live here is gone. A sentiment
+model has no basis for asserting that a post *is* incitement or *is* fake news;
+those are investigative conclusions, not properties of the text's tone. What
+remains is the judgement the model can actually defend: how positive or
+negative the post is, and how abusive its language is.
+
+**Context awareness.** `sentiment_votes_batch` is fed
+`ml.context.model_input(text)` — the post prefixed with its discourse tags —
+which is exactly what train_sentiment.py trains on. MuRIL sees the tags as
+tokens and attends over them like any other, so "[ctx1 rep cond long]" shifts
+the representation of a relayed hypothetical away from a first-person assertion
+carrying the same words.
 
 Everything degrades gracefully: any load/inference failure falls back to the
-lite engine, so NLP_MODE=full can never break the demo. Batched inference via
-the HF pipeline batch API; keep LIGHTWEIGHT=true semantics by simply staying
-in lite mode on low-resource machines.
+lite engine, so NLP_MODE=full can never break the console.
 """
 from __future__ import annotations
 
 import logging
 
 from app.config import settings
+from app.ml.context import CONTEXT_PREFIX_VERSION, TextContext, model_input
 from app.ml.device import get_device
 
 log = logging.getLogger("sentinel.ml")
 
-ZERO_SHOT_MODEL = "joeddav/xlm-roberta-large-xnli"
 SENTIMENT_MODEL = "cardiffnlp/twitter-xlm-roberta-base-sentiment"
 TOXICITY_MODEL = "unitary/multilingual-toxic-xlm-roberta"
-FINE_TUNED_DIR = settings.MODELS_DIR / "threat-classifier"
 FINE_TUNED_SENT_DIR = settings.MODELS_DIR / "sentiment-classifier"
 
-CANDIDATE_LABELS = ["Incitement to Violence", "Inflammatory", "Fake News", "Neutral"]
-# Hypothesis phrasing helps XNLI zero-shot a lot for this domain:
-HYPOTHESIS = "This social media post is {}."
+LABELS = ("negative", "neutral", "positive")
+# cardiffnlp emits LABEL_0/1/2; the fine-tune emits the words. Normalize both.
+_ALIASES = {
+    "label_0": "negative", "label_1": "neutral", "label_2": "positive",
+    "neg": "negative", "neu": "neutral", "pos": "positive",
+}
 
 _engine: "TransformerEngine | None" = None
+
+
+def _canon(label: str) -> str:
+    l = label.strip().lower()
+    return _ALIASES.get(l, l)
 
 
 class TransformerEngine:
@@ -50,77 +67,84 @@ class TransformerEngine:
         self.device = device
         log.info("Loading transformer models on device: %s", device)
 
-        self.fine_tuned = FINE_TUNED_DIR.exists()
-        if self.fine_tuned:
-            log.info("Loading fine-tuned threat classifier from %s", FINE_TUNED_DIR)
-            self.clf = hf_pipeline("text-classification", model=str(FINE_TUNED_DIR),
-                                   tokenizer=str(FINE_TUNED_DIR), top_k=None, truncation=True,
-                                   device=device)
-        else:
-            log.info("Loading zero-shot classifier %s", ZERO_SHOT_MODEL)
-            self.clf = hf_pipeline("zero-shot-classification", model=ZERO_SHOT_MODEL, truncation=True,
-                                   device=device)
-
         # Prefer the MuRIL sentiment head fine-tuned by ml/train_sentiment.py on
         # real en/hi/gu/Hinglish/Gujlish corpora; fall back to the generic
         # cardiffnlp multilingual model when no fine-tune has been run yet.
-        if FINE_TUNED_SENT_DIR.exists():
+        self.fine_tuned = FINE_TUNED_SENT_DIR.exists()
+        # Which context scheme the checkpoint was fine-tuned under. Written by
+        # train_sentiment.py; absent on a checkpoint from before the prefix
+        # existed, which is then served raw text — see `_prepare`.
+        self.context_version = ""
+        marker = FINE_TUNED_SENT_DIR / "sentinel_context.json"
+        if marker.exists():
+            try:
+                import json
+                self.context_version = json.loads(
+                    marker.read_text(encoding="utf-8")).get("context_version", "")
+            except Exception:
+                self.context_version = ""
+        if self.fine_tuned and self.context_version != CONTEXT_PREFIX_VERSION:
+            log.warning(
+                "Fine-tuned sentiment checkpoint at %s predates the current "
+                "context prefix (checkpoint=%r, expected=%r). Serving it on raw "
+                "text so its predictions stay valid — retrain with "
+                "`python -m app.ml.train_sentiment` to make it context-aware.",
+                FINE_TUNED_SENT_DIR, self.context_version or "none",
+                CONTEXT_PREFIX_VERSION)
+        if self.fine_tuned:
             log.info("Loading fine-tuned sentiment model from %s", FINE_TUNED_SENT_DIR)
             self.sent = hf_pipeline("text-classification", model=str(FINE_TUNED_SENT_DIR),
-                                    tokenizer=str(FINE_TUNED_SENT_DIR), top_k=None, truncation=True,
-                                    device=device)
+                                    tokenizer=str(FINE_TUNED_SENT_DIR), top_k=None,
+                                    truncation=True, device=device)
         else:
-            self.sent = hf_pipeline("text-classification", model=SENTIMENT_MODEL, top_k=None, truncation=True,
-                                    device=device)
+            log.info("No fine-tune on disk — serving %s", SENTIMENT_MODEL)
+            self.sent = hf_pipeline("text-classification", model=SENTIMENT_MODEL,
+                                    top_k=None, truncation=True, device=device)
         try:
-            self.tox = hf_pipeline("text-classification", model=TOXICITY_MODEL, top_k=None, truncation=True,
-                                   device=device)
+            self.tox = hf_pipeline("text-classification", model=TOXICITY_MODEL,
+                                   top_k=None, truncation=True, device=device)
         except Exception:  # model optional
             log.warning("Toxicity model unavailable; lite toxicity stays active")
             self.tox = None
 
-    # ── classification ────────────────────────────────────────────────────
-    def classify_batch(self, texts: list[str]) -> list[dict]:
-        if self.fine_tuned:
-            outs = self.clf(texts, batch_size=16)
-            results = []
-            for scores in outs:
-                probs = {d["label"]: round(d["score"], 4) for d in scores}
-                label = max(probs, key=probs.get)
-                results.append({"label": label, "confidence": probs[label], "probs": probs})
-            return results
-        outs = self.clf(texts, CANDIDATE_LABELS, hypothesis_template=HYPOTHESIS,
-                        multi_label=False, batch_size=8)
-        if isinstance(outs, dict):
-            outs = [outs]
-        return [
-            {
-                "label": o["labels"][0],
-                "confidence": round(o["scores"][0], 4),
-                "probs": {l: round(s, 4) for l, s in zip(o["labels"], o["scores"])},
-            }
-            for o in outs
-        ]
+    # ── sentiment ─────────────────────────────────────────────────────────
+    def _prepare(self, texts: list[str],
+                 contexts: list[TextContext] | None) -> list[str]:
+        """Render the model input, or pass raw text to a checkpoint that was
+        never trained on the prefix (the generic cardiffnlp model included —
+        it has no idea what `[ctx1 q self short]` means)."""
+        if not self.fine_tuned or self.context_version != CONTEXT_PREFIX_VERSION:
+            return list(texts)
+        if contexts is not None:
+            return [model_input(t, c) for t, c in zip(texts, contexts)]
+        return [model_input(t) for t in texts]
 
-    def sentiment_batch(self, texts: list[str]) -> list[tuple[str, float]]:
-        return [(v["label"], v["value"]) for v in self.sentiment_votes_batch(texts)]
+    def sentiment_votes_batch(self, texts: list[str],
+                              contexts: list[TextContext] | None = None) -> list[dict]:
+        """Sentiment for the ensemble: label, numeric value [-1,1], winning-class
+        confidence, and full per-class probabilities.
 
-    def sentiment_votes_batch(self, texts: list[str]) -> list[dict]:
-        """Richer sentiment output for the ensemble: label, numeric value
-        [-1,1], winning-class confidence, and full per-class probabilities."""
-        outs = self.sent(texts, batch_size=16)
+        `texts` are RAW post texts; the context prefix is applied here so the
+        served input matches the trained input exactly.
+        """
+        outs = self.sent(self._prepare(texts, contexts), batch_size=16)
         results = []
         for scores in outs:
-            by = {d["label"].lower(): d["score"] for d in scores}
-            value = by.get("positive", 0) - by.get("negative", 0)  # [-1, 1]
-            label = max(by, key=by.get)
+            by = {_canon(d["label"]): d["score"] for d in scores}
+            for l in LABELS:
+                by.setdefault(l, 0.0)
+            value = by["positive"] - by["negative"]  # [-1, 1]
+            label = max(LABELS, key=lambda l: by[l])
             results.append({
                 "label": label,
                 "value": round(value, 3),
                 "confidence": round(by[label], 4),
-                "probs": {k: round(v, 4) for k, v in by.items()},
+                "probs": {l: round(by[l], 4) for l in LABELS},
             })
         return results
+
+    def sentiment_batch(self, texts: list[str]) -> list[tuple[str, float]]:
+        return [(v["label"], v["value"]) for v in self.sentiment_votes_batch(texts)]
 
     def toxicity_batch(self, texts: list[str]) -> list[float] | None:
         if self.tox is None:
@@ -128,7 +152,8 @@ class TransformerEngine:
         outs = self.tox(texts, batch_size=16)
         results = []
         for scores in outs:
-            toxic = max((d["score"] for d in scores if "toxic" in d["label"].lower()), default=0.0)
+            toxic = max((d["score"] for d in scores if "toxic" in d["label"].lower()),
+                        default=0.0)
             results.append(round(toxic, 3))
         return results
 

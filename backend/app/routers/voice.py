@@ -37,6 +37,7 @@ from fastapi import (APIRouter, HTTPException, WebSocket, WebSocketDisconnect,
 from app.config import settings
 from app.database import session_scope
 from app.security.deps import authenticate
+from app.services.voice import realtime
 from app.services.voice import types as voice_types
 from app.services.voice.session import SessionConfig, VoiceSession
 from app.services.voice.transformer import stt as stt_module
@@ -145,14 +146,69 @@ async def voice_channel(ws: WebSocket) -> None:
             except Exception:
                 log.exception("failed to emit %s", packet.name)
 
-        session = VoiceSession(user=user, db=db, config=config, emit=emit)
+        # One engine or the other, chosen once per connection. The realtime one
+        # is a single Gemini Live stream; the cascade is the VAD → STT → LLM →
+        # TTS pipeline. They present the same surface to `_talk` below, so the
+        # receive loop never learns which it got.
+        #
+        # Gemini Live is preferred, and not narrowly: it collapses recognition,
+        # reasoning and synthesis into one stream and judges the end of a turn
+        # from the words rather than from silence. But preferring it is not the
+        # same as depending on it. If the Live socket will not open — quota
+        # gone, alias retired upstream, endpoint unreachable — this connection
+        # gets the cascade instead, which recognises with Deepgram's streaming
+        # socket and answers with the same Gemini assistant the typed console
+        # uses. A slower microphone beats a dead one, and the officer is told
+        # which they have by the InitializationCompleted packet either way.
+        session = None
+        connected = False
+        failure: str = ""
+        if realtime.available():
+            candidate = realtime.GeminiLiveSession(
+                user=user, db=db, config=config, emit=emit)
+            try:
+                await candidate.connect()
+            except Exception as exc:
+                failure = f"{type(exc).__name__}: {exc}"
+                log.warning("realtime engine failed to start (%s) — this "
+                            "session falls back to the cascade for %s",
+                            failure, user.username)
+                await candidate.close("connect_failed")
+            else:
+                session, connected = candidate, True
+                log.info("voice session open user=%s engine=gemini_live rate=%d",
+                         user.username, config.input_sample_rate)
+        elif settings.VOICE_REALTIME_REQUIRED:
+            failure = ("realtime is unavailable: no Gemini key, the SDK is "
+                       "missing, or it is in its post-failure cooldown")
+            log.warning("realtime unavailable and the cascade is disabled (%s)",
+                        failure)
+
+        # `VOICE_REALTIME_REQUIRED` turns the quiet downgrade into a loud stop.
+        # The cascade is the better default on a live shift — a slower
+        # microphone beats a dead one — but a downgrade nobody notices is how a
+        # Gemini fault survives for days as "the assistant feels worse", so the
+        # setting exists to make the failure impossible to miss instead.
+        if session is None and settings.VOICE_REALTIME_REQUIRED:
+            log.error("voice session refused for %s: realtime required but "
+                      "unavailable (%s)", user.username, failure)
+            await ws.send_json({
+                "type": "error",
+                "message": ("The realtime voice engine could not start and the "
+                            "fallback is switched off. " + failure)})
+            await ws.close(code=status.WS_1011_INTERNAL_ERROR)
+            return
+
+        if session is None:
+            session = VoiceSession(user=user, db=db, config=config, emit=emit)
+            log.info("voice session open user=%s engine=cascade stt=%s tts=%s "
+                     "rate=%d", user.username, session.stt.name,
+                     session.tts.name, config.input_sample_rate)
         _sessions[id(ws)] = session
-        log.info("voice session open user=%s stt=%s tts=%s rate=%d",
-                 user.username, session.stt.name, session.tts.name,
-                 config.input_sample_rate)
 
         try:
-            await session.connect()
+            if not connected:
+                await session.connect()
             await _talk(ws, session)
         except WebSocketDisconnect:
             pass
@@ -209,10 +265,20 @@ async def _talk(ws: WebSocket, session: VoiceSession) -> None:
             # assistant's own voice for the whole tail of every answer.
             session.set_playback(bool(command.get("active")))
         elif kind == "interrupt":
-            await session.on_packet(voice_types.InterruptionDetectedPacket(
-                context_id=session.state.context_id, reason="client"))
+            # The client is half-duplex — it stops sending while the speakers
+            # are live, so the assistant never hears itself — which means the
+            # browser is the only component that can notice an officer talking
+            # over the answer. Both engines are told; they act on it
+            # differently.
+            if hasattr(session, "barge_in"):
+                await session.barge_in()
+            else:
+                await session.on_packet(voice_types.InterruptionDetectedPacket(
+                    context_id=session.state.context_id, reason="client"))
         elif kind == "ping":
-            session.state.touch()
+            state = getattr(session, "state", None)
+            if state is not None:
+                state.touch()
             await ws.send_json({"type": "pong"})
         elif kind == "close":
             return
@@ -226,10 +292,26 @@ def voice_status() -> dict:
     provider availability and aggregate latency, never a transcript, a
     username or anything an officer said.
     """
+    live = realtime.available()
     return {
         "enabled": settings.VOICE_ENABLED,
         "active_sessions": len(_sessions),
         "max_sessions": settings.VOICE_MAX_CONCURRENT_SESSIONS,
+        # Which engine a new connection would get, and on what. The two have
+        # very different latency, so a console that reports "voice is on"
+        # without saying which one is hiding the thing worth knowing.
+        "engine": "gemini_live" if live else "cascade",
+        "realtime": {"available": live,
+                     "model": settings.GEMINI_LIVE_MODEL if live else "",
+                     # When true there is no second engine: a failed Live
+                     # connect is a refused voice session, not a downgrade.
+                     "required": settings.VOICE_REALTIME_REQUIRED,
+                     # Non-zero means the preferred engine is being rested
+                     # after repeated failures and voice is currently running
+                     # on the cascade. Worth reporting rather than inferring
+                     # from `available: false`, which otherwise looks
+                     # identical to "no Gemini key configured".
+                     "cooldown_seconds": round(realtime.cooldown_remaining(), 1)},
         "configured": {
             "stt": settings.VOICE_STT_PROVIDER,
             "tts": settings.VOICE_TTS_PROVIDER,
@@ -250,5 +332,8 @@ def voice_status() -> dict:
         "audio": {"sample_rate": voice_types.SAMPLE_RATE,
                   "frame_ms": voice_types.FRAME_MS,
                   "frame_bytes": voice_types.FRAME_BYTES},
-        "latency": [s.telemetry.averages() for s in _sessions.values()],
+        # Only the cascade measures per-stage latency; the realtime engine has
+        # no stages to measure.
+        "latency": [s.telemetry.averages() for s in _sessions.values()
+                    if hasattr(s, "telemetry")],
     }

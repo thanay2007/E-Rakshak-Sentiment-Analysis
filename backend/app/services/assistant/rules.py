@@ -69,7 +69,7 @@ def _say_alerts(p: dict) -> str:
         return f"No alerts{where} in {_window(p['window_hours'])}."
     lead = f"{plural(total, 'alert')}{where} in {_window(p['window_hours'])}."
     spoken = [f"{a['severity']}, {a['title']}, in {a['location']}, "
-              f"scoring {round(a['threat_score'])}" for a in items[:3]]
+              f"scoring {round(a['concern_score'])}" for a in items[:3]]
     return lead + " " + ". ".join(spoken) + "."
 
 
@@ -92,8 +92,8 @@ def _say_top_post(p: dict) -> str:
     # The score, label, platform and account are spoken; the post's own words
     # are on screen and stay there. They are the suspect's words, not the
     # system's, and that distinction should not be lost in audio.
-    return (f"Highest threat{where} is {round(top['threat_score'])} out of 100, "
-            f"labelled {top['threat_label']}, from "
+    return (f"Highest threat{where} is {round(top['concern_score'])} out of 100, "
+            f"labelled {top['sentiment_label']}, from "
             f"{top['author_handle'] or 'an unknown account'} on {top['platform']}. "
             f"It's on screen.")
 
@@ -111,7 +111,7 @@ def _say_breakdown(p: dict) -> str:
 def _say_city(p: dict) -> str:
     return (f"{p['city_resolved_to']}, {_window(p['window_hours'])}: "
             f"{plural(p['matching_posts'], 'post')} monitored, average threat "
-            f"score {round(p['average_threat_score'])}.")
+            f"score {round(p['average_concern_score'])}.")
 
 
 def _say_watchlist(p: dict) -> str:
@@ -128,7 +128,7 @@ def _say_cities(p: dict) -> str:
     if not rows:
         return "No city activity in that window."
     worst = rows[0]
-    named = ", ".join(f"{r['city']} at {round(r['average_threat_score'])}"
+    named = ", ".join(f"{r['city']} at {round(r['average_concern_score'])}"
                       for r in rows[:4])
     return (f"Average threat score by city over {_window(p['window_hours'])}: "
             f"{named}. {worst['city']} is highest.")

@@ -1,13 +1,13 @@
-import { Activity, Flame, Globe2, Hash, MapPinned, Sparkles, TrendingUp } from "lucide-react";
-import { useState } from "react";
-import { LanguageChip, ThreatBadge } from "../components/Badges";
+import { Activity, Flame, Globe2, Hash, MapPinned, TrendingUp } from "lucide-react";
+import { LanguageChip, SentimentBadge } from "../components/Badges";
 import GlassCard, { SectionTitle } from "../components/GlassCard";
 import GujaratMap from "../components/GujaratMap";
 import { SkeletonChart, SkeletonRow } from "../components/Skeletons";
 import Sparkline from "../components/Sparkline";
-import { ACCENT, THREAT_COLORS } from "../data/constants";
+import { ACCENT } from "../data/constants";
 import { useGsapReveal } from "../hooks/useGsapReveal";
 import { usePolling } from "../hooks/usePolling";
+import { useUrlFilters } from "../hooks/useUrlFilters";
 import { api } from "../services/api";
 import type { TermStat } from "../services/api";
 
@@ -29,7 +29,7 @@ function TermRow({ t }: { t: TermStat }) {
     <div className="reveal-item flex items-center justify-between gap-3 rounded-xl border border-white/[0.06] bg-base-950/60 px-3.5 py-2.5 backdrop-blur-md transition-all hover:border-white/15 hover:bg-base-950/80">
       <div className="flex items-center gap-2.5 min-w-0 flex-1">
         <span className="truncate font-mono text-xs font-bold text-slate-100">{t.term}</span>
-        <ThreatBadge label={t.top_label} />
+        <SentimentBadge label={t.top_label} />
       </div>
 
       <div className="hidden sm:block">
@@ -53,7 +53,10 @@ function TermRow({ t }: { t: TermStat }) {
 }
 
 export default function Trends() {
-  const [hours, setHours] = useState(24);
+  // URL-backed so the assistant can open this page on a given window.
+  const { getNumber, set } = useUrlFilters();
+  const hours = getNumber("hours", 24);
+  const setHours = (value: number) => set("hours", value);
   const { data, loading } = usePolling(() => api.trends(hours), 45000, [hours]);
   const revealRef = useGsapReveal<HTMLDivElement>(`${hours}-${data?.total_posts ?? 0}`);
 
@@ -141,15 +144,15 @@ export default function Trends() {
                   <div
                     key={r.name}
                     className="reveal-item relative overflow-hidden rounded-xl border p-3 backdrop-blur-md transition-all hover:scale-[1.02]"
-                    style={{ borderColor: `${heat(r.avg_threat)}40`, backgroundColor: `${heat(r.avg_threat)}0f` }}
+                    style={{ borderColor: `${heat(r.avg_concern)}40`, backgroundColor: `${heat(r.avg_concern)}0f` }}
                   >
                     <div
                       className="pointer-events-none absolute -right-4 -top-4 h-16 w-16 rounded-full blur-xl"
-                      style={{ backgroundColor: `${heat(r.avg_threat)}30` }}
+                      style={{ backgroundColor: `${heat(r.avg_concern)}30` }}
                     />
                     <div className="text-xs font-bold text-slate-100">{r.name}</div>
-                    <div className="mt-1 font-mono text-xl font-black" style={{ color: heat(r.avg_threat) }}>
-                      {r.avg_threat}
+                    <div className="mt-1 font-mono text-xl font-black" style={{ color: heat(r.avg_concern) }}>
+                      {r.avg_concern}
                       <span className="ml-1 text-[10px] font-normal text-slate-400">/100</span>
                     </div>
                     <div className="mt-0.5 font-mono text-[10.5px] text-slate-400">
@@ -158,7 +161,7 @@ export default function Trends() {
                     <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
                       <div
                         className="h-full rounded-full"
-                        style={{ width: `${Math.min(100, r.avg_threat * 1.4)}%`, backgroundColor: heat(r.avg_threat) }}
+                        style={{ width: `${Math.min(100, r.avg_concern * 1.4)}%`, backgroundColor: heat(r.avg_concern) }}
                       />
                     </div>
                   </div>

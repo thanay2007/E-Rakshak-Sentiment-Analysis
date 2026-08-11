@@ -1,6 +1,7 @@
 import { ExternalLink, Radio, TrendingUp } from "lucide-react";
 import GlassCard, { SectionTitle } from "./GlassCard";
 import { PlatformIcon } from "./Badges";
+import { usePostDetail } from "./PostDetailProvider";
 import { usePolling } from "../hooks/usePolling";
 import { api } from "../services/api";
 import { safeHref } from "../lib/safeUrl";
@@ -9,6 +10,7 @@ import { safeHref } from "../lib/safeUrl";
  *  uncorroborated source — the window to catch a rumour before it goes viral. */
 export default function EmergingPanel() {
   const { data } = usePolling(() => api.emerging(24), 45000);
+  const { openPostId } = usePostDetail();
   const items = data?.items ?? [];
 
   return (
@@ -38,7 +40,16 @@ export default function EmergingPanel() {
             {items.map((it) => (
               <div
                 key={it.post_id}
-                className="flex h-[215px] flex-col justify-between rounded-2xl border border-amber-500/25 bg-base-800/90 dark:bg-base-950/80 p-4 backdrop-blur-md transition-all hover:border-amber-500/50 hover:bg-base-800/95 dark:hover:bg-base-950/95 shadow-md"
+                role="button"
+                tabIndex={0}
+                onClick={() => openPostId(it.post_id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    openPostId(it.post_id);
+                  }
+                }}
+                className="flex h-[215px] cursor-pointer flex-col justify-between rounded-2xl border border-amber-500/25 bg-base-800/90 dark:bg-base-950/80 p-4 backdrop-blur-md transition-all hover:border-amber-500/50 hover:bg-base-800/95 dark:hover:bg-base-950/95 shadow-md"
               >
                 <div>
                   <div className="flex items-center justify-between gap-2 border-b border-white/[0.06] pb-2.5">
@@ -69,19 +80,23 @@ export default function EmergingPanel() {
                 </div>
 
                 <div className="flex items-center justify-between border-t border-white/[0.06] pt-2.5 text-[11px]">
-                  <span className="font-mono text-slate-400 text-[10.5px]">
+                  <span className="font-mono text-[10.5px] text-slate-400">
                     {it.source_count} single source
                   </span>
-                  {it.url && (
-                    <a
-                      href={safeHref(it.url)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 font-semibold text-accent hover:underline text-[11px]"
-                    >
-                      inspect source <ExternalLink size={11} />
-                    </a>
-                  )}
+                  <div className="flex items-center gap-2.5">
+                    {it.url && (
+                      <a
+                        href={safeHref(it.url)}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center gap-1 text-[11px] text-slate-400 hover:underline"
+                      >
+                        source <ExternalLink size={11} />
+                      </a>
+                    )}
+                    <span className="text-[11px] font-semibold text-accent">full detail →</span>
+                  </div>
                 </div>
               </div>
             ))}

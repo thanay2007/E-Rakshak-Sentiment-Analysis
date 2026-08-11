@@ -93,35 +93,61 @@ export default function ModelsPanel() {
         {data.ensemble.models.map((m, i) => <Card key={m.id} m={m} idx={i} />)}
       </div>
 
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        {/* threat model */}
-        <div className="rounded-xl border border-threat-high/25 bg-threat-high/[0.03] p-3">
+      {/* what "context" means here — the thing all three models share */}
+      {data.ensemble.context && (
+        <div className="mt-3 rounded-xl border border-sky-500/20 bg-sky-500/[0.03] p-3">
           <div className="flex items-center gap-2">
-            <ShieldCheck size={14} className="text-threat-high" />
-            <span className="text-[12.5px] font-semibold text-slate-100">{data.threat_model.name}</span>
+            <ShieldCheck size={14} className="text-sky-400" />
+            <span className="text-[12.5px] font-semibold text-slate-100">
+              Context handling ({data.ensemble.context.version})
+            </span>
           </div>
-          <p className="mt-1 text-[11px] leading-relaxed text-slate-400">{data.threat_model.approach}</p>
-          <div className="mt-1.5 flex flex-wrap gap-1">
-            {data.threat_model.labels.map((l) => (
-              <span key={l} className="rounded-md bg-white/[0.05] px-1.5 py-0.5 text-[9.5px] text-slate-400">{l}</span>
-            ))}
-          </div>
-          {data.threat_model.accuracy?.accuracy != null && (
-            <div className="mt-1.5 font-mono text-[10.5px] text-slate-500">
-              eval accuracy {(data.threat_model.accuracy.accuracy * 100).toFixed(0)}% ·{" "}
-              {data.threat_model.eval_samples} curated samples
-            </div>
-          )}
+          <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
+            <span className="font-semibold text-slate-300">In the model input: </span>
+            {data.ensemble.context.textual}
+          </p>
+          <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
+            <span className="font-semibold text-slate-300">After the vote: </span>
+            {data.ensemble.context.metadata}
+          </p>
         </div>
-        {/* verification */}
+      )}
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        {/* Groq final check */}
         <div className="rounded-xl border border-threat-neutral/25 bg-threat-neutral/[0.03] p-3">
           <div className="flex items-center gap-2">
             <CheckCircle2 size={14} className="text-threat-neutral" />
-            <span className="text-[12.5px] font-semibold text-slate-100">{data.verification.layer}</span>
+            <span className="text-[12.5px] font-semibold text-slate-100">{data.final_check.layer}</span>
+            {!data.final_check.enabled && (
+              <span className="rounded-md bg-white/[0.06] px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-slate-500">
+                no key
+              </span>
+            )}
           </div>
-          <p className="mt-1 text-[11px] leading-relaxed text-slate-400">{data.verification.role}</p>
+          <p className="mt-1 text-[11px] leading-relaxed text-slate-400">{data.final_check.role}</p>
+        </div>
+        {/* concern score */}
+        <div className="rounded-xl border border-accent/25 bg-accent/[0.03] p-3">
+          <div className="flex items-center gap-2">
+            <Layers size={14} className="text-accent" />
+            <span className="text-[12.5px] font-semibold text-slate-100">
+              {data.scoring.name} ({data.scoring.range})
+            </span>
+          </div>
+          <code className="mt-1 block overflow-x-auto whitespace-pre rounded-lg bg-black/30 p-2 font-mono text-[10px] leading-relaxed text-slate-400">
+            {data.scoring.formula}
+          </code>
+          <p className="mt-1 text-[11px] leading-relaxed text-slate-400">{data.scoring.note}</p>
         </div>
       </div>
+
+      {data.pipeline_eval?.accuracy != null && (
+        <p className="mt-2 font-mono text-[10.5px] text-slate-500">
+          End-to-end pipeline: {(data.pipeline_eval.accuracy * 100).toFixed(1)}% accuracy ·
+          macro-F1 {data.pipeline_eval.macro_f1?.toFixed(3)} on {data.pipeline_eval.samples} held-out samples
+        </p>
+      )}
 
       <p className="mt-2 text-right text-[10px] text-slate-600">
         Full write-up: docs/MODELS.md · figures read live from eval reports

@@ -211,7 +211,7 @@ export default function Sentinel() {
     const line =
       `Critical alert. ${newest.title}. ` +
       `${newest.location ? `In ${newest.location}. ` : ""}` +
-      `Threat score ${Math.round(newest.threat_score)}.${extra}`;
+      `Threat score ${Math.round(newest.concern_score)}.${extra}`;
     push({ role: "sentinel", text: line, intent: "alert" });
     void say(line);
   }, [liveAlerts, readAlerts, muted, push, say]);
@@ -610,14 +610,14 @@ function Evidence({ data }: { data?: Record<string, unknown> }) {
             {post.location && <span>· {post.location}</span>}
             <span
               className={`ml-auto rounded px-1 py-px font-semibold ${
-                post.threat_score >= 74
+                post.concern_score >= 74
                   ? "bg-red-500/15 text-red-300"
-                  : post.threat_score >= 65
+                  : post.concern_score >= 65
                     ? "bg-amber-500/15 text-amber-300"
                     : "bg-white/[0.06] text-slate-400"
               }`}
             >
-              {Math.round(post.threat_score)} · {post.threat_label}
+              {Math.round(post.concern_score)} · {post.sentiment_label}
             </span>
           </div>
           {post.text_excerpt && (

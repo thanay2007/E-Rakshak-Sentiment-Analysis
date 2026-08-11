@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Evaluate the ACTIVE NLP pipeline (lite or full — whatever NLP_MODE selects)
-on the held-out test set. Reports accuracy + per-category precision/recall/F1
-and a confusion matrix; writes ml/eval_report.json for the record.
+on the held-out test set. Reports accuracy + per-label precision/recall/F1 for
+negative/neutral/positive and a confusion matrix; writes ml/eval_report.json.
 
 Usage:  python -m app.ml.evaluate  (from backend/)
 
@@ -13,7 +13,7 @@ import json
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from app.config import THREAT_LABELS, settings
+from app.config import SENTIMENT_LABELS, settings
 from app.ml.make_dataset import build
 from app.ml.pipeline import get_pipeline
 from app.schemas import RawPost
@@ -28,7 +28,7 @@ def evaluate() -> dict:
     for i in range(0, len(rows), 64):
         chunk = rows[i:i + 64]
         raws = [RawPost(platform="X", author_handle="eval", text=r["text"]) for r in chunk]
-        preds.extend(e["threat_label"] for e in pipeline.enrich_batch(raws))
+        preds.extend(e["sentiment_label"] for e in pipeline.enrich_batch(raws))
 
     golds = [r["label"] for r in rows]
     confusion: dict[str, Counter] = defaultdict(Counter)
@@ -36,10 +36,10 @@ def evaluate() -> dict:
         confusion[g][p] += 1
 
     per_class = {}
-    for label in THREAT_LABELS:
+    for label in SENTIMENT_LABELS:
         tp = confusion[label][label]
         fn = sum(confusion[label].values()) - tp
-        fp = sum(confusion[g][label] for g in THREAT_LABELS if g != label)
+        fp = sum(confusion[g][label] for g in SENTIMENT_LABELS if g != label)
         prec = tp / (tp + fp) if tp + fp else 0.0
         rec = tp / (tp + fn) if tp + fn else 0.0
         f1 = 2 * prec * rec / (prec + rec) if prec + rec else 0.0
@@ -55,15 +55,15 @@ def evaluate() -> dict:
         "accuracy": round(accuracy, 4),
         "macro_f1": round(macro_f1, 4),
         "per_class": per_class,
-        "confusion_matrix": {g: dict(confusion[g]) for g in THREAT_LABELS},
+        "confusion_matrix": {g: dict(confusion[g]) for g in SENTIMENT_LABELS},
     }
 
-    print(f"\n{'Category':<26}{'Prec':>7}{'Rec':>7}{'F1':>7}{'N':>6}")
-    print("-" * 53)
+    print(f"\n{'Sentiment':<12}{'Prec':>7}{'Rec':>7}{'F1':>7}{'N':>6}")
+    print("-" * 39)
     for label, m in per_class.items():
-        print(f"{label:<26}{m['precision']:>7.3f}{m['recall']:>7.3f}{m['f1']:>7.3f}{m['support']:>6}")
-    print("-" * 53)
-    print(f"{'Accuracy':<26}{accuracy:>7.3%}   Macro-F1 {macro_f1:.3f}")
+        print(f"{label:<12}{m['precision']:>7.3f}{m['recall']:>7.3f}{m['f1']:>7.3f}{m['support']:>6}")
+    print("-" * 39)
+    print(f"{'Accuracy':<12}{accuracy:>7.3%}   Macro-F1 {macro_f1:.3f}")
 
     out = Path(__file__).parent / "eval_report.json"
     out.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")

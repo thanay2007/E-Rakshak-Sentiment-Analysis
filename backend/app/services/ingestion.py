@@ -13,7 +13,7 @@ from app.config import settings
 from app.database import session_scope
 from app.data.simulator import get_simulator
 from app.ml.geo import infer_city
-from app.ml.pipeline import get_pipeline
+from app.ml.pipeline import attach_evidence, get_pipeline
 from app.models import Alert, Post
 from app.schemas import RawPost
 from app.services.serializers import alert_to_dict, post_to_dict
@@ -28,6 +28,10 @@ def content_hash(raw: RawPost) -> str:
 
 
 def _make_post(raw: RawPost, nlp: dict, chash: str) -> Post:
+    # Underscore-prefixed keys are pipeline-internal scratch (see
+    # ml/pipeline.py) — they exist so the post-enrichment network stages can
+    # recompute the score, and are not columns.
+    nlp = {k: v for k, v in nlp.items() if not k.startswith("_")}
     # simulated posts carry their own gloss; live non-English posts get a Groq
     # machine translation during enrichment
     translation = nlp.pop("translation", "") or raw.translation
@@ -69,10 +73,17 @@ def _make_post(raw: RawPost, nlp: dict, chash: str) -> Post:
 
 
 def _maybe_alert(post: Post) -> Alert | None:
-    """Threat-score bands -> alert severity; critical alerts ship with an
-    auto-generated escalation template (the 'automated escalation' bonus)."""
-    score = post.threat_score
+    """Concern-score bands -> alert severity; critical alerts ship with an
+    auto-generated escalation template.
+
+    A positive post never raises an alert regardless of how far it travelled —
+    the score already weights negativity, but the guard is explicit so a viral
+    celebration cannot reach a band through reach alone.
+    """
+    score = post.concern_score
     signals = set(post.hate_flags or [])
+    if post.sentiment_label == "positive":
+        return None
     if score >= settings.CRITICAL_THRESHOLD:
         severity = "critical"
     elif score >= settings.ALERT_THRESHOLD:
@@ -82,29 +93,31 @@ def _maybe_alert(post: Post) -> Alert | None:
     else:
         return None
 
+    title = (f"Negative sentiment ({int(round(score))}/100) — "
+             f"{post.location or post.platform}")
+    snippet = (post.translation or post.text)[:160]
+
     escalation = {}
     if severity == "critical":
         from app.services.report_service import escalation_template
         from app.services.notifications import send_critical_alert_notification
 
         escalation = escalation_template(post)
-        snippet = (post.translation or post.text)[:160]
         send_critical_alert_notification(
-            alert_title=f"{post.threat_label} — {post.location or post.platform}",
+            alert_title=title,
             alert_summary=snippet,
             location=post.location
         )
 
-    snippet = (post.translation or post.text)[:160]
     return Alert(
         post_id=post.id,
         severity=severity,
-        title=f"{post.threat_label} — {post.location or post.platform}",
+        title=title,
         summary=snippet,
-        category=post.threat_label,
+        category=post.sentiment_label,
         location=post.location,
         platform=post.platform,
-        threat_score=score,
+        concern_score=score,
         escalation=escalation,
     )
 
@@ -176,16 +189,21 @@ async def ingest(raws: list[RawPost]) -> int:
     # Model inference: CPU-bound, so off the loop.
     enriched = await asyncio.to_thread(get_pipeline().enrich_batch, fresh_raws)
 
-    # Network enrichment, with no database connection held.
-    # LLM second opinion on the risky subset BEFORE alerts fire (no-op
-    # without GROQ_API_KEY) — see services/groq_verifier.py
+    # Network enrichment, with no database connection held. Order matters:
+    # corroboration first so the news result is on the record before the LLM
+    # reads the post, then the final check (which can move the label and
+    # therefore the score) BEFORE alerts fire, then the English gloss.
+    from app.services.fact_check import corroborate_enriched
+    await corroborate_enriched(texts, enriched)
+    # Groq's final check on the 3-model verdict (no-op without GROQ_API_KEY)
     from app.services.groq_verifier import translate_enriched, verify_enriched
     await verify_enriched(texts, enriched)
     # English gloss for every non-English post (Groq MT)
     await translate_enriched(texts, enriched)
-    # Cross-source corroboration of suspected fake news (Google News RSS)
-    from app.services.fact_check import corroborate_enriched
-    await corroborate_enriched(texts, enriched)
+
+    # One rebuild of the evidence trail now that every source has reported.
+    for nlp in enriched:
+        attach_evidence(nlp)
 
     post_msgs, alert_msgs = await asyncio.to_thread(_store, fresh, enriched)
 
@@ -214,6 +232,10 @@ def seed_if_empty() -> int:
             chunk = raws[i:i + 200]
             enriched = pipeline.enrich_batch(chunk)
             for raw, nlp in zip(chunk, enriched):
+                # seeding is offline: no news lookup and no LLM check, so the
+                # evidence trail is the local models' alone — but it must still
+                # be there, or seeded posts open with an empty evidence panel
+                attach_evidence(nlp)
                 chash = content_hash(raw)
                 if chash in seen:
                     continue

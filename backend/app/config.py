@@ -143,12 +143,70 @@ class Settings(BaseSettings):
 
     # Recognition. "browser" needs no key and runs in the client; the rest are
     # server-side and are tried in fallback order when the chosen one has no
-    # key. Groq Whisper is the default because the key already exists for the
-    # rest of the product and it handles Gujarati and code-mixed speech well.
-    VOICE_STT_PROVIDER: str = "groq_whisper"
+    # key.
+    #
+    # "auto" prefers Deepgram's streaming socket when DEEPGRAM_API_KEY is set
+    # and falls back to Groq Whisper otherwise. That preference is the single
+    # biggest lever on how the assistant *feels*: every other recogniser here
+    # is batch, and a batch recogniser cannot begin until the officer has
+    # stopped talking, so a five-second question costs its own length again
+    # before the assistant has read a word of it. Streaming also brings its own
+    # endpointing, which judges "finished" far better than the energy VAD and
+    # is why half-questions used to get answered.
+    # Realtime engine (services/voice/realtime.py). When on and GEMINI_API_KEY
+    # is set, the whole cascade below — VAD, recogniser, LLM, aggregator,
+    # synthesiser — is replaced by one bidirectional Gemini Live stream: the
+    # microphone goes to the model and the model's own voice comes back.
+    #
+    # It is the default because every stage of a cascade adds a wait in the one
+    # place a human notices, and because Gemini's turn detection understands
+    # the words. An energy threshold cannot tell a thinking pause from a
+    # finished question, which is why half-questions used to get answered.
+    #
+    # Turning it off falls back to the cascade, which still works and is the
+    # only option without a Gemini key.
+    VOICE_REALTIME_ENABLED: bool = True
+    #: Live-API model. Must be one that supports bidiGenerateContent with AUDIO
+    #: output — the plain chat aliases do not. Verified against this key:
+    #: gemini-3.1-flash-live-preview, gemini-2.5-flash-native-audio-latest.
+    GEMINI_LIVE_MODEL: str = "gemini-3.1-flash-live-preview"
+    #: Tokens the realtime model may spend thinking before it speaks. 0 is
+    #: measured as the right answer for this assistant — see realtime.py — and
+    #: a negative value leaves the model's own default alone.
+    VOICE_REALTIME_THINKING_BUDGET: int = 0
+    #: How many consecutive realtime failures mean "stop trying for a while".
+    #: Two rather than one because a single dropped socket is normal and the
+    #: browser reconnects transparently; two in a row is an outage, a retired
+    #: model alias or an exhausted quota, and all three want the cascade.
+    VOICE_REALTIME_FAILURE_THRESHOLD: int = 2
+    #: How long new sessions get the cascade after that. Long enough that a
+    #: reconnect loop cannot defeat it, short enough that a quota window
+    #: reopening is picked up without anybody restarting the server.
+    VOICE_REALTIME_COOLDOWN_SECONDS: float = 180.0
+    #: Refuse the cascade entirely: if the Live socket will not open, the voice
+    #: connection fails loudly instead of quietly downgrading.
+    #:
+    #: On, because the cascade is not merely slower — it ends a turn on a 350 ms
+    #: pause, so it answers half-questions, and an assistant that confidently
+    #: replies to the first half of a sentence is worse than one that is plainly
+    #: unavailable. The downgrade was also invisible until recently, which is
+    #: how a Gemini fault survived as "the assistant feels worse" instead of an
+    #: error anybody could act on.
+    #:
+    #: Set to false to restore the fallback. Worth doing for a deployment that
+    #: must keep a microphone during a Gemini outage or an exhausted quota —
+    #: `GEMINI_LIVE_MODEL` is a *preview* alias and those do get retired — where
+    #: a degraded assistant beats a dead panel.
+    VOICE_REALTIME_REQUIRED: bool = True
+
+    VOICE_STT_PROVIDER: str = "auto"
     VOICE_STT_MODEL: str = "whisper-large-v3-turbo"
-    VOICE_STT_LOCAL_MODEL: str = "base"          # openai-whisper size
     VOICE_STT_TIMEOUT: float = 30.0
+    #: Deepgram's multilingual streaming model. nova-3 handles code-mixed
+    #: Gujarati/Hindi/English in one utterance, which is the normal case in a
+    #: Gujarat control room and the thing a single pinned language breaks.
+    DEEPGRAM_STREAM_MODEL: str = "nova-3"
+    DEEPGRAM_STREAM_LANGUAGE: str = "multi"
     # "auto" leaves the language unpinned. Pinning to en makes Whisper
     # transliterate Gujarati into nonsense English rather than transcribing it,
     # and officers switch language mid-sentence.
@@ -214,23 +272,34 @@ class Settings(BaseSettings):
     ELEVENLABS_VOICE_ID: str = ""
     ELEVENLABS_MODEL: str = "eleven_turbo_v2_5"
 
-    # Local neural voice (kokoro-onnx). Weights are not shipped and are not
-    # fetched on demand — see app/services/voice/bootstrap.py. Until they are
-    # on disk the provider reports unavailable and the ladder walks past it,
-    # so an unprepared machine still talks, just through the browser.
-    KOKORO_MODEL_DIR: str = str(BASE_DIR / "models" / "kokoro")
-    #: Blank follows the session language: an American voice for English, a
-    #: Hindi one for Hindi or Gujarati. Set it to pin one regardless.
-    KOKORO_VOICE: str = ""
-    # A separately installed Piper HTTP server, e.g.
-    # http://127.0.0.1:5000 — deliberately out-of-process, because piper-tts
-    # is GPL-3.0 and importing it would relicense this backend.
-    PIPER_HTTP_URL: str = ""
-    PIPER_VOICE: str = ""
 
     NLP_MODE: str = "full"  # full | lite
-    ALERT_THRESHOLD: int = 65
-    CRITICAL_THRESHOLD: int = 74
+    # Concern bands. Recalibrated against the live distribution: the previous
+    # 65/74 pair was unreachable in practice — across 8,203 scored posts the
+    # highest concern score ever produced was 66.1, so ALERT caught one post
+    # and CRITICAL caught none. A band nothing can enter is indistinguishable
+    # from a quiet week, which is the worst way for a monitoring tool to fail.
+    #
+    # The formula was not at fault and is unchanged: every component is
+    # observed at its own ceiling somewhere in the corpus (negativity 50/50,
+    # toxicity 21.9/22, reach 18/18). What no single post has is all of them at
+    # once — only 33 posts are both strongly negative and toxic, and 85% of
+    # those were effectively unread, so the reach term contributes almost
+    # nothing to exactly the posts the bands were built to catch.
+    #
+    # These values put the funnel where the data actually is:
+    #     >= 60 critical   3 posts     (0.04%)
+    #     >= 50 high      34 posts     (0.41%)
+    #     >= 35 elevated ~200 posts    (2.4%)
+    # Raise them again once reach is being collected properly — see
+    # REDDIT_CLIENT_ID, without which 93% of Reddit posts carry no engagement
+    # at all and score with a structurally zero reach term.
+    ALERT_THRESHOLD: int = 50
+    CRITICAL_THRESHOLD: int = 60
+    #: Floor of the "needs a look" band. Was hardcoded in score.band() while
+    #: the two above were configurable, so tuning the bands moved two of the
+    #: three boundaries and silently left the third behind.
+    ELEVATED_THRESHOLD: int = 35
     SIMULATION_ENABLED: bool = True
 
     # Deployment scope — the cities this instance monitors (seed pages, default
@@ -302,32 +371,78 @@ class Settings(BaseSettings):
     GROQ_MAX_PER_TICK: int = 8
     GROQ_TIMEOUT_SECONDS: int = 20
 
-    # Ollama — a model running on this machine, tried when every Groq model in
-    # the chain has failed, and the only LLM at all when there is no Groq key.
-    # It is what keeps the assistant answering through a drained free tier, a
-    # dropped uplink, or an air-gapped installation, none of which are
-    # hypothetical for a police control room.
+    # Gemini — the assistant's LLM, both the voice one and the typed one.
     #
-    # Blank disables it. Point it at a running `ollama serve`, e.g.
-    #   OLLAMA_BASE_URL=http://127.0.0.1:11434
-    OLLAMA_BASE_URL: str = ""
-    OLLAMA_MODEL: str = "llama3.1:8b"
-    # Tool calling is a *separate* switch, and blank by default even when a
-    # model is configured. A local model that accepts the `tools` parameter and
-    # then answers from memory is the one failure this assistant cannot absorb:
-    # its whole safety story is that it only ever sees what a tool returned.
-    # Set this only to a model verified to call tools — llama3.1, qwen2.5 and
-    # mistral-nemo do; most small local models do not.
-    OLLAMA_TOOL_MODEL: str = ""
-    # Local inference on CPU is far slower than Groq. The timeout is generous
-    # because the alternative to a slow answer here is no answer at all.
-    OLLAMA_TIMEOUT_SECONDS: int = 120
+    # Split deliberately by workload rather than by preference. The post
+    # pipeline (verification, translation, evidence dossiers) stays on Groq:
+    # it is high-volume batch work where the per-model daily budgets and the
+    # existing cooldown chain are exactly the right shape. The assistant is the
+    # opposite — low volume, latency-visible, and it is the one surface where a
+    # drained Groq quota is felt live by an officer mid-sentence. Giving it a
+    # separate provider with a separate quota means the two can no longer
+    # starve each other: a heavy ingestion tick cannot mute the assistant, and
+    # a long assistant session cannot eat the budget the feed needs.
+    #
+    # Reached through Google's OpenAI-compatible endpoint, so the request and
+    # response shapes — tool calls included — are the ones groq_client already
+    # builds and parses. Verified against this endpoint: tool calling and JSON
+    # mode both work, which is what the assistant actually needs.
+    GEMINI_API_KEY: str = ""
+    GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai"
+    # Aliases rather than pinned versions on purpose: Google retires dated model
+    # ids for new keys (`gemini-2.5-flash` already 404s with "no longer
+    # available to new users"), and an alias keeps working across that.
+    GEMINI_MODEL: str = "gemini-flash-latest"
+    GEMINI_FALLBACK_MODELS: list[str] = [
+        "gemini-3.6-flash",
+        "gemini-3.5-flash",
+        "gemini-flash-lite-latest",
+    ]
+    # All of the above were confirmed to return tool_calls for a function-tool
+    # request, so unlike the Groq chain this is not a narrower allowlist. It
+    # stays a separate setting because the moment one of them stops calling
+    # tools it has to be droppable from the assistant without being dropped
+    # from plain completions.
+    GEMINI_TOOL_MODELS: list[str] = [
+        "gemini-flash-latest",
+        "gemini-3.6-flash",
+        "gemini-3.5-flash",
+    ]
+    GEMINI_TIMEOUT_SECONDS: int = 30
+    #: Which provider the assistant tries FIRST. Groq remains behind it, so a
+    #: dead Gemini key degrades the assistant rather than switching it off.
+    ASSISTANT_LLM_PROVIDER: str = "gemini"
 
-    # GNews (gnews.io) — richer news corroboration for analyst-triggered
-    # fact-checks and evidence dossiers. Free tier: 100 requests/day, so the
-    # background ingest loop never touches it (it stays on Google News RSS).
+    # There is deliberately no local-model tier. An Ollama leg used to sit at
+    # the end of the chain for air-gapped installs; this deployment is a hosted
+    # web service, where "a model running on this machine" means a model
+    # running on the web host — CPU inference on the request path, competing
+    # with the API for the same box, and no operator nearby to `ollama pull`
+    # when it 404s. The remote chain (Gemini for the assistant, Groq for the
+    # pipeline) is now the whole LLM layer, and with no key at all the
+    # LLM-backed features report themselves off rather than degrading quietly.
+
+    # ── news corroboration for evidence generation (services/fact_check.py) ──
+    # Three tiers, queried in this order and merged into one evidence set:
+    #
+    #  1. Google News RSS — keyless and unmetered, so the background ingest loop
+    #     uses only this one. Headlines and source names, no descriptions.
+    #  2. GNews (gnews.io) — descriptions and timestamps. Free tier is 100
+    #     req/day, so analyst-triggered checks only, behind a self-imposed cap.
+    #  3. NewsAPI.org — a second independent index with a different publisher
+    #     mix, which is the point of having it: two APIs agreeing on a story is
+    #     corroboration, one API's index having it is a search result. Free tier
+    #     is 100 req/day and is developer-only (no production use), same cap.
+    #
+    # Both keys are optional. A missing key drops that tier from the walk; the
+    # evidence block then names only the sources that actually answered, and
+    # never implies coverage it did not get.
+    # Both live in backend/.env, which is gitignored — this file is not, and a
+    # key committed here is a key published.
     GNEWS_API_KEY: str = ""
     GNEWS_DAILY_BUDGET: int = 80  # self-imposed cap under the 100/day limit
+    NEWSAPI_KEY: str = ""
+    NEWSAPI_DAILY_BUDGET: int = 80
 
     # Twilio WhatsApp Alerts
     TWILIO_ACCOUNT_SID: str = ""
@@ -384,13 +499,33 @@ class Settings(BaseSettings):
     # "suratsmartcity" was exactly that — it had been the documented Surat seed
     # since the beginning and does not resolve, so Surat had no civic page at
     # all while appearing configured.
+    # Verify a candidate before adding it — `python -m app.crawlers.instagram_verify
+    # <handle>:<City>` checks that it resolves, is public, has an audience and is
+    # not dormant, and prints a line ready to paste here.
     IG_SEED_USERNAMES_RAW: list[str] = [
-        "amdavadamc:Ahmedabad",       # Ahmedabad Municipal Corporation — 91k
-        "suratcitypolice:Surat",      # Surat City Police — 443k
-        "vmcvadodara:Vadodara",       # Vadodara Municipal Corporation — 94k
-        # Rajkot still needs a verified handle: the public fallback route was
-        # rate-limited when the others were checked, so no candidate has been
-        # confirmed rather than one having been rejected.
+        "amdavadamc:Ahmedabad",         # Ahmedabad Municipal Corporation — 91k
+        "ahmedabadpolice:Ahmedabad",    # Ahmedabad Police — 536k, verified 2026-08-10
+        "suratcitypolice:Surat",        # Surat City Police — 445k, active
+        "vmcvadodara:Vadodara",         # Vadodara Municipal Corporation — 94k
+        "vadodaracitypolice:Vadodara",  # Vadodara City Police — 33k, verified 2026-08-10
+        "ourvadodara:Vadodara",         # OUR VADODARA™ — 1.14M, citizen/civic desk
+        # Statewide, no :City tag on purpose — it covers all four cities, so
+        # per-post geo-tagging beats a blanket label.
+        "cmogujarat",                   # CMO Gujarat — 403k, official
+        # Rajkot has no seed, and every rejected candidate is listed so nobody
+        # re-guesses the same dead handles (checked 2026-08-10):
+        #   rajkotcitypolice   exists, dormant 531 days — a dormant account
+        #                      re-serves its last posts forever, which would
+        #                      re-inject year-old content every single cycle
+        #   rajkotcity         private — returns no media to a non-follower
+        #   rmc_rajkot (37), myrajkot (71)  — impersonation/fan accounts
+        #   rajkotmunicipalcorporation, rmcrajkot, rajkotmuni_corp,
+        #   collectorrajkot   — do not resolve at all
+        # Rajkot is therefore covered only by hashtag and watchlist discovery
+        # until a real handle is found. Re-check with:
+        #   python -m app.crawlers.instagram_verify <handle>:Rajkot
+        # Surat likewise has only the police page: every municipal-corporation
+        # candidate checked was a 2-325 follower impersonation or absent.
     ]
 
     @property
@@ -425,6 +560,14 @@ class Settings(BaseSettings):
     # each cycle — every term gets covered, just spread over the day rather
     # than all at once (the same tactic the YouTube adapter uses for quota).
     IG_HASHTAGS_PER_CYCLE: int = 3
+    # Seed pages read per cycle, same rotation as the two legs below. The seed
+    # roster covers every civic, police, district and news account verified for
+    # the four target cities, which is far more handles than a single cycle can
+    # politely read: each one costs a profile lookup plus a media read on the
+    # private API. Rotating means the whole roster is still covered — 8 a cycle
+    # at the 30-minute interval walks 48 handles in three hours — without the
+    # burst that gets the account checkpointed. 0 reads every seed every cycle.
+    IG_SEEDS_PER_CYCLE: int = 8
     # Accounts on the watchlist (kind="account") read per cycle, same rotation.
     # These are pulled *in addition to* IG_SEED_USERNAMES: seeds are the civic
     # pages this deployment always watches, these are the handles an officer
@@ -493,8 +636,6 @@ class Settings(BaseSettings):
                 out.append((source.strip().lstrip("@"), city.strip()))
         return out
 
-    RSS_FEEDS: list[str] = []
-
     REPORTS_DIR: Path = BASE_DIR / "reports"
     MODELS_DIR: Path = APP_DIR / "ml" / "models"
     DATA_DIR: Path = APP_DIR / "data"
@@ -528,4 +669,8 @@ for _origin in settings.CORS_ORIGINS:
     if _host and _host not in settings.ALLOWED_HOSTS:
         settings.ALLOWED_HOSTS.append(_host)
 
-THREAT_LABELS = ["Incitement to Violence", "Inflammatory", "Fake News", "Neutral"]
+# The only categories this system assigns to a post. It reports how positive or
+# negative a post is — not whether it will incite violence or whether a claim in
+# it is false, which are investigative conclusions no sentiment model can reach
+# from one post's text. See app/ml/classifier.py for the full reasoning.
+SENTIMENT_LABELS = ["negative", "neutral", "positive"]

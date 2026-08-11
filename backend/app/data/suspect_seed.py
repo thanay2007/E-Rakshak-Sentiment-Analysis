@@ -109,8 +109,8 @@ def _corpus_handles(limit: int) -> list[dict]:
     """
     with session_scope() as s:
         hot = s.exec(
-            select(Post).where(Post.threat_label != "Neutral")
-            .order_by(col(Post.threat_score).desc()).limit(limit * 3)
+            select(Post).where(Post.sentiment_label == "negative")
+            .order_by(col(Post.concern_score).desc()).limit(limit * 3)
         ).all()
         bots = s.exec(
             select(Post).where(col(Post.author_handle).like("desh_sachai%")).limit(3)
@@ -123,7 +123,7 @@ def _corpus_handles(limit: int) -> list[dict]:
         seen.add(p.author_handle)
         out.append({"platform": p.platform, "handle": p.author_handle,
                     "url": p.url.rsplit("/", 2)[0] if p.url else "",
-                    "note": f"active in monitored corpus ({p.threat_label})"})
+                    "note": f"active in monitored corpus ({p.sentiment_label})"})
         if len(out) >= limit:
             break
     return out

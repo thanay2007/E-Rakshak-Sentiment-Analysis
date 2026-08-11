@@ -56,7 +56,7 @@ def _synth_thread(post: Post) -> list[dict]:
     rng = random.Random(int(post.id[:8], 16) if post.id[:8].isalnum() else hash(post.id))
     n_comments = min(max((post.engagement or {}).get("comments", 12), 6), 40)
     # threat/amplified posts attract a botted, hostile comment section
-    hostile = post.threat_label != "Neutral" or post.is_amplified
+    hostile = post.sentiment_label == "negative" or post.is_amplified
     bot_share = 0.45 if hostile else 0.12
     out = []
     for i in range(n_comments):
@@ -171,14 +171,14 @@ def analyze_post_comments(post_id: str) -> dict:
         post = s.get(Post, post_id)
         if not post:
             # allow analyzing the most recent threat post as a convenience
-            post = s.exec(select(Post).order_by(Post.threat_score.desc()).limit(1)).first()
+            post = s.exec(select(Post).order_by(Post.concern_score.desc()).limit(1)).first()
         if not post:
             return {"error": "No posts available to analyze."}
         ctx = {
             "post_id": post.id, "platform": post.platform,
             "author_handle": post.author_handle,
             "text": post.translation or post.text,
-            "threat_label": post.threat_label,
+            "sentiment_label": post.sentiment_label,
             "engagement": post.engagement or {},
         }
         thread = _synth_thread(post)

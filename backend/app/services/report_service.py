@@ -1,7 +1,12 @@
 """Incident/escalation report generation: structured JSON payloads + styled
 PDF files (reportlab) + Excel workbooks (openpyxl). Critical alerts get an
-auto-filled escalation template at ingestion time (the automated-escalation
-bonus feature).
+auto-filled escalation template at ingestion time.
+
+Reports state what the system measured — sentiment split, concern scores, where
+negative sentiment concentrated, and which posts drove it — and stop there. They
+do not assert that a post is incitement or misinformation, because nothing in
+the pipeline establishes that; a report an officer may attach to a case file is
+the last place to blur the line between a measurement and a conclusion.
 
 One payload, three renderings. `_build_payload` is the only thing that reads
 the database or computes anything; `_render_pdf` and `_render_xlsx` reshape
@@ -22,24 +27,31 @@ from app.database import session_scope
 from app.models import Alert, Post, Report
 from app.services.serializers import iso, post_to_dict
 
+from app.ml.score import band as _band
+
 log = logging.getLogger("sentinel.reports")
 
+# Recommended actions are keyed by the CONCERN BAND, not by a category. The
+# system reports that a post is strongly negative and spreading; what an officer
+# should do about that is a function of how severe and how widely read it is,
+# which the score already captures. Keying these off an asserted category would
+# have meant recommending a takedown request on the strength of a model's guess
+# that a post "is incitement" — a claim it can no longer make.
 RECOMMENDED_ACTIONS = {
-    "Incitement to Violence": [
-        "Notify local police station with jurisdiction over the referenced location",
-        "Request platform takedown under IT Act Sec. 69A / platform ToS (violent threats)",
+    "critical": [
+        "Review the post directly and confirm the reading before acting on it",
+        "Notify the police station with jurisdiction over the referenced location",
         "Preserve evidence: archive post URL, screenshots and author profile",
-        "Cross-check author against prior incident database",
+        "Cross-check the author against prior incident records",
     ],
-    "Inflammatory": [
-        "Add author and associated hashtags to the active watchlist",
-        "Monitor for escalation to direct calls for violence",
+    "high": [
+        "Add the author and associated hashtags to the active watchlist",
+        "Monitor for escalation and for coordinated re-posting",
         "Brief community-liaison officers for the affected area",
     ],
-    "Fake News": [
-        "Coordinate with fact-check unit to publish a rebuttal",
-        "Request platform labeling/de-amplification of the claim",
-        "Track forward/share velocity for panic-risk assessment",
+    "elevated": [
+        "Keep under passive monitoring; no action indicated on this post alone",
+        "Track share velocity in case the sentiment spreads",
     ],
 }
 
@@ -47,7 +59,7 @@ RECOMMENDED_ACTIONS = {
 def escalation_template(post: Post) -> dict:
     """Pre-filled escalation packet attached to critical alerts automatically."""
     return {
-        "incident_type": post.threat_label,
+        "incident_type": f"{post.sentiment_label} sentiment, concern {round(post.concern_score)}/100",
         "priority": "P1 — IMMEDIATE",
         "generated_by": "SENTINEL automated escalation",
         "generated_at": iso(datetime.now(timezone.utc).replace(tzinfo=None)),
@@ -63,12 +75,15 @@ def escalation_template(post: Post) -> dict:
         "evidence": {
             "original_text": post.text,
             "english_translation": post.translation,
-            "threat_score": post.threat_score,
-            "classification": f"{post.threat_label} ({post.threat_confidence:.0%} confidence)",
+            "concern_score": post.concern_score,
+            "sentiment": f"{post.sentiment_label} ({post.sentiment_confidence:.0%} confidence)",
+            "how_the_score_was_built": (post.sentiment_consensus or {}).get("score_breakdown", []),
+            "evidence_sources": [e.get("source") for e
+                                 in (post.sentiment_consensus or {}).get("evidence", [])],
             "flags": post.hate_flags or [],
             "matched_keywords": post.keywords or [],
         },
-        "recommended_actions": RECOMMENDED_ACTIONS.get(post.threat_label, [])[:3],
+        "recommended_actions": RECOMMENDED_ACTIONS.get(_band(post.concern_score), [])[:3],
         "note": "Automated triage output — requires analyst verification before action.",
     }
 
@@ -85,24 +100,25 @@ def _build_payload(period_hours: int) -> dict:
     network = get_network(period_hours)
     trends = get_trends(period_hours)
 
-    threats = [p for p in posts if p.threat_label != "Neutral"]
-    top = sorted(posts, key=lambda p: -p.threat_score)[:6]
-    label_counts = Counter(p.threat_label for p in posts)
+    negative = [p for p in posts if p.sentiment_label == "negative"]
+    top = sorted(posts, key=lambda p: -p.concern_score)[:6]
+    label_counts = Counter(p.sentiment_label for p in posts)
+    flagged = [p for p in posts if p.concern_score >= settings.ALERT_THRESHOLD]
 
     summary = (
         f"In the last {period_hours}h SENTINEL processed {len(posts)} posts across "
-        f"{len({p.platform for p in posts})} platforms; {len(threats)} were classified as threats "
-        f"({label_counts.get('Incitement to Violence', 0)} incitement, "
-        f"{label_counts.get('Inflammatory', 0)} inflammatory, "
-        f"{label_counts.get('Fake News', 0)} fake news). "
+        f"{len({p.platform for p in posts})} platforms. Sentiment split "
+        f"{label_counts.get('negative', 0)} negative / "
+        f"{label_counts.get('neutral', 0)} neutral / "
+        f"{label_counts.get('positive', 0)} positive; {len(flagged)} posts scored at or "
+        f"above the concern threshold of {settings.ALERT_THRESHOLD}. "
         f"{sum(1 for a in alerts if a.severity == 'critical')} critical alerts were raised and "
         f"{len(network['clusters'])} coordinated amplification cluster(s) detected."
     )
 
     actions: list[str] = []
-    for label, _ in label_counts.most_common():
-        if label != "Neutral":
-            actions.extend(RECOMMENDED_ACTIONS.get(label, [])[:2])
+    for b, _ in Counter(_band(p.concern_score) for p in negative).most_common():
+        actions.extend(RECOMMENDED_ACTIONS.get(b, [])[:2])
 
     return {
         "summary": summary,
@@ -110,15 +126,16 @@ def _build_payload(period_hours: int) -> dict:
         "generated_at": iso(datetime.now(timezone.utc).replace(tzinfo=None)),
         "totals": {
             "posts": len(posts),
-            "threats": len(threats),
+            "negative_posts": len(negative),
+            "flagged_posts": len(flagged),
             "alerts": len(alerts),
             "critical_alerts": sum(1 for a in alerts if a.severity == "critical"),
-            "avg_threat_score": round(mean(p.threat_score for p in posts), 1) if posts else 0,
+            "avg_concern_score": round(mean(p.concern_score for p in posts), 1) if posts else 0,
         },
-        "category_distribution": dict(label_counts),
+        "sentiment_distribution": dict(label_counts),
         "language_distribution": dict(Counter(p.language for p in posts)),
         "platform_distribution": dict(Counter(p.platform for p in posts)),
-        "top_threats": [post_to_dict(p, full=True) for p in top],
+        "top_concern": [post_to_dict(p, full=True) for p in top],
         "coordinated_clusters": network["clusters"],
         "trending_hashtags": trends["hashtags"][:8],
         "regions": trends["regions"][:8],
@@ -315,7 +332,7 @@ def _render_pdf(report: Report) -> str:
 
     doc = SimpleDocTemplate(str(path), pagesize=A4, topMargin=18 * mm, bottomMargin=18 * mm)
     flow = [
-        Paragraph("SENTINEL — Threat Intelligence Report", h1),
+        Paragraph("SENTINEL — Public Sentiment Report", h1),
         # The title is operator-supplied and the summary can quote a post, so
         # both are user text as far as this document is concerned.
         Paragraph(f"{mk(report.title)} • generated {mk(p.get('generated_at', ''))} "
@@ -324,14 +341,14 @@ def _render_pdf(report: Report) -> str:
         Paragraph("Executive Summary", h2),
         Paragraph(mk(p.get("summary", "")), body),
         Spacer(1, 4 * mm),
-        Paragraph("Classification Breakdown", h2),
+        Paragraph("Sentiment Breakdown", h2),
     ]
-    dist = p.get("category_distribution", {})
+    dist = p.get("sentiment_distribution", {})
     # Table cells are not parsed as markup, so they cannot carry per-run fonts.
-    # Category labels are a fixed English vocabulary, so one font for the whole
+    # Sentiment labels are a fixed English vocabulary, so one font for the whole
     # table is correct here — and it is the Unicode one, so the table matches
     # the rest of the document.
-    table = Table([["Category", "Posts"]] + [[k, str(v)] for k, v in dist.items()], hAlign="LEFT")
+    table = Table([["Sentiment", "Posts"]] + [[k, str(v)] for k, v in dist.items()], hAlign="LEFT")
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0F1420")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
@@ -343,12 +360,12 @@ def _render_pdf(report: Report) -> str:
     flow.append(table)
 
     flow.append(Spacer(1, 4 * mm))
-    flow.append(Paragraph("Top Threats", h2))
-    for t in p.get("top_threats", [])[:5]:
+    flow.append(Paragraph("Highest-Concern Posts", h2))
+    for t in p.get("top_concern", [])[:5]:
         # Handle, location and label are all user- or platform-supplied and any
         # of them can be non-Latin — a Gujarati place name in `location` was
         # tofu even when the post body happened to be English.
-        headline = "[{}] {}".format(t["threat_score"], t["threat_label"])
+        headline = "[{}] {}".format(t["concern_score"], t["sentiment_label"])
         flow.append(Paragraph(
             f"<b>{mk(headline)}</b> — {mk(t['platform'])} @{mk(t['author_handle'])} "
             f"({mk(t['language'])}, {mk(t['location'] or 'n/a')})", body))
@@ -377,11 +394,11 @@ def _render_xlsx(report: Report) -> str:
 
     The PDF is the document of record and stays exactly as it was. This is the
     other half of the same data: a PDF cannot be sorted, filtered or pasted
-    into a case file, and "Top Threats" is precisely the table an analyst wants
-    to re-rank. So the sheet that matters carries every threat rather than the
-    PDF's first five, and ships with the filter, frozen header and score
-    gradient already applied — a workbook that needs three manual steps before
-    it is readable does not get used.
+    into a case file, and the highest-concern list is precisely the table an
+    analyst wants to re-rank. So the sheet that matters carries every scored
+    post rather than the PDF's first five, and ships with the filter, frozen
+    header and score gradient already applied — a workbook that needs three
+    manual steps before it is readable does not get used.
 
     Nothing is recomputed. Every value here is reshaped from `report.payload`,
     which `_build_payload` already produced for the JSON and the PDF, so the
@@ -443,11 +460,12 @@ def _render_xlsx(report: Report) -> str:
         ("Window (hours)", p.get("period_hours", "")),
         ("Generated At", p.get("generated_at", "")),
         ("Posts Processed", totals.get("posts", 0)),
-        ("Threats", totals.get("threats", 0)),
+        ("Negative Posts", totals.get("negative_posts", 0)),
+        ("Flagged Posts", totals.get("flagged_posts", 0)),
         ("Alerts", totals.get("alerts", 0)),
         ("Critical Alerts", totals.get("critical_alerts", 0)),
         ("Coordinated Clusters", len(p.get("coordinated_clusters", []))),
-        ("Average Threat Score", totals.get("avg_threat_score", 0)),
+        ("Average Concern Score", totals.get("avg_concern_score", 0)),
     ]:
         ws.append([label, value])
     ws.append([])
@@ -459,39 +477,39 @@ def _render_xlsx(report: Report) -> str:
     autosize(ws)
     ws.column_dimensions["B"].width = 90
 
-    # ── Classification Breakdown ────────────────────────────────────────────
-    ws = wb.create_sheet("Classification Breakdown")
-    head(ws, 1, ["Category", "Count", "%"])
-    distribution = p.get("category_distribution", {})
+    # ── Sentiment Breakdown ─────────────────────────────────────────────────
+    ws = wb.create_sheet("Sentiment Breakdown")
+    head(ws, 1, ["Sentiment", "Count", "%"])
+    distribution = p.get("sentiment_distribution", {})
     total_classified = sum(distribution.values())
-    for category, count in distribution.items():
+    for label, count in distribution.items():
         share = round(100 * count / total_classified, 1) if total_classified else 0
-        ws.append([category, count, share])
+        ws.append([label, count, share])
     autosize(ws)
 
-    # ── Top Threats ─────────────────────────────────────────────────────────
-    ws = wb.create_sheet("Top Threats")
-    threat_columns = ["Threat Score", "Category", "Confidence", "Platform",
-                      "Author Handle", "Language", "Location", "Post Text",
-                      "Translation", "URL", "Matched Keywords", "Created At"]
-    head(ws, 1, threat_columns)
-    for threat in p.get("top_threats", []):
+    # ── Highest-Concern Posts ───────────────────────────────────────────────
+    ws = wb.create_sheet("Highest-Concern Posts")
+    concern_columns = ["Concern Score", "Sentiment", "Confidence", "Platform",
+                       "Author Handle", "Language", "Location", "Post Text",
+                       "Translation", "URL", "Matched Keywords", "Created At"]
+    head(ws, 1, concern_columns)
+    for post in p.get("top_concern", []):
         ws.append([
-            threat.get("threat_score", 0),
-            threat.get("threat_label", ""),
-            threat.get("threat_confidence", 0),
-            threat.get("platform", ""),
-            threat.get("author_handle", ""),
-            threat.get("language", ""),
-            threat.get("location") or "",
-            threat.get("text", ""),
-            threat.get("translation") or "",
-            threat.get("url", ""),
-            ", ".join(threat.get("keywords") or []),
-            threat.get("created_at", ""),
+            post.get("concern_score", 0),
+            post.get("sentiment_label", ""),
+            post.get("sentiment_confidence", 0),
+            post.get("platform", ""),
+            post.get("author_handle", ""),
+            post.get("language", ""),
+            post.get("location") or "",
+            post.get("text", ""),
+            post.get("translation") or "",
+            post.get("url", ""),
+            ", ".join(post.get("keywords") or []),
+            post.get("created_at", ""),
         ])
     last_row = ws.max_row
-    last_column = get_column_letter(len(threat_columns))
+    last_column = get_column_letter(len(concern_columns))
     ws.auto_filter.ref = f"A1:{last_column}{last_row}"
     # Below the header, so the columns stay labelled while scrolling a long
     # list — which is the whole reason this sheet is not capped at five.
@@ -530,8 +548,8 @@ def _render_xlsx(report: Report) -> str:
 
     # ── Trending & Regions ──────────────────────────────────────────────────
     ws = wb.create_sheet("Trending & Regions")
-    head(ws, 1, ["Hashtag / Term", "Mentions", "Change %", "Spiking", "Top Category"], col=1)
-    head(ws, 1, ["Region", "Posts", "Threats", "Avg Threat Score"], col=7)
+    head(ws, 1, ["Hashtag / Term", "Mentions", "Change %", "Spiking", "Top Sentiment"], col=1)
+    head(ws, 1, ["Region", "Posts", "Negative", "Avg Concern Score"], col=7)
     hashtags = p.get("trending_hashtags", [])
     regions = p.get("regions", [])
     for index in range(max(len(hashtags), len(regions))):
@@ -547,8 +565,11 @@ def _render_xlsx(report: Report) -> str:
             region = regions[index]
             ws.cell(row=row, column=7, value=region.get("name", ""))
             ws.cell(row=row, column=8, value=region.get("count", 0))
+            # `threats` is the trend service's long-standing key for "posts in
+            # this region that came out negative" — the column is named for
+            # what it counts rather than for what the key is called.
             ws.cell(row=row, column=9, value=region.get("threats", 0))
-            ws.cell(row=row, column=10, value=region.get("avg_threat", 0))
+            ws.cell(row=row, column=10, value=region.get("avg_concern", 0))
     autosize(ws)
 
     # ── Coordinated Clusters ────────────────────────────────────────────────

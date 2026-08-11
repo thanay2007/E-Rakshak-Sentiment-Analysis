@@ -33,17 +33,22 @@ class Post(SQLModel, table=True):
     language: str = Field(default="English", index=True)  # Gujarati | Hindi | Hinglish | English | Mixed
     code_mixed: bool = False
 
-    sentiment_label: str = "neutral"                  # positive | neutral | negative
+    # The post's tag. This is the only category the system assigns — it does not
+    # claim a post "is incitement" or "is fake news", which are investigative
+    # conclusions rather than properties of the text (see ml/classifier.py).
+    sentiment_label: str = Field(default="neutral", index=True)  # positive | neutral | negative
     sentiment_score: float = 0.0                      # -1 .. +1
-    # 3-model consensus (ml/ensemble.py): per-model votes, chosen_by, agreement
+    sentiment_confidence: float = 0.0                 # 0 .. 1, ensemble confidence
+    # 3-model consensus + Groq final check (ml/ensemble.py): per-model votes,
+    # chosen_by, agreement, context adjustments, score breakdown and the full
+    # evidence provenance shown in the post drawer.
     sentiment_consensus: dict = Field(default_factory=dict, sa_column=Column(JSON))
-    intent: str = "informational"                     # informational | opinion | call_to_action | threat | rumor
-    threat_label: str = Field(default="Neutral", index=True)
-    threat_confidence: float = 0.0
+    intent: str = "informational"                     # informational | opinion | call_to_action | rumor
+    # Ensemble-averaged probability over negative/neutral/positive.
     class_probs: dict = Field(default_factory=dict, sa_column=Column(JSON))
     hate_flags: list = Field(default_factory=list, sa_column=Column(JSON))
     toxicity_score: float = 0.0
-    threat_score: float = Field(default=0.0, index=True)  # 0..100, formula in ml/threat_score.py
+    concern_score: float = Field(default=0.0, index=True)  # 0..100, formula in ml/score.py
     keywords: list = Field(default_factory=list, sa_column=Column(JSON))
     hashtags: list = Field(default_factory=list, sa_column=Column(JSON))
 
@@ -78,10 +83,10 @@ class Alert(SQLModel, table=True):
     status: str = Field(default="new", index=True)     # new | acknowledged | escalated
     title: str
     summary: str = ""
-    category: str = ""
+    category: str = ""                                 # the post's sentiment tag
     location: str = ""
     platform: str = ""
-    threat_score: float = 0.0
+    concern_score: float = 0.0
     escalation: dict = Field(default_factory=dict, sa_column=Column(JSON))  # auto-generated escalation template
     created_at: datetime = Field(default_factory=utcnow, index=True)
     updated_at: datetime = Field(default_factory=utcnow)
