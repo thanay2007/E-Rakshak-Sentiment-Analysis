@@ -138,7 +138,7 @@ That single command, in order:
    CSV/parquet/CoNLL files, **no API keys needed**),
 3. **[only if `GROQ_API_KEY` is set]** LLM-augments the training data for all
    five language forms → `datasets/groq-augmented/` (~14k rows),
-4. fine-tunes the **MuRIL threat classifier** → `app/ml/models/threat-classifier/`,
+4. fine-tunes the **MuRIL sentiment model** → `app/ml/models/sentiment-classifier/`,
 5. fine-tunes the **MuRIL sentiment model** → `app/ml/models/sentiment-classifier/`,
 6. trains the TF-IDF baseline and writes every eval report.
 
@@ -195,10 +195,10 @@ Training is seeded, so every teammate who runs bootstrap gets the same model.
 ┌─ Collectors ────────────┐   ┌─ NLP Pipeline ─────────────┐   ┌─ Intelligence ──────────┐
 │ Simulated stream (dflt) │   │ normalize (slang/translit) │   │ trend + spike detection │
 │ Facebook Graph API      │   │ language ID (gu/hi/hing/en)│   │ network centrality      │
-│ Instagram Graph API     │ → │ threat classifier (4-way)  │ → │ bot-cluster detection   │
+│ Instagram Graph API     │ → │ 3-model sentiment vote     │ → │ bot-cluster detection   │
 │ Reddit OAuth API        │   │ sentiment + intent         │   │ alerting + escalation   │
 │ X API v2 · YouTube v3   │   │ toxicity + hate flags      │   │ report generation (PDF) │
-│ generic Web/RSS         │   │ composite threat score     │   │ per-city geo-tagging    │
+│ generic Web/RSS         │   │ composite concern score    │   │ per-city geo-tagging    │
 │  (APScheduler loop with │   │ Groq LLM verification      │   │                         │
 │   per-API politeness    │   │                            │   │                         │
 │   gaps — never hammered)│   │                            │   │                         │
@@ -224,8 +224,10 @@ Two engines, one interface — chosen by `NLP_MODE` in `backend/.env`:
 
 | | `full` (default) | `lite` (fallback) |
 |---|---|---|
-| Threat classification (4-way) | **fine-tuned google/muril-base-cased** (MuRIL — pretrained on 17 Indian languages incl. transliterated text; from `ml/models/threat-classifier/`), else zero-shot **joeddav/xlm-roberta-large-xnli** | multilingual weighted lexicons + heuristic layer (mobilization, target-of-violence, misinformation framing) |
-| Sentiment | **fine-tuned MuRIL sentiment head** trained on **50k rows from 22 real public datasets** across English/Hindi/Gujarati/Hinglish/Gujlish (`ml/models/sentiment-classifier/`), else **cardiffnlp/twitter-xlm-roberta-base-sentiment** | **VADER-style rule engine** (ported from cjhutto/vaderSentiment, extended to Hindi/Gujarati: negation incl. postpositional "accha *nahi*", boosters "bahut/ekdam/khub", ALL-CAPS & !!! emphasis, contrastive "but/lekin/pan") over 4-script valence lexicons + emoji + threat-signal fusion |
+| Sentiment — model 1 | **fine-tuned google/muril-base-cased** sentiment head, trained on **50k rows from 22 real public datasets** across English/Hindi/Gujarati/Hinglish/Gujlish (`ml/models/sentiment-classifier/`), else **cardiffnlp/twitter-xlm-roberta-base-sentiment** | — |
+| Sentiment — model 2 | **TF-IDF (word 1-2 + char 2-5) + LinearSVC** on the same corpus (`ml/models/sentiment-linear/`) | — |
+| Sentiment — model 3 | **VADER-style rule engine** (ported from cjhutto/vaderSentiment, extended to Hindi/Gujarati: negation incl. postpositional "accha *nahi*", boosters "bahut/ekdam/khub", ALL-CAPS & !!! emphasis) plus contrast resolution, irony inversion and reported-speech damping | same (always runs) |
+| Final check | **Groq LLM** reads the post after the three models and can overturn a confident disagreement | skipped without `GROQ_API_KEY` |
 | Toxicity / hate flags | **unitary/multilingual-toxic-xlm-roberta** | abuse lexicons + signal rules |
 | Language ID + code-mixing | Unicode-script analysis + romanized marker wordlists (5-way: en/hi/gu/hinglish/gujlish) | same (shared) |
 | Setup | `pip install -r requirements-ml.txt` (+ model downloads on first run) | zero downloads, <1 ms/post |
@@ -235,20 +237,55 @@ romanized-slang canonicalization: `nhi→nahi`, `jla do→jala do`), batched
 inference, singleton model loading at startup, and graceful per-call fallback
 from full → lite so the demo can never break.
 
-**Labels** (exactly what the UI shows): `Incitement to Violence` · `Inflammatory` · `Fake News` · `Neutral`.
+**Labels** — exactly what the UI shows, and the whole taxonomy:
+`negative` · `neutral` · `positive`.
 
-### Threat score (0–100)
+The system does **not** classify posts as incitement, propaganda or
+misinformation. Whether a post will cause violence, and whether a claim inside
+it is false, are investigative conclusions about the world; a model reading one
+post's words cannot establish either, and a console that prints them as model
+output invites an analyst to treat a guess as a finding. Where an external fact
+matters, the post detail shows news corroboration from **named** sources
+(Google News RSS, GNews, NewsAPI.org) and lets the analyst judge it.
+
+### Context
+
+All three models are fed the same context-tagged input, at training time and at
+inference time (`app/ml/context.py`):
 
 ```
-score = 100 × ( 0.40 × severity(label) × confidence     ← classifier belief × class danger
-              + 0.25 × toxicity                          ← hate/abuse intensity
-              + 0.20 × virality                          ← log-scaled engagement + amplification bonus
-              + 0.15 × keyword_severity )                ← strongest lexicon term matched
-
-severity: Incitement 1.00 · Inflammatory 0.75 · Fake News 0.65 · Neutral 0.05
-virality: min(1, log10(1 + likes + 3·shares + 2·comments + views/50) / 4)  (+0.15 if in a detected burst)
-bands:    ≥74 → critical alert + auto-generated escalation packet · ≥65 → high alert · ≥50 → active threat
+[ctx1 rep cond long] Officials said the bridge would be repaired if funds are approved
+[ctx1 self shout emph short] I waited THREE HOURS at the RTO office!!!
 ```
+
+The tags are derived from the post text alone — which is what makes them usable
+on the training corpora, which are plain (text, label) rows with no metadata —
+so the models *learn* what "reported speech" or "interrogative" implies instead
+of being handed a flag they never saw. Account, reach and amplification are
+known only at inference, so they never touch the model input: they adjust the
+ensemble's **confidence** afterwards, never the label, and every adjustment is
+recorded with a reason the drawer displays.
+
+Model artifacts are stamped with the context version they were trained under;
+serving a checkpoint that predates it falls back to raw text with a loud warning
+rather than silently shifting the input distribution.
+
+### Concern score (0–100)
+
+```
+score = 100 × ( 0.50 × negativity × confidence   ← how negative, × how sure
+              + 0.22 × toxicity                   ← hate/abuse intensity
+              + 0.18 × virality                   ← log-scaled engagement + amplification bonus
+              + 0.10 × term_severity )            ← strongest lexicon term matched
+
+negativity: max(0, −sentiment_score)  — a positive post contributes 0 here
+virality:   min(1, log10(1 + likes + 3·shares + 2·comments + views/50) / 4)  (+0.15 in a burst)
+bands:      ≥74 → critical alert + auto-generated escalation packet · ≥65 → high · ≥50 → elevated
+```
+
+The weights are shaped so no single dimension can reach an alert band alone: a
+furious post nobody read tops out near 50, and a viral cheerful post cannot pass
+~30. An alert therefore always means **negative *and* travelling**.
 
 ---
 
@@ -278,25 +315,17 @@ python -m app.ml.eval_sentiment    # re-run this table any time
 python -m app.ml.train_baseline    # re-run the baseline comparison
 ```
 
-### Threat classification — 4 categories
+### End-to-end pipeline
 
 ```bash
 cd backend && python -m app.ml.evaluate
 ```
 
-Fine-tuned MuRIL (6 epochs, lr 5e-5) on the held-out test set (151 samples,
-disjoint slot vocabulary from training — no text overlap):
-
-| Category | Precision | Recall | F1 |
-|---|---|---|---|
-| Incitement to Violence | 1.000 | 1.000 | 1.000 |
-| Inflammatory | 1.000 | 1.000 | 1.000 |
-| Fake News | 1.000 | 1.000 | 1.000 |
-| Neutral | 1.000 | 1.000 | 1.000 |
-| **Accuracy 100% · Macro-F1 1.000** | | | |
+Scores the whole pipeline — three models, consensus and context calibration —
+against held-out rows, reporting precision/recall/F1 per sentiment label.
 
 The dashboard also shows **live accuracy**: every simulated post carries its
-ground-truth label, and `/api/stats` compares it against the pipeline's
+ground-truth sentiment, and `/api/stats` compares it against the pipeline's
 prediction in real time (the pipeline never sees the label).
 
 > *Honest caveat:* the threat test set is generated from the same template
@@ -336,8 +365,15 @@ currently **546**.
 cd backend
 python -m app.ml.download_datasets   # raw datasets → app/data/datasets/
 python -m app.ml.corpus              # inspect the corpus (per language / per source / slang coverage)
-python -m app.ml.train_sentiment     # fine-tune MuRIL (GPU ~30 min, fp16 auto)
-python -m app.ml.train               # fine-tune the MuRIL threat classifier
+python -m app.ml.train_sentiment     # fine-tune MuRIL (GPU ~45 min, fp16 auto)
+python -m app.ml.train_baseline      # TF-IDF + LinearSVC on the same corpus (minutes)
+python -m app.ml.rescore             # replay stored posts through the new models
+
+# Both trained models consume the same context-tagged input, so they must be
+# retrained together — an ensemble where one saw the discourse prefix and the
+# other did not is two models reading different things. Each artifact records
+# which context version it was trained under and refuses to be served a
+# distribution it never saw.
 ```
 
 ### 🤖 LLM data augmentation (all 5 languages)
@@ -381,7 +417,7 @@ Runs generically on any data (not just the simulator):
    posted near-identical text within 2m 55s · average account age 23 days ·
    handles share a templated prefix"*).
 3. **Graph** — networkx degree centrality sizes nodes (influence), average
-   threat score colors them, bot-suspect accounts get dashed red rings.
+   concern score colors them, bot-suspect accounts get dashed red rings.
 
 Trends use sliding-window term velocity with **z-score spike detection** per
 hashtag/keyword, language breakdown, and per-city threat heat for Gujarat —
@@ -395,7 +431,7 @@ With a free `GROQ_API_KEY`, a second-opinion reviewer
 (`services/groq_verifier.py`) audits every risky post **before alerts fire**:
 one batched JSON-mode request asks the LLM to independently classify
 threat + sentiment. Agreement raises the model's confidence; a confident
-disagreement (LLM ≥ 0.70) overrides the label and recomputes the threat score
+disagreement (LLM ≥ 0.75) overrides the label and recomputes the concern score
 with the same formula. Nothing is silent — the verdict, reason, and an
 `overridden` flag are stored per post and shown in the analyst UI. Without a
 key the layer is a no-op, and any API failure degrades to "unverified".
@@ -600,7 +636,7 @@ Hinglish benchmark, GoEmotions and AI4Bharat IndicSentiment) and 1 GitHub corpus
 invented: LLM augmentation only converts the language/register of rows that
 already carry a real label. Full table: [`backend/app/data/datasets/README.md`](backend/app/data/datasets/README.md).
 
-The **threat-classifier** corpus (`backend/app/data/templates.py`) is synthetic,
+The **simulator** corpus (`backend/app/data/templates.py`) is synthetic,
 written for this project across 4 languages × 4 categories, using deliberately
 generic group references and fictional office-holders — no real public
 hate-speech dataset covers these exact 4 operational categories.

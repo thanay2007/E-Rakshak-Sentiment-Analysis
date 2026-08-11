@@ -57,7 +57,7 @@ export default function CommentsTool() {
         <>
           {data.post && (
             <GlassCard className="p-4">
-              <div className="text-[11px] uppercase tracking-wide text-slate-500">{data.post.platform} · @{data.post.author_handle} · {data.post.threat_label}</div>
+              <div className="text-[11px] uppercase tracking-wide text-slate-500">{data.post.platform} · @{data.post.author_handle} · {data.post.sentiment_label}</div>
               <div className="mt-1 text-sm text-slate-200">{data.post.text}</div>
               {data.synthetic && <div className="mt-2 text-[11px] text-slate-600">Comment thread reconstructed for demo (live deployments read comments from the platform API).</div>}
             </GlassCard>

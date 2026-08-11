@@ -109,7 +109,7 @@ _INDEX: list[dict] = [
 ]
 
 
-def scenario_for(seed: str, threat_label: str = "Neutral") -> dict | None:
+def scenario_for(seed: str, sentiment_label: str = "neutral") -> dict | None:
     """Deterministically decide whether a corpus post 'carries' a known image and,
     if so, which one — so the feed-driven flow can resolve a post to its media
     without a downloadable original (the simulated stream has no real files).
@@ -117,16 +117,15 @@ def scenario_for(seed: str, threat_label: str = "Neutral") -> dict | None:
     Returns the matching index item (with its perceptual hash) or None when the
     post has no attached media."""
     h = int(hashlib.sha256(seed.encode()).hexdigest(), 16)
-    prob_has_media = 0.6 if threat_label != "Neutral" else 0.22
+    prob_has_media = 0.6 if sentiment_label == "negative" else 0.22
     if (h % 1000) / 1000.0 >= prob_has_media:
         return None
     by_label = {
-        "Fake News": "img-riot-rumor",
-        "Inflammatory": "img-boycott-poster",
-        "Incitement to Violence": "img-boycott-poster",
-        "Neutral": "img-official-portrait",
+        "negative": "img-boycott-poster",
+        "neutral": "img-official-portrait",
+        "positive": "img-official-portrait",
     }
-    pref = by_label.get(threat_label)
+    pref = by_label.get(sentiment_label)
     pool = [it for it in _INDEX if it["id"] == pref] or _INDEX
     return pool[h % len(pool)]
 

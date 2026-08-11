@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 
 import httpx
 
-from app.config import THREAT_LABELS, settings
+from app.config import settings
 from app.database import session_scope
 from app.models import Post
 from app.services.fact_check import _query_for, check_claim
@@ -33,16 +33,22 @@ from app.services.fact_check import _query_for, check_claim
 log = logging.getLogger("sentinel.evidence")
 
 _SYSTEM = (
-    "You are a senior threat-intelligence analyst preparing an evidence dossier "
-    "for Gujarat police. The dossier may be attached to official reports, so it "
-    "must be precise, verifiable and honest about uncertainty.\n\n"
-    "You receive one social-media post with: original text, English translation, "
-    "author/account metadata, engagement, the local ML model's classification, a "
-    "prior LLM review, and real news-search results (the only external sources "
-    "you may cite).\n\n"
+    "You are a senior analyst preparing an evidence dossier on one "
+    "social-media post for Gujarat police. The dossier may be attached to "
+    "official reports, so it must be precise, verifiable and honest about "
+    "uncertainty.\n\n"
+    "You receive the post with: original text, English translation, "
+    "author/account metadata, engagement, the sentiment verdict from a "
+    "three-model ensemble plus its LLM final check, and real news-search "
+    "results (the only external sources you may cite).\n\n"
+    "The system assigns ONE tag — positive, negative or neutral — plus a 0-100 "
+    "concern score. It does NOT classify posts as incitement, propaganda or "
+    "misinformation, and neither should you: assess the post\'s tone and what "
+    "it asserts, and where a factual claim can be checked against the supplied "
+    "news results, say what those results do and do not establish.\n\n"
     "Produce ONLY JSON with exactly these fields:\n"
-    '- "summary": 2-3 sentences — what the post says and why it does or does not '
-    "warrant the assigned label.\n"
+    '- "summary": 2-3 sentences — what the post says and whether the assigned '
+    "sentiment tag and concern score are a fair reading of it.\n"
     '- "claims": array (max 4) of {"claim": <the factual assertion, paraphrased>, '
     '"type": "factual claim"|"opinion"|"call to action"|"rumor", '
     '"assessment": "supported"|"contradicted"|"unverified", '
@@ -86,11 +92,16 @@ def _post_payload(p: Post) -> dict:
         },
         "engagement": p.engagement or {},
         "posted_at": p.created_at.isoformat() if p.created_at else None,
-        "local_model": {
-            "threat_label": p.threat_label,
-            "confidence": p.threat_confidence,
+        "sentiment_verdict": {
+            "tag": p.sentiment_label,
+            "score_minus1_to_1": p.sentiment_score,
+            "confidence": p.sentiment_confidence,
+            "concern_score_0_to_100": p.concern_score,
             "class_probabilities": p.class_probs or {},
-            "sentiment": p.sentiment_label,
+            "model_votes": (p.sentiment_consensus or {}).get("votes", []),
+            "chosen_by": (p.sentiment_consensus or {}).get("chosen_by", ""),
+            "context_adjustments": (p.sentiment_consensus or {}).get("context_adjustments", []),
+            "score_breakdown": (p.sentiment_consensus or {}).get("score_breakdown", []),
             "toxicity": p.toxicity_score,
             "intent": p.intent,
             "hate_flags": p.hate_flags or [],

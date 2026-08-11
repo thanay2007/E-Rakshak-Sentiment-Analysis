@@ -1,7 +1,7 @@
 import { AlertOctagon, AlertTriangle, BellRing, Check, CheckCheck, ChevronDown, Flag, ShieldAlert, Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
-import { SeverityChip, ThreatBadge } from "../components/Badges";
-import DetailDrawer from "../components/DetailDrawer";
+import { SentimentBadge, SeverityChip } from "../components/Badges";
+import { usePostDetail } from "../components/PostDetailProvider";
 import GlassCard, { SectionTitle } from "../components/GlassCard";
 import { SkeletonRow } from "../components/Skeletons";
 import { useGsapReveal } from "../hooks/useGsapReveal";
@@ -47,7 +47,7 @@ function AlertRow({ alert, onAction, onOpenPost }: {
             {new Date(alert.created_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })}
           </span>
           <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.06] px-2 py-0.5 font-bold text-slate-200">
-            Threat {Math.round(alert.threat_score)}
+            Threat {Math.round(alert.concern_score)}
           </span>
           <button
             onClick={() => setOpen((o) => !o)}
@@ -65,7 +65,7 @@ function AlertRow({ alert, onAction, onOpenPost }: {
         <div className="mt-3.5 space-y-3 rounded-xl border border-white/[0.08] bg-base-950/80 p-3.5 backdrop-blur-md">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.06] pb-2.5 text-xs text-slate-300">
             <div className="flex items-center gap-2">
-              <ThreatBadge label={alert.category} />
+              <SentimentBadge label={alert.category} score={alert.concern_score} />
               <span className="font-semibold text-slate-200">{alert.platform}</span>
               {alert.location && <span className="text-slate-400">· {alert.location}</span>}
             </div>
@@ -133,7 +133,7 @@ export default function Alerts() {
     [statusFilter, severityFilter]
   );
   useLiveAlerts(); // keeps the shared socket hot
-  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const { openPostId } = usePostDetail();
   const revealRef = useGsapReveal<HTMLDivElement>(`${statusFilter}-${severityFilter}-${data?.length ?? 0}`);
 
   const counts = useMemo(() => {
@@ -151,12 +151,6 @@ export default function Alerts() {
       else await api.escalateAlert(id);
       refresh();
     } catch { /* polling will resync */ }
-  };
-
-  const openPost = async (postId: string) => {
-    try {
-      setSelectedPost(await api.post(postId));
-    } catch { /* post may be gone */ }
   };
 
   return (
@@ -235,7 +229,7 @@ export default function Alerts() {
       ) : (
         <div ref={revealRef} className="space-y-3">
           {data?.map((a) => (
-            <AlertRow key={a.id} alert={a} onAction={act} onOpenPost={openPost} />
+            <AlertRow key={a.id} alert={a} onAction={act} onOpenPost={openPostId} />
           ))}
           {data?.length === 0 && (
             <GlassCard className="p-12 text-center text-xs text-slate-400">
@@ -245,7 +239,6 @@ export default function Alerts() {
         </div>
       )}
 
-      <DetailDrawer post={selectedPost} onClose={() => setSelectedPost(null)} />
     </div>
   );
 }

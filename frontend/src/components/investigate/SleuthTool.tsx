@@ -3,11 +3,13 @@ import { Fingerprint, Globe, ShieldAlert, UserSearch } from "lucide-react";
 import GlassCard, { SectionTitle } from "../GlassCard";
 import { api } from "../../services/api";
 import type { Dossier } from "../../services/api";
-import { THREAT_COLORS } from "../../data/constants";
+import { sentimentColor } from "../../data/constants";
+import { usePostDetail } from "../PostDetailProvider";
 import { BOT_COLORS, EmptyHint, KV, Meter, Pill, RunButton, Spinner, TextInput } from "./shared";
 import { safeHref } from "../../lib/safeUrl";
 
 export default function SleuthTool() {
+  const { openPostId } = usePostDetail();
   const [handle, setHandle] = useState("");
   const [data, setData] = useState<Dossier | null>(null);
   const [loading, setLoading] = useState(false);
@@ -67,7 +69,7 @@ export default function SleuthTool() {
                   <KV k="Posts / day" v={data.activity!.posts_per_day} />
                   <KV k="Platforms" v={data.profile.platforms.join(", ")} />
                   <KV k="Languages" v={data.profile.languages.join(", ")} />
-                  <KV k="Avg threat" v={data.threat_profile!.avg_threat_score} />
+                  <KV k="Avg threat" v={data.threat_profile!.avg_concern_score} />
                   <KV k="In cluster" v={data.coordination!.in_cluster ? data.coordination!.cluster_ids.join(", ") : "no"} />
                 </div>
               ) : (
@@ -81,19 +83,27 @@ export default function SleuthTool() {
               <div className="mb-2 text-sm font-semibold text-slate-200">Threat footprint</div>
               <div className="flex flex-wrap gap-1.5">
                 {Object.entries(data.threat_profile.label_breakdown).map(([k, v]) => (
-                  <Pill key={k} color={THREAT_COLORS[k] ?? "#64748B"}>{k}: {v}</Pill>
+                  <Pill key={k} color={sentimentColor(k)}>{k}: {v}</Pill>
                 ))}
               </div>
               {data.notable_posts && data.notable_posts.length > 0 && (
                 <div className="mt-3 space-y-1.5">
                   {data.notable_posts.map((p, i) => (
-                    <div key={i} className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2">
+                    <button
+                      key={p.id ?? i}
+                      onClick={() => p.id && openPostId(p.id)}
+                      disabled={!p.id}
+                      className="w-full rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-left transition-colors enabled:hover:border-accent/40 enabled:hover:bg-white/[0.05] disabled:cursor-default"
+                    >
                       <div className="flex items-center justify-between text-[11px]">
                         <span className="text-slate-500">{p.platform}</span>
-                        <span style={{ color: THREAT_COLORS[p.threat_label] ?? "#64748B" }}>{p.threat_label} · {p.threat_score}</span>
+                        <span style={{ color: sentimentColor(p.sentiment_label) }}>{p.sentiment_label} · {p.concern_score}</span>
                       </div>
                       <div className="mt-1 text-[13px] text-slate-300">{p.text}</div>
-                    </div>
+                      {p.id && (
+                        <span className="mt-1 block text-[10.5px] font-semibold text-accent">open full detail →</span>
+                      )}
+                    </button>
                   ))}
                 </div>
               )}

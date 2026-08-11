@@ -323,11 +323,27 @@ class Settings(BaseSettings):
     # because the alternative to a slow answer here is no answer at all.
     OLLAMA_TIMEOUT_SECONDS: int = 120
 
-    # GNews (gnews.io) — richer news corroboration for analyst-triggered
-    # fact-checks and evidence dossiers. Free tier: 100 requests/day, so the
-    # background ingest loop never touches it (it stays on Google News RSS).
+    # ── news corroboration for evidence generation (services/fact_check.py) ──
+    # Three tiers, queried in this order and merged into one evidence set:
+    #
+    #  1. Google News RSS — keyless and unmetered, so the background ingest loop
+    #     uses only this one. Headlines and source names, no descriptions.
+    #  2. GNews (gnews.io) — descriptions and timestamps. Free tier is 100
+    #     req/day, so analyst-triggered checks only, behind a self-imposed cap.
+    #  3. NewsAPI.org — a second independent index with a different publisher
+    #     mix, which is the point of having it: two APIs agreeing on a story is
+    #     corroboration, one API's index having it is a search result. Free tier
+    #     is 100 req/day and is developer-only (no production use), same cap.
+    #
+    # Both keys are optional. A missing key drops that tier from the walk; the
+    # evidence block then names only the sources that actually answered, and
+    # never implies coverage it did not get.
+    # Both live in backend/.env, which is gitignored — this file is not, and a
+    # key committed here is a key published.
     GNEWS_API_KEY: str = ""
     GNEWS_DAILY_BUDGET: int = 80  # self-imposed cap under the 100/day limit
+    NEWSAPI_KEY: str = ""
+    NEWSAPI_DAILY_BUDGET: int = 80
 
     # Twilio WhatsApp Alerts
     TWILIO_ACCOUNT_SID: str = ""
@@ -384,13 +400,33 @@ class Settings(BaseSettings):
     # "suratsmartcity" was exactly that — it had been the documented Surat seed
     # since the beginning and does not resolve, so Surat had no civic page at
     # all while appearing configured.
+    # Verify a candidate before adding it — `python -m app.crawlers.instagram_verify
+    # <handle>:<City>` checks that it resolves, is public, has an audience and is
+    # not dormant, and prints a line ready to paste here.
     IG_SEED_USERNAMES_RAW: list[str] = [
-        "amdavadamc:Ahmedabad",       # Ahmedabad Municipal Corporation — 91k
-        "suratcitypolice:Surat",      # Surat City Police — 443k
-        "vmcvadodara:Vadodara",       # Vadodara Municipal Corporation — 94k
-        # Rajkot still needs a verified handle: the public fallback route was
-        # rate-limited when the others were checked, so no candidate has been
-        # confirmed rather than one having been rejected.
+        "amdavadamc:Ahmedabad",         # Ahmedabad Municipal Corporation — 91k
+        "ahmedabadpolice:Ahmedabad",    # Ahmedabad Police — 536k, verified 2026-08-10
+        "suratcitypolice:Surat",        # Surat City Police — 445k, active
+        "vmcvadodara:Vadodara",         # Vadodara Municipal Corporation — 94k
+        "vadodaracitypolice:Vadodara",  # Vadodara City Police — 33k, verified 2026-08-10
+        "ourvadodara:Vadodara",         # OUR VADODARA™ — 1.14M, citizen/civic desk
+        # Statewide, no :City tag on purpose — it covers all four cities, so
+        # per-post geo-tagging beats a blanket label.
+        "cmogujarat",                   # CMO Gujarat — 403k, official
+        # Rajkot has no seed, and every rejected candidate is listed so nobody
+        # re-guesses the same dead handles (checked 2026-08-10):
+        #   rajkotcitypolice   exists, dormant 531 days — a dormant account
+        #                      re-serves its last posts forever, which would
+        #                      re-inject year-old content every single cycle
+        #   rajkotcity         private — returns no media to a non-follower
+        #   rmc_rajkot (37), myrajkot (71)  — impersonation/fan accounts
+        #   rajkotmunicipalcorporation, rmcrajkot, rajkotmuni_corp,
+        #   collectorrajkot   — do not resolve at all
+        # Rajkot is therefore covered only by hashtag and watchlist discovery
+        # until a real handle is found. Re-check with:
+        #   python -m app.crawlers.instagram_verify <handle>:Rajkot
+        # Surat likewise has only the police page: every municipal-corporation
+        # candidate checked was a 2-325 follower impersonation or absent.
     ]
 
     @property
@@ -528,4 +564,8 @@ for _origin in settings.CORS_ORIGINS:
     if _host and _host not in settings.ALLOWED_HOSTS:
         settings.ALLOWED_HOSTS.append(_host)
 
-THREAT_LABELS = ["Incitement to Violence", "Inflammatory", "Fake News", "Neutral"]
+# The only categories this system assigns to a post. It reports how positive or
+# negative a post is — not whether it will incite violence or whether a claim in
+# it is false, which are investigative conclusions no sentiment model can reach
+# from one post's text. See app/ml/classifier.py for the full reasoning.
+SENTIMENT_LABELS = ["negative", "neutral", "positive"]

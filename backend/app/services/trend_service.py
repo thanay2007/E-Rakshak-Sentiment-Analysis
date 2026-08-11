@@ -40,12 +40,12 @@ def _term_stats(posts: list[Post], hours: int, getter, kind: str) -> list[dict]:
                 continue
             counts[t] += 1
             series[t][idx] += 1
-            labels[t][p.threat_label] += 1
+            labels[t][p.sentiment_label] += 1
 
     out = []
     
-    # Auto-discovery
-    spiking_threats = []
+    # Auto-discovery: terms that are both spiking AND trending negative
+    spiking_negative = []
 
     for term, count in counts.most_common(14):
         s = series[term]
@@ -56,8 +56,8 @@ def _term_stats(posts: list[Post], hours: int, getter, kind: str) -> list[dict]:
         top_label = labels[term].most_common(1)[0][0]
         spiking = z >= 2.0
         
-        if spiking and top_label != "Neutral":
-            spiking_threats.append({"kind": kind, "value": term})
+        if spiking and top_label == "negative":
+            spiking_negative.append({"kind": kind, "value": term})
 
         out.append({
             "term": term, "count": count, "series": s,
@@ -65,11 +65,11 @@ def _term_stats(posts: list[Post], hours: int, getter, kind: str) -> list[dict]:
             "top_label": top_label,
         })
         
-    if spiking_threats:
+    if spiking_negative:
         from app.models import WatchlistItem
         with session_scope() as s:
             existing = {w.value for w in s.exec(select(WatchlistItem)).all()}
-            for st in spiking_threats:
+            for st in spiking_negative:
                 if st["value"] not in existing:
                     w = WatchlistItem(kind=st["kind"], value=st["value"], note="Auto-discovered due to threat spike", active=False)
                     s.add(w)
@@ -88,8 +88,8 @@ def get_trends(hours: int = 24) -> dict:
         # nothing below changes.
         posts = s.exec(
             select(Post.created_at, Post.language, Post.location,
-                   Post.hashtags, Post.keywords, Post.threat_label,
-                   Post.threat_score)
+                   Post.hashtags, Post.keywords, Post.sentiment_label,
+                   Post.concern_score)
             .where(Post.created_at >= since)
         ).all()
 
@@ -109,11 +109,11 @@ def get_trends(hours: int = 24) -> dict:
         lat, lon = CITIES.get(name, (0.0, 0.0))
         regions.append({
             "name": name, "count": len(ps),
-            "avg_threat": round(mean(p.threat_score for p in ps), 1),
-            "threats": sum(1 for p in ps if p.threat_label != "Neutral"),
+            "avg_concern": round(mean(p.concern_score for p in ps), 1),
+            "threats": sum(1 for p in ps if p.sentiment_label == "negative"),
             "lat": lat, "lon": lon,
         })
-    regions.sort(key=lambda r: -r["avg_threat"])
+    regions.sort(key=lambda r: -r["avg_concern"])
 
     return {
         "window_hours": hours,

@@ -4,7 +4,7 @@ import {
 import type { Simulation } from "d3-force";
 import { gsap } from "gsap";
 import { useEffect, useRef, useState } from "react";
-import { threatColor } from "../data/constants";
+import { concernColor } from "../data/constants";
 import type { NetLink, NetNode } from "../services/api";
 
 interface SimNode extends NetNode {
@@ -243,7 +243,7 @@ export default function NetworkGraph({
       // nodes
       for (const n of st.nodes) {
         const dimmed = focus ? !neighbors.has(n.id) : false;
-        const color = threatColor(n.threat);
+        const color = concernColor(n.threat);
         ctx.globalAlpha = st.alpha * (dimmed ? 0.13 : 1);
 
         if (n.threat >= 65 && !dimmed) {

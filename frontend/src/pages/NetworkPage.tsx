@@ -1,10 +1,11 @@
 import { Bot, ExternalLink, Network, Radar, Share2, Sparkles, Users } from "lucide-react";
 import { useMemo, useState } from "react";
-import { BotChip, PlatformIcon, ThreatBadge } from "../components/Badges";
+import { BotChip, PlatformIcon, SentimentBadge } from "../components/Badges";
+import { usePostDetail } from "../components/PostDetailProvider";
 import GlassCard, { SectionTitle } from "../components/GlassCard";
 import NetworkGraph from "../components/NetworkGraph";
 import { SkeletonChart, SkeletonRow } from "../components/Skeletons";
-import { threatColor } from "../data/constants";
+import { concernColor } from "../data/constants";
 import { useGsapReveal } from "../hooks/useGsapReveal";
 import { usePolling } from "../hooks/usePolling";
 import { api } from "../services/api";
@@ -31,6 +32,7 @@ function profileUrl(n: NetNode): string | null {
 const PLATFORMS = ["All", "X", "Reddit", "Facebook", "Instagram", "Telegram", "YouTube"];
 
 export default function NetworkPage() {
+  const { openPostId } = usePostDetail();
   const [hours, setHours] = useState(24);
   const [platform, setPlatform] = useState("All");
   const [selected, setSelected] = useState<NetNode | null>(null);
@@ -190,7 +192,7 @@ export default function NetworkPage() {
                   <div key={k} className="rounded-xl border border-white/[0.06] bg-base-950/70 p-2.5">
                     <div
                       className="font-mono text-base font-black"
-                      style={{ color: k === "Avg Threat" ? threatColor(selected.threat) : "#E2E8F0" }}
+                      style={{ color: k === "Avg Concern" ? concernColor(selected.threat) : "#E2E8F0" }}
                     >
                       {v}
                     </div>
@@ -258,7 +260,7 @@ export default function NetworkPage() {
                       @{n.id}
                     </span>
                     {n.is_bot && <span className="font-mono text-[9.5px] font-bold text-threat-critical">BOT</span>}
-                    <span className="font-mono text-xs font-bold" style={{ color: threatColor(n.threat) }}>
+                    <span className="font-mono text-xs font-bold" style={{ color: concernColor(n.threat) }}>
                       {Math.round(n.threat)}
                     </span>
                   </button>
@@ -287,7 +289,7 @@ export default function NetworkPage() {
               >
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-xs font-black text-threat-critical">{c.id}</span>
-                  <ThreatBadge label={c.label} />
+                  <SentimentBadge label={c.label} />
                   <span className="font-mono text-xs text-slate-400">
                     {c.accounts.length} accounts · {c.posts} posts
                   </span>
@@ -309,9 +311,21 @@ export default function NetworkPage() {
                     </li>
                   ))}
                 </ul>
-                <p className="mt-2.5 line-clamp-2 rounded-xl border border-white/[0.06] bg-base-950/70 p-2.5 text-xs italic text-slate-300">
-                  “{c.sample_text}”
-                </p>
+                {c.sample_post_id ? (
+                  <button
+                    onClick={() => openPostId(c.sample_post_id!)}
+                    className="mt-2.5 block w-full rounded-xl border border-white/[0.06] bg-base-950/70 p-2.5 text-left text-xs italic text-slate-300 transition-colors hover:border-accent/40 hover:bg-white/[0.04]"
+                  >
+                    <span className="line-clamp-2">“{c.sample_text}”</span>
+                    <span className="mt-1 block not-italic text-[10.5px] font-semibold text-accent">
+                      open this post →
+                    </span>
+                  </button>
+                ) : (
+                  <p className="mt-2.5 line-clamp-2 rounded-xl border border-white/[0.06] bg-base-950/70 p-2.5 text-xs italic text-slate-300">
+                    “{c.sample_text}”
+                  </p>
+                )}
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {c.accounts.slice(0, 8).map((a) => (
                     <span key={a} className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-0.5 font-mono text-[10.5px] text-slate-300">

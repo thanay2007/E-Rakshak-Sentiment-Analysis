@@ -46,7 +46,7 @@ def _spread_score(p: Post, reach: float, reach_max: float) -> float:
     """0-100 blend of audience reach, engagement and threat intensity."""
     reach_norm = 100 * (reach / reach_max) if reach_max > 0 else 0
     verified_boost = 15 if p.author_verified else 0   # a blue-check claim travels further
-    return round(min(100.0, 0.45 * reach_norm + 0.40 * p.threat_score + verified_boost), 1)
+    return round(min(100.0, 0.45 * reach_norm + 0.40 * p.concern_score + verified_boost), 1)
 
 
 def detect_emerging(hours: int = 24) -> dict:
@@ -59,10 +59,10 @@ def detect_emerging(hours: int = 24) -> dict:
             # payload to drag across the network to compute a spread score.
             select(Post.id, Post.platform, Post.author_handle, Post.author_name,
                    Post.author_followers, Post.author_verified, Post.text,
-                   Post.translation, Post.threat_label, Post.threat_score,
+                   Post.translation, Post.sentiment_label, Post.concern_score,
                    Post.engagement, Post.fact_check, Post.url, Post.created_at)
             .where(Post.created_at >= since)
-            .order_by(Post.threat_score.desc()).limit(MAX_SCAN)
+            .order_by(Post.concern_score.desc()).limit(MAX_SCAN)
         ).all()
     if not posts:
         return {"window_hours": hours, "count": 0, "items": []}
@@ -74,8 +74,10 @@ def detect_emerging(hours: int = 24) -> dict:
     items = []
     for p in posts:
         spread = _spread_score(p, reach[p.id], reach_max)
-        # gate on spread OR an inherently high-risk label
-        if spread < SPREAD_MIN and p.threat_label not in ("Fake News", "Incitement to Violence"):
+        # gate on spread OR strongly negative sentiment: a claim nobody is
+        # reading is not emerging, but an angry claim that IS being read is
+        # worth surfacing before it spreads further
+        if spread < SPREAD_MIN and p.sentiment_label != "negative":
             continue
 
         # count independent sources: distinct OTHER authors with a similar claim
@@ -97,8 +99,8 @@ def detect_emerging(hours: int = 24) -> dict:
         reasons = [f"projected spread {spread}/100 "
                    f"({p.author_followers:,} followers"
                    + (", verified account" if p.author_verified else "") + ")"]
-        if p.threat_label != "Neutral":
-            reasons.append(f"classified {p.threat_label}")
+        if p.sentiment_label == "negative":
+            reasons.append(f"negative sentiment, concern {round(p.concern_score)}/100")
         if fc.get("verdict") in ("uncorroborated", "partially corroborated"):
             reasons.append(f"cross-source check: {fc['verdict']} — no independent news coverage")
         else:
@@ -112,8 +114,8 @@ def detect_emerging(hours: int = 24) -> dict:
             "author_followers": p.author_followers,
             "author_verified": p.author_verified,
             "text": (p.translation or p.text)[:220],
-            "threat_label": p.threat_label,
-            "threat_score": p.threat_score,
+            "sentiment_label": p.sentiment_label,
+            "concern_score": p.concern_score,
             "spread_score": spread,
             "source_count": source_count,
             "url": p.url,

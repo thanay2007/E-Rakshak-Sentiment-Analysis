@@ -207,13 +207,13 @@ def _filtered_posts(args: dict):
     if language:
         stmt = stmt.where(func.lower(col(Post.language)) == language.lower())
 
-    label = str(args.get("threat_label") or "").strip()
+    label = str(args.get("sentiment_label") or "").strip()
     if label:
-        stmt = stmt.where(func.lower(col(Post.threat_label)) == label.lower())
+        stmt = stmt.where(func.lower(col(Post.sentiment_label)) == label.lower())
 
-    if args.get("min_threat_score") is not None:
+    if args.get("min_concern_score") is not None:
         try:
-            stmt = stmt.where(Post.threat_score >= float(args["min_threat_score"]))
+            stmt = stmt.where(Post.concern_score >= float(args["min_concern_score"]))
         except (TypeError, ValueError):
             pass
 
@@ -239,13 +239,13 @@ def _h_situation_brief(ctx: ToolContext, args: dict) -> ToolResult:
                    .where(Post.created_at >= start)).one()
     above = s.exec(select(func.count()).select_from(Post)
                    .where(Post.created_at >= start)
-                   .where(Post.threat_score >= settings.ALERT_THRESHOLD)).one()
+                   .where(Post.concern_score >= settings.ALERT_THRESHOLD)).one()
     critical = s.exec(select(func.count()).select_from(Alert)
                       .where(Alert.created_at >= start)
                       .where(col(Alert.severity) == "critical")).one()
     unactioned = s.exec(select(func.count()).select_from(Alert)
                         .where(col(Alert.status) == "new")).one()
-    avg = s.exec(select(func.avg(Post.threat_score))
+    avg = s.exec(select(func.avg(Post.concern_score))
                  .where(Post.created_at >= start)).one() or 0
     amplified = s.exec(select(func.count()).select_from(Post)
                        .where(Post.created_at >= start)
@@ -258,7 +258,7 @@ def _h_situation_brief(ctx: ToolContext, args: dict) -> ToolResult:
         "alert_threshold": settings.ALERT_THRESHOLD,
         "critical_alerts_in_window": critical,
         "unactioned_alerts_total": unactioned,
-        "average_threat_score": round(float(avg), 1),
+        "average_concern_score": round(float(avg), 1),
         "amplified_posts": amplified,
     })
 
@@ -271,10 +271,10 @@ def _h_count_posts(ctx: ToolContext, args: dict) -> ToolResult:
     # across a cartesian product of every post against every filtered post.
     sub = stmt.subquery()
     avg = ctx.session.exec(
-        select(func.avg(sub.c.threat_score)).select_from(sub)).one() or 0
+        select(func.avg(sub.c.concern_score)).select_from(sub)).one() or 0
     return ToolResult({
         "matching_posts": total,
-        "average_threat_score": round(float(avg), 1),
+        "average_concern_score": round(float(avg), 1),
         "window_hours": hours,
         "filters_applied": {k: v for k, v in args.items() if v not in (None, "")},
         "city_resolved_to": city or "all monitored cities",
@@ -287,7 +287,7 @@ _DIMENSIONS = {
     "location": Post.location,
     "language": Post.language,
     "sentiment": Post.sentiment_label,
-    "threat_label": Post.threat_label,
+    "sentiment_label": Post.sentiment_label,
     "intent": Post.intent,
 }
 
@@ -302,12 +302,12 @@ def _h_breakdown(ctx: ToolContext, args: dict) -> ToolResult:
     stmt, hours, city = _filtered_posts(args)
     sub = stmt.subquery()
     grouped = ctx.session.exec(
-        select(sub.c[column.key], func.count(), func.avg(sub.c.threat_score))
+        select(sub.c[column.key], func.count(), func.avg(sub.c.concern_score))
         .group_by(sub.c[column.key])).all()
 
     rows = sorted(
         ({"value": str(value or "unspecified"), "posts": int(n),
-          "average_threat_score": round(float(avg or 0), 1)}
+          "average_concern_score": round(float(avg or 0), 1)}
          for value, n, avg in grouped),
         key=lambda r: -r["posts"])[: _clamp_limit(args.get("limit"), 8, 20)]
 
@@ -324,7 +324,7 @@ def _h_timeseries(ctx: ToolContext, args: dict) -> ToolResult:
     stmt, hours, city = _filtered_posts(args)
     bucket_hours = 24 if hours > 72 else 1
     rows = ctx.session.exec(
-        stmt.with_only_columns(col(Post.created_at), col(Post.threat_score))
+        stmt.with_only_columns(col(Post.created_at), col(Post.concern_score))
         .order_by(col(Post.created_at).desc()).limit(SCAN_LIMIT)).all()
 
     buckets: dict[str, list[float]] = {}
@@ -334,7 +334,7 @@ def _h_timeseries(ctx: ToolContext, args: dict) -> ToolResult:
         buckets.setdefault(key, []).append(float(score or 0))
 
     series = [{"bucket": key, "posts": len(scores),
-               "average_threat_score": round(sum(scores) / len(scores), 1)}
+               "average_concern_score": round(sum(scores) / len(scores), 1)}
               for key, scores in sorted(buckets.items())]
 
     return ToolResult({"window_hours": hours, "city": city or "all",
@@ -367,8 +367,8 @@ def _h_trending_hashtags(ctx: ToolContext, args: dict) -> ToolResult:
 
 def _h_top_posts(ctx: ToolContext, args: dict) -> ToolResult:
     stmt, hours, city = _filtered_posts(args)
-    order = str(args.get("order_by") or "threat_score").lower()
-    column = col(Post.created_at) if order == "recent" else col(Post.threat_score)
+    order = str(args.get("order_by") or "concern_score").lower()
+    column = col(Post.created_at) if order == "recent" else col(Post.concern_score)
     limit = _clamp_limit(args.get("limit"), 3, 10)
     posts = ctx.session.exec(stmt.order_by(column.desc()).limit(limit)).all()
 
@@ -379,8 +379,8 @@ def _h_top_posts(ctx: ToolContext, args: dict) -> ToolResult:
             "author_handle": guard.sanitise_untrusted(post.author_handle, 40),
             "author_followers": post.author_followers,
             "author_verified": post.author_verified,
-            "threat_label": post.threat_label,
-            "threat_score": round(post.threat_score, 1),
+            "sentiment_label": post.sentiment_label,
+            "concern_score": round(post.concern_score, 1),
             "sentiment_label": post.sentiment_label,
             "intent": post.intent,
             "language": post.language,
@@ -426,7 +426,7 @@ def _h_list_alerts(ctx: ToolContext, args: dict) -> ToolResult:
     items = [{"alert_id": a.id, "severity": a.severity, "status": a.status,
               "title": guard.sanitise_untrusted(a.title, 120),
               "category": a.category, "location": a.location or "unspecified",
-              "platform": a.platform, "threat_score": round(a.threat_score, 1),
+              "platform": a.platform, "concern_score": round(a.concern_score, 1),
               "created_at": a.created_at.isoformat()} for a in rows]
 
     return ToolResult({"window_hours": hours, "matching_alerts": total,
@@ -443,20 +443,20 @@ def _h_city_comparison(ctx: ToolContext, args: dict) -> ToolResult:
             select(func.count()).select_from(Post)
             .where(Post.created_at >= start, col(Post.location) == city)).one()
         avg = ctx.session.exec(
-            select(func.avg(Post.threat_score))
+            select(func.avg(Post.concern_score))
             .where(Post.created_at >= start, col(Post.location) == city)).one() or 0
         above = ctx.session.exec(
             select(func.count()).select_from(Post)
             .where(Post.created_at >= start, col(Post.location) == city,
-                   Post.threat_score >= settings.ALERT_THRESHOLD)).one()
+                   Post.concern_score >= settings.ALERT_THRESHOLD)).one()
         alerts = ctx.session.exec(
             select(func.count()).select_from(Alert)
             .where(Alert.created_at >= start, col(Alert.location) == city)).one()
         rows.append({"city": city, "posts": posts,
-                     "average_threat_score": round(float(avg), 1),
+                     "average_concern_score": round(float(avg), 1),
                      "posts_above_threshold": above, "alerts": alerts})
 
-    rows.sort(key=lambda r: -r["average_threat_score"])
+    rows.sort(key=lambda r: -r["average_concern_score"])
     return ToolResult({"window_hours": hours, "cities": rows,
                        "alert_threshold": settings.ALERT_THRESHOLD})
 
@@ -517,7 +517,7 @@ def _h_search_posts(ctx: ToolContext, args: dict) -> ToolResult:
             "platform": p.platform,
             "language": p.language,
             "author_handle": guard.sanitise_untrusted(p.author_handle, 40),
-            "threat_label": p.threat_label,
+            "sentiment_label": p.sentiment_label,
             "sentiment_label": p.sentiment_label,
             "text": guard.sanitise_untrusted(p.text, 500)
         })
@@ -543,8 +543,8 @@ def _h_emerging(ctx: ToolContext, args: dict) -> ToolResult:
     summary = [{"platform": i.get("platform"),
                 "author_handle": guard.sanitise_untrusted(
                     str(i.get("author_handle", "")), 40),
-                "threat_label": i.get("threat_label"),
-                "threat_score": i.get("threat_score"),
+                "sentiment_label": i.get("sentiment_label"),
+                "concern_score": i.get("concern_score"),
                 "spread_score": i.get("spread_score"),
                 "independent_sources": i.get("source_count")} for i in items]
 
@@ -680,22 +680,20 @@ TOOLS: list[Tool] = [
 
     Tool("count_posts",
          "Count posts matching any combination of filters, with their mean "
-         "threat score. Use for 'how many ...' questions.",
+         "concern score. Use for 'how many ...' questions.",
          _params({"hours": _HOURS, "city": _CITY, "platform": _PLATFORM,
                   "sentiment": _SENTIMENT,
                   "language": {"type": "string",
                                "description": "English, Hindi, Gujarati, Hinglish or Mixed."},
-                  "threat_label": {"type": "string",
-                                   "enum": ["Incitement to Violence", "Inflammatory",
-                                            "Fake News", "Neutral"]},
-                  "min_threat_score": {"type": "number",
+
+                  "min_concern_score": {"type": "number",
                                        "description": "Only posts scoring at least this (0-100)."},
                   "amplified_only": {"type": "boolean",
                                      "description": "Only posts in a coordinated burst."}}),
          _h_count_posts),
 
     Tool("breakdown",
-         "Group posts by one dimension and return counts and mean threat score "
+         "Group posts by one dimension and return counts and mean concern score "
          "per group. Use for 'by platform', 'which city is worst', 'split by "
          "language'.",
          _params({"dimension": {"type": "string",
@@ -728,7 +726,7 @@ TOOLS: list[Tool] = [
          "scores and say the post is on screen.",
          _params({"hours": _HOURS, "city": _CITY, "platform": _PLATFORM,
                   "sentiment": _SENTIMENT,
-                  "order_by": {"type": "string", "enum": ["threat_score", "recent"]},
+                  "order_by": {"type": "string", "enum": ["concern_score", "recent"]},
                   "limit": {"type": "integer", "description": "How many (default 3)."}}),
          _h_top_posts),
 

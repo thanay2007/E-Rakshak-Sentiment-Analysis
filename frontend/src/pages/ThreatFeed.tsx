@@ -2,11 +2,11 @@ import { ChevronLeft, ChevronRight, Filter, FilterX, RefreshCw, Search, SlidersH
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Virtuoso } from "react-virtuoso";
-import DetailDrawer from "../components/DetailDrawer";
 import FeedItemCard from "../components/FeedItemCard";
+import { usePostDetail } from "../components/PostDetailProvider";
 import GlassCard from "../components/GlassCard";
 import { SkeletonRow } from "../components/Skeletons";
-import { LANGUAGES, PLATFORMS, THREAT_COLORS, THREAT_LABELS, THREAT_SHORT } from "../data/constants";
+import { LANGUAGES, PLATFORMS, SENTIMENT_LABELS, SENTIMENT_TEXT, sentimentColor } from "../data/constants";
 import { useGsapReveal } from "../hooks/useGsapReveal";
 import { usePolling } from "../hooks/usePolling";
 import { api } from "../services/api";
@@ -39,7 +39,7 @@ function FilterChip({ active, color, children, onClick }: {
 
 export default function ThreatFeed() {
   const [params, setParams] = useSearchParams();
-  const [selected, setSelected] = useState<Post | null>(null);
+  const { openPost } = usePostDetail();
   const [page, setPage] = useState(1);
 
   const get = (k: string) => params.get(k) ?? "";
@@ -94,7 +94,7 @@ export default function ThreatFeed() {
     () => ({
       platform: get("platform") || undefined,
       language: get("language") || undefined,
-      threat_level: get("threat_level") || undefined,
+      sentiment: get("sentiment") || undefined,
       location: get("location") || undefined,
       q: get("q") || undefined,
       min_score: get("min_score") ? Number(get("min_score")) : undefined,
@@ -113,7 +113,7 @@ export default function ThreatFeed() {
 
   const activeFiltersCount = [
     get("platform"),
-    get("threat_level"),
+    get("sentiment"),
     get("language"),
     get("location"),
     get("q"),
@@ -146,14 +146,14 @@ export default function ThreatFeed() {
           <span className="mx-1.5 hidden h-4 w-px bg-white/15 md:block" />
 
           <div className="flex flex-wrap items-center gap-1.5">
-            {THREAT_LABELS.map((t) => (
+            {SENTIMENT_LABELS.map((t) => (
               <FilterChip
                 key={t}
-                color={THREAT_COLORS[t]}
-                active={get("threat_level").split(",").includes(t)}
-                onClick={() => toggleCsv("threat_level", t)}
+                color={sentimentColor(t)}
+                active={get("sentiment").split(",").includes(t)}
+                onClick={() => toggleCsv("sentiment", t)}
               >
-                {THREAT_SHORT[t]}
+                {SENTIMENT_TEXT[t]}
               </FilterChip>
             ))}
           </div>
@@ -308,7 +308,7 @@ export default function ThreatFeed() {
               data={data?.items || []}
               itemContent={(_index, p) => (
                 <div className="pb-2.5 pr-1">
-                  <FeedItemCard post={p} onOpen={setSelected} />
+                  <FeedItemCard post={p} onOpen={openPost} />
                 </div>
               )}
             />
@@ -316,7 +316,6 @@ export default function ThreatFeed() {
         </div>
       )}
 
-      <DetailDrawer post={selected} onClose={() => setSelected(null)} />
     </div>
   );
 }

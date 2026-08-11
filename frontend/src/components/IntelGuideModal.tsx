@@ -19,14 +19,13 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { THREAT_COLORS, THREAT_SHORT } from "../data/constants";
 
 interface Props {
   open: boolean;
   onClose: () => void;
 }
 
-type Tab = "overview" | "threats" | "spikes" | "nlp" | "osint" | "shortcuts";
+type Tab = "overview" | "sentiment" | "spikes" | "nlp" | "osint" | "shortcuts";
 
 export default function IntelGuideModal({ open, onClose }: Props) {
   const [tab, setTab] = useState<Tab>("overview");
@@ -66,7 +65,7 @@ export default function IntelGuideModal({ open, onClose }: Props) {
                   E-RAKSHAK · Intelligence & Operational Guide
                 </h2>
                 <p className="text-xs text-slate-400">
-                  Threat metrics, statistical definitions, NLP scoring, and OSINT investigation reference
+                  Sentiment tagging, concern scoring, spike statistics and OSINT investigation reference
                 </p>
               </div>
             </div>
@@ -83,7 +82,7 @@ export default function IntelGuideModal({ open, onClose }: Props) {
           <div className="flex flex-wrap gap-1 border-b border-white/[0.06] bg-base-800/50 px-6 py-2.5">
             {[
               { id: "overview", label: "Quick Start", icon: Activity },
-              { id: "threats", label: "Threat Classifications", icon: ShieldAlert },
+              { id: "sentiment", label: "Sentiment & Concern Score", icon: ShieldAlert },
               { id: "spikes", label: "Spikes & Z-Scores (σ)", icon: Flame },
               { id: "nlp", label: "Multilingual NLP", icon: Cpu },
               { id: "osint", label: "OSINT & Link Analysis", icon: Network },
@@ -128,7 +127,7 @@ export default function IntelGuideModal({ open, onClose }: Props) {
                       <ShieldAlert size={16} className="text-threat-critical" /> 2. Threat Triage
                     </div>
                     <p className="mt-2 text-xs leading-relaxed text-slate-400">
-                      High-threat posts (score ≥ 65) automatically raise Critical Incidents with auto-generated escalation packets and suggested police countermeasures.
+                      Posts scoring ≥ 65 on the concern score automatically raise Critical Incidents with auto-generated escalation packets and suggested police countermeasures.
                     </p>
                   </div>
 
@@ -153,72 +152,83 @@ export default function IntelGuideModal({ open, onClose }: Props) {
               </div>
             )}
 
-            {tab === "threats" && (
+            {tab === "sentiment" && (
               <div className="space-y-5">
-                <p className="text-xs text-slate-400">
-                  Every post receives a normalized threat score from 0 to 100 calculated by ensemble classification:
-                </p>
+                <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
+                  <h3 className="font-bold text-slate-200">What the system claims — and what it does not</h3>
+                  <p className="mt-2 text-xs leading-relaxed text-slate-300">
+                    Every post gets exactly one tag — <b>positive</b>, <b>negative</b> or <b>neutral</b> —
+                    plus a <b>concern score</b> from 0 to 100. That is the whole taxonomy.
+                  </p>
+                  <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                    The system does <b>not</b> classify posts as incitement, propaganda or
+                    misinformation. Whether a post will cause violence, or whether a claim inside it
+                    is false, are investigative conclusions about the world — a model reading one
+                    post's words cannot establish either, and a console that printed them as model
+                    output would invite an analyst to treat a guess as a finding. Where an external
+                    fact matters, the post detail shows news corroboration from named sources
+                    (Google News, GNews, NewsAPI.org) and lets you judge it yourself.
+                  </p>
+                </div>
 
-                <div className="space-y-3">
-                  <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="h-3 w-3 rounded-full bg-threat-critical" />
-                        <span className="font-bold text-red-300">Critical Threat (Score 65 – 100)</span>
+                <div>
+                  <h3 className="mb-2 font-bold text-slate-200">The three tags</h3>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    {[
+                      { t: "Negative", c: "red", d: "Anger, grievance, hostility, abuse or distress." },
+                      { t: "Neutral", c: "slate", d: "Factual, logistical or informational — no clear lean." },
+                      { t: "Positive", c: "emerald", d: "Approval, praise, celebration or satisfaction." },
+                    ].map((x) => (
+                      <div key={x.t} className={`rounded-xl border border-${x.c}-500/30 bg-${x.c}-500/10 p-3`}>
+                        <div className={`font-bold text-${x.c}-300`}>{x.t}</div>
+                        <p className="mt-1 text-[11px] leading-relaxed text-slate-300">{x.d}</p>
                       </div>
-                      <span className="rounded-md border border-red-500/40 bg-red-500/20 px-2 py-0.5 font-mono text-[11px] font-bold text-red-200">
-                        EMERGENCY ACTION
-                      </span>
-                    </div>
-                    <p className="mt-2 text-xs text-slate-300">
-                      Explicit calls for mob violence, riot orchestration, weapon acquisition, VIP threats, or urgent public safety emergencies. Immediately raises a Critical Alert.
-                    </p>
+                    ))}
                   </div>
+                </div>
 
-                  <div className="rounded-xl border border-orange-500/30 bg-orange-500/10 p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="h-3 w-3 rounded-full bg-threat-inflammatory" />
-                        <span className="font-bold text-orange-300">Inflammatory Content (Score 40 – 64)</span>
+                <div>
+                  <h3 className="mb-2 font-bold text-slate-200">Concern score bands</h3>
+                  <p className="mb-2 text-xs text-slate-400">
+                    The score combines how negative the post is (weighted by model confidence, 50%),
+                    how toxic its language is (22%), how far it travelled (18%) and the severity of
+                    the strongest matched term (10%). The weights are shaped so no single dimension
+                    reaches an alert band alone — an alert always means <b>negative and travelling</b>.
+                    A positive post never raises one, however viral.
+                  </p>
+                  <div className="space-y-2">
+                    {[
+                      { t: "Critical", r: "74 – 100", c: "red", d: "Strongly negative, abusive and spreading. Raises a critical alert with an auto-generated escalation packet." },
+                      { t: "High", r: "65 – 73", c: "orange", d: "Raises a high alert for analyst triage." },
+                      { t: "Elevated", r: "50 – 64", c: "amber", d: "Surfaced on the dashboard as worth a look; no alert." },
+                      { t: "Routine", r: "0 – 49", c: "emerald", d: "Ordinary traffic — collected and searchable, nothing raised." },
+                    ].map((b) => (
+                      <div key={b.t} className={`rounded-xl border border-${b.c}-500/30 bg-${b.c}-500/10 p-3`}>
+                        <div className="flex items-center justify-between">
+                          <span className={`font-bold text-${b.c}-300`}>{b.t}</span>
+                          <span className={`rounded-md border border-${b.c}-500/40 bg-${b.c}-500/20 px-2 py-0.5 font-mono text-[11px] font-bold text-${b.c}-200`}>
+                            {b.r}
+                          </span>
+                        </div>
+                        <p className="mt-1.5 text-xs text-slate-300">{b.d}</p>
                       </div>
-                      <span className="rounded-md border border-orange-500/40 bg-orange-500/20 px-2 py-0.5 font-mono text-[11px] font-bold text-orange-200">
-                        HIGH MONITORING
-                      </span>
-                    </div>
-                    <p className="mt-2 text-xs text-slate-300">
-                      Communal slurs, hate speech, targeted harassment, sectarian tension, or provocative statements designed to polarize communities.
-                    </p>
+                    ))}
                   </div>
+                </div>
 
-                  <div className="rounded-xl border border-purple-500/30 bg-purple-500/10 p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="h-3 w-3 rounded-full bg-threat-fake" />
-                        <span className="font-bold text-purple-300">Fake News & Misinformation (Score 40 – 75)</span>
-                      </div>
-                      <span className="rounded-md border border-purple-500/40 bg-purple-500/20 px-2 py-0.5 font-mono text-[11px] font-bold text-purple-200">
-                        FACT-CHECK ACTIVE
-                      </span>
-                    </div>
-                    <p className="mt-2 text-xs text-slate-300">
-                      Fabricated news articles, out-of-context historical photos, synthetic AI images, morphed video clips, or false government notices.
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="h-3 w-3 rounded-full bg-threat-neutral" />
-                        <span className="font-bold text-emerald-300">Neutral / Benign (Score 0 – 39)</span>
-                      </div>
-                      <span className="rounded-md border border-emerald-500/40 bg-emerald-500/20 px-2 py-0.5 font-mono text-[11px] font-bold text-emerald-200">
-                        CLEAN
-                      </span>
-                    </div>
-                    <p className="mt-2 text-xs text-slate-300">
-                      Normal public discourse, news reporting, cultural discussions, or non-threatening commentary.
-                    </p>
-                  </div>
+                <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
+                  <h3 className="font-bold text-slate-200">How a tag is decided</h3>
+                  <p className="mt-2 text-xs leading-relaxed text-slate-300">
+                    Three independent models read the post — a fine-tuned MuRIL transformer, a
+                    TF-IDF + LinearSVC classical model, and a multilingual valence lexicon. All
+                    three see the post together with its discourse tags (is it a question, reported
+                    speech, conditional, ironic, contrastive). If two or more agree, that tag wins;
+                    if all three disagree, the most confident model's answer is chosen. Account
+                    standing and reach then adjust the <i>confidence only</i>, never the tag, and
+                    every adjustment is shown with its reason. Finally Groq reads the post and can
+                    overturn the result when it is confident — recorded as an override, never
+                    silent. Open any post to see all of it.
+                  </p>
                 </div>
               </div>
             )}

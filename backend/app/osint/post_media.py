@@ -207,7 +207,7 @@ def _post_ref(post: Post) -> dict:
     return {"post_id": post.id, "platform": post.platform,
             "author_handle": post.author_handle,
             "text": (post.translation or post.text)[:200],
-            "threat_label": post.threat_label, "url": post.url}
+            "sentiment_label": post.sentiment_label, "url": post.url}
 
 
 async def analyze_from_post(post_id: str, *, try_live: bool = True) -> dict:
@@ -217,14 +217,14 @@ async def analyze_from_post(post_id: str, *, try_live: bool = True) -> dict:
         if not post:
             # convenience: newest post that carries media (live attachment
             # first, then the simulated monitored-media index)
-            rows = s.exec(select(Post).order_by(col(Post.threat_score).desc()).limit(120)).all()
+            rows = s.exec(select(Post).order_by(col(Post.concern_score).desc()).limit(120)).all()
             post = next((p for p in rows if p.media_urls
-                         or media_intel.scenario_for(p.id, p.threat_label)),
+                         or media_intel.scenario_for(p.id, p.sentiment_label)),
                         rows[0] if rows else None)
         if not post:
             return {"ok": False, "error": "No posts available in the feed."}
         ref = _post_ref(post)
-        pid, label, url = post.id, post.threat_label, post.url
+        pid, label, url = post.id, post.sentiment_label, post.url
         media_urls = list(post.media_urls or [])
 
     # Live posts store their attached media directly (pbs.twimg.com / i.redd.it

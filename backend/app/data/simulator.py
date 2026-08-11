@@ -4,12 +4,13 @@
 Produces a realistic, labeled, multilingual social-media stream:
   • ~60 organic accounts + 3 bot networks with telltale signals
     (young accounts, numeric handles, tiny follower counts)
-  • category mix skewed to Neutral like real traffic
+  • theme mix skewed to everyday life like real traffic
   • coordinated amplification bursts: bot nets repost near-duplicates of a
-    threat/fake post within a ±3 minute window (what the network-analysis
-    module is built to catch)
-  • every post carries its ground-truth label (true_label) so /api/stats can
-    report live classification accuracy, and an English gloss for the analyst
+    hostile post within a ±3 minute window (what the network-analysis module is
+    built to catch)
+  • every post carries its ground-truth SENTIMENT (true_label — positive,
+    negative or neutral) so /api/stats can report live accuracy against what
+    the models predicted, plus an English gloss for the analyst
 
 The same generator backfills seed history, drives the live stream tick and
 builds the train/test datasets (with different RNG seeds).
@@ -20,18 +21,25 @@ import random
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from app.data.templates import CITIES, GROUPS, LANG_NAMES, OFFICIALS, PLACES, TEMPLATES, TIMES
+from app.data.templates import (CITIES, GROUPS, LANG_NAMES, OFFICIALS, PLACES,
+                                 TEMPLATES, THEME_TONE, TIMES)
 from app.schemas import RawPost
 
 PLATFORMS = ["X", "Facebook", "Instagram", "Reddit"]
 PLATFORM_WEIGHTS = [0.40, 0.25, 0.20, 0.15]
 
-CATEGORY_WEIGHTS = {
-    "Neutral": 0.55,
-    "Inflammatory": 0.17,
-    "Fake News": 0.16,
-    "Incitement to Violence": 0.12,
+# Subject-matter mix of the simulated stream, skewed to ordinary city life the
+# way real municipal traffic is. These are THEMES, not predictions — the label
+# a post ends up with is its sentiment, derived per template below.
+THEME_WEIGHTS = {
+    "everyday": 0.55,
+    "hostile": 0.17,
+    "rumor": 0.16,
+    "mobilization": 0.12,
 }
+# Themes whose posts are hostile enough to attract engagement the way real
+# outrage does.
+_CHARGED_THEMES = ("hostile", "rumor", "mobilization")
 
 FIRST = ["Raj", "Amit", "Priya", "Neha", "Vikram", "Sanjay", "Kavita", "Rahul", "Meera", "Arjun",
          "Pooja", "Deepak", "Anita", "Suresh", "Jignesh", "Hetal", "Chirag", "Falguni", "Parth", "Krupa", "Sivahari"]
@@ -94,9 +102,9 @@ class Simulator:
             "time": self.rng.choice(TIMES[lang]),
         }
 
-    def _engagement(self, category: str, amplified: bool) -> dict:
+    def _engagement(self, theme: str, amplified: bool) -> dict:
         r = self.rng
-        if category == "Neutral":
+        if theme not in _CHARGED_THEMES:
             e = {"likes": r.randint(2, 500), "shares": r.randint(0, 40),
                  "comments": r.randint(0, 60), "views": r.randint(100, 20000)}
         else:
@@ -107,14 +115,14 @@ class Simulator:
             e["views"] = int(e["views"] * r.uniform(1.5, 2.5))
         return e
 
-    def make_post(self, ts: datetime, category: str | None = None,
+    def make_post(self, ts: datetime, theme: str | None = None,
                   author: dict | None = None, cluster_id: str = "",
                   text_override: str | None = None, template: dict | None = None) -> RawPost:
         r = self.rng
-        if category is None:
-            category = r.choices(list(CATEGORY_WEIGHTS), weights=list(CATEGORY_WEIGHTS.values()))[0]
+        if theme is None:
+            theme = r.choices(list(THEME_WEIGHTS), weights=list(THEME_WEIGHTS.values()))[0]
         if template is None:
-            template = r.choice(TEMPLATES[category])
+            template = r.choice(TEMPLATES[theme])
         lang = template["lang"]
         slots = self._slots(lang)
         text = text_override if text_override is not None else template["text"].format(**slots)
@@ -144,10 +152,12 @@ class Simulator:
             location=slots["city"],
             latitude=round(lat + r.uniform(-0.05, 0.05), 4),
             longitude=round(lon + r.uniform(-0.05, 0.05), 4),
-            engagement=self._engagement(category, amplified),
+            engagement=self._engagement(theme, amplified),
             url=url_map[platform],
             cluster_id=cluster_id, is_amplified=amplified,
-            true_label=category,
+            # ground truth is the SENTIMENT, which is the only thing the
+            # models are asked to predict — the theme just picked the text
+            true_label=template.get("tone") or THEME_TONE[theme] or "neutral",
             created_at=_utc(ts),
         )
 
@@ -166,21 +176,21 @@ class Simulator:
         return t
 
     def make_burst(self, ts: datetime) -> list[RawPost]:
-        """One origin threat/fake post + near-duplicate reposts from a bot net
+        """One origin hostile post + near-duplicate reposts from a bot net
         inside a tight time window — the signature of coordinated amplification."""
         r = self.rng
-        category = r.choice(["Incitement to Violence", "Fake News", "Inflammatory"])
-        template = r.choice(TEMPLATES[category])
+        theme = r.choice(_CHARGED_THEMES)
+        template = r.choice(TEMPLATES[theme])
         cluster_id = "burst-" + uuid.uuid4().hex[:8]
         # Burst window ENDS at ts so live bursts never emit future timestamps
         origin_ts = ts - timedelta(seconds=240)
-        origin = self.make_post(origin_ts, category=category, cluster_id=cluster_id, template=template)
+        origin = self.make_post(origin_ts, theme=theme, cluster_id=cluster_id, template=template)
         posts = [origin]
         net = r.choice(self.bot_nets)
         for bot in r.sample(net, k=min(len(net), r.randint(4, 7))):
             dt = origin_ts + timedelta(seconds=r.randint(20, 200))
             posts.append(self.make_post(
-                dt, category=category, author=bot, cluster_id=cluster_id,
+                dt, theme=theme, author=bot, cluster_id=cluster_id,
                 template=template, text_override=self._mutate(origin.text),
             ))
         return posts

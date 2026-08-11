@@ -11,6 +11,19 @@ exactly the Hinglish/Gujlish case. The saved model is auto-detected by
 transformer_engine (NLP_MODE=full) and replaces the generic
 cardiffnlp/twitter-xlm-roberta-base-sentiment.
 
+**Context-augmented.** Each row is wrapped by `ml.context.model_input`, which
+prepends the post's discourse tags — `[ctx1 q self short] why is there no water
+since morning`. MuRIL tokenizes those tags and attends over them like any other
+tokens, so the model can learn that a relayed hypothetical ("rep cond") carries
+weaker polarity than a first-person assertion ("self") containing the same
+words. This is why the fine-tune is worth redoing rather than reusing: the old
+checkpoint never saw a tag and cannot condition on one.
+
+The checkpoint directory gets a `sentinel_context.json` marker recording the
+prefix version. transformer_engine refuses to feed prefixed input to a
+checkpoint without a matching marker, so an old fine-tune keeps working on raw
+text instead of being silently served a distribution it was never trained on.
+
 Usage (from backend/):
     python -m app.ml.download_datasets     # once, fetches the raw datasets
     python -m app.ml.train_sentiment                    # 3 epochs
@@ -23,6 +36,7 @@ import json
 from collections import Counter, defaultdict
 
 from app.config import settings
+from app.ml.context import CONTEXT_PREFIX_VERSION, model_input
 from app.ml.corpus import load_corpus, summarize
 
 SENT_LABELS = ["negative", "neutral", "positive"]
@@ -51,6 +65,11 @@ def main() -> None:
     print("Building corpus from the raw dataset files ...")
     train_rows, test_rows = load_corpus(seed=args.seed)
     summarize(train_rows, test_rows)
+    print(f"\nApplying context prefix ({CONTEXT_PREFIX_VERSION}) to every row ...")
+    for rows in (train_rows, test_rows):
+        for r in rows:
+            r["model_text"] = model_input(r["text"])
+    print(f"  example: {train_rows[0]['model_text'][:110]}")
     label2id = {l: i for i, l in enumerate(SENT_LABELS)}
     id2label = {i: l for l, i in label2id.items()}
     print(f"\ntrain={len(train_rows)}  test={len(test_rows)}  "
@@ -59,7 +78,7 @@ def main() -> None:
     tokenizer = AutoTokenizer.from_pretrained(args.model)
 
     def to_ds(rows):
-        ds = Dataset.from_dict({"text": [r["text"] for r in rows],
+        ds = Dataset.from_dict({"text": [r["model_text"] for r in rows],
                                 "label": [label2id[r["label"]] for r in rows]})
         return ds.map(lambda b: tokenizer(b["text"], truncation=True,
                                           max_length=args.max_len), batched=True)
@@ -124,7 +143,12 @@ def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     model.save_pretrained(OUT_DIR)
     tokenizer.save_pretrained(OUT_DIR)
-    print(f"Saved fine-tuned sentiment model -> {OUT_DIR}")
+    # The marker transformer_engine checks before it prefixes anything.
+    (OUT_DIR / "sentinel_context.json").write_text(
+        json.dumps({"context_version": CONTEXT_PREFIX_VERSION,
+                    "base_model": args.model, "epochs": args.epochs}, indent=2),
+        encoding="utf-8")
+    print(f"Saved fine-tuned sentiment model ({CONTEXT_PREFIX_VERSION}) -> {OUT_DIR}")
 
     # ── per-language report ─────────────────────────────────────────────────
     predictions = trainer.predict(eval_ds).predictions
@@ -153,6 +177,7 @@ def main() -> None:
     overall = metrics(type("P", (), {"predictions": predictions,
                                      "label_ids": np.array([label2id[r["label"]] for r in test_rows])}))
     report = {"model": args.model, "epochs": args.epochs,
+              "context_version": CONTEXT_PREFIX_VERSION,
               "train_size": len(train_rows), "test_size": len(test_rows),
               "overall": {k: round(v, 4) for k, v in overall.items()},
               "per_language": per_lang}
@@ -165,6 +190,8 @@ def main() -> None:
         print(f"{lang:<10}{m['n']:>6}{m['accuracy']:>8.3f}{m['macro_f1']:>9.3f}")
     print(f"\noverall acc={overall['accuracy']:.3f}  macro_f1={overall['macro_f1']:.3f}")
     print(f"Report -> {out}\nSet NLP_MODE=full to serve the fine-tuned model.")
+    print("Retrain the classical model too so both see the same input:\n"
+          "    python -m app.ml.train_baseline")
 
 
 if __name__ == "__main__":

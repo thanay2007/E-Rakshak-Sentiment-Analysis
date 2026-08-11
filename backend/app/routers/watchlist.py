@@ -65,7 +65,7 @@ def _hit_stats_bulk(session: Session, items: list[WatchlistItem],
         cond = _match(w)
         columns += [func.count().filter(cond),
                     func.max(Post.created_at).filter(cond),
-                    func.max(Post.threat_score).filter(cond)]
+                    func.max(Post.concern_score).filter(cond)]
 
     row = session.exec(select(*columns).where(Post.created_at >= since)).one()
     # A SQLAlchemy `Row` is tuple-*like* but is not a tuple subclass, so it has

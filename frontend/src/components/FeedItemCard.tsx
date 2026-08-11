@@ -1,6 +1,7 @@
 import { ChevronRight, ExternalLink, MapPin, MessageSquare, Repeat2, ThumbsUp } from "lucide-react";
 import type { Post } from "../services/api";
-import { BotChip, LanguageChip, PlatformIcon, SentimentBadge, ThreatBadge } from "./Badges";
+import { BotChip, LanguageChip, PlatformIcon, SentimentBadge } from "./Badges";
+import { PostMediaGrid } from "./PostMedia";
 
 export function timeAgo(iso: string): string {
   const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
@@ -19,8 +20,8 @@ export default function FeedItemCard({
   onOpen?: (p: Post) => void;
   compact?: boolean;
 }) {
-  const critical = post.threat_score >= 65;
-  const isHigh = post.threat_score >= 45 && post.threat_score < 65;
+  const critical = post.concern_score >= 65;
+  const isHigh = post.concern_score >= 45 && post.concern_score < 65;
 
   return (
     <button
@@ -49,7 +50,7 @@ export default function FeedItemCard({
             </span>
             <div className="ml-auto flex items-center gap-1.5">
               {post.is_amplified && <BotChip />}
-              <ThreatBadge label={post.threat_label} score={post.threat_score} />
+              <SentimentBadge label={post.sentiment_label} score={post.concern_score} />
             </div>
           </div>
 
@@ -68,11 +69,19 @@ export default function FeedItemCard({
             </div>
           )}
 
+          {/* Attachments — relayed through /api/media, never loaded from the
+              platform CDN, so opening the feed does not tell those platforms
+              which accounts this console watches. */}
+          {!compact && (post.media_urls?.length ?? 0) > 0 && (
+            <div className="mt-2">
+              <PostMediaGrid urls={post.media_urls!} maxHeight={120} />
+            </div>
+          )}
+
           {/* Metadata & Tag Row */}
           <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] pt-2 text-[11px] text-slate-300">
             <div className="flex flex-wrap items-center gap-1.5">
               <LanguageChip language={post.language} mixed={post.code_mixed} />
-              <SentimentBadge label={post.sentiment_label} score={post.sentiment_score} />
               {post.location && (
                 <span className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-0.2 text-[10.5px] text-slate-300">
                   <MapPin size={10} className="text-threat-inflammatory" /> {post.location}

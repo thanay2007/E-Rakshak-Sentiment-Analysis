@@ -158,7 +158,7 @@ export default function ImageTool() {
         <GlassCard className="flex flex-wrap items-center gap-2 p-3 text-[12px] text-slate-400">
           <Radar size={14} className="text-accent" />
           {src.post ? (
-            <span>Pulled from <b className="text-slate-200">{src.post.platform}</b> post by <span className="font-mono">@{src.post.author_handle}</span> · {src.post.threat_label}</span>
+            <span>Pulled from <b className="text-slate-200">{src.post.platform}</b> post by <span className="font-mono">@{src.post.author_handle}</span> · {src.post.sentiment_label}</span>
           ) : (
             <span>Fetched from post URL</span>
           )}

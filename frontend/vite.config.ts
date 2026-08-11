@@ -29,7 +29,12 @@ function csp(apiBase: string, dev: boolean): Plugin {
     "font-src 'self' https://fonts.gstatic.com data:",
     // data: and blob: cover the mugshot thumbnails and the PDF/CSV downloads,
     // both of which the app builds client-side from authenticated fetches.
-    "img-src 'self' data: blob:",
+    // The API origin is listed because post images and videos are relayed by
+    // /api/media rather than loaded from the platform CDNs directly — the
+    // console never asks a browser to fetch from Telegram or Instagram, so no
+    // CDN hostname belongs in this policy and none ever needs adding.
+    `img-src 'self' data: blob: ${api}`,
+    `media-src 'self' blob: ${api}`,
     `connect-src 'self' ${api} ${ws}`,
     "object-src 'none'",
     "base-uri 'self'",
