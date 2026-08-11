@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends
 from sqlmodel import Session, func, select
 
-from app.config import SENTIMENT_LABELS
+from app.config import SENTIMENT_LABELS, settings
 from app.crawlers.registry import platform_status
 from app.database import get_session
 from app.models import Alert, Post
@@ -54,7 +54,8 @@ def get_stats(session: Session = Depends(get_session)) -> dict:
     # already weights negativity, but the tag check keeps the KPI honest:
     # this number is what the label on the dashboard says it is.
     flagged24 = [p for p in posts24
-                 if p.sentiment_label == "negative" and p.concern_score >= 50]
+                 if p.sentiment_label == "negative"
+                 and p.concern_score >= settings.ALERT_THRESHOLD]
     campaigns = len({p.cluster_id for p in posts24 if p.cluster_id})
     platforms = platform_status()
 

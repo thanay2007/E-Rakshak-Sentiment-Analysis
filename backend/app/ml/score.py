@@ -15,16 +15,22 @@ what this number aggregates, and it is the only number the alert bands read.
 
     negativity = max(0, −sentiment_score)   ∈ [0,1]  (positive posts contribute 0)
 
-Bands (env-tunable via ALERT_THRESHOLD / CRITICAL_THRESHOLD):
-    ≥ 74  critical — strongly negative AND abusive AND spreading
-    ≥ 65  high
-    ≥ 50  elevated ("needs a look" on the dashboard)
-    < 50  routine
+Bands (env-tunable — CRITICAL_THRESHOLD / ALERT_THRESHOLD / ELEVATED_THRESHOLD):
+    ≥ 60  critical — strongly negative AND abusive AND spreading
+    ≥ 50  high
+    ≥ 35  elevated ("needs a look" on the dashboard)
+    < 35  routine
 
 The weights are deliberately shaped so no single dimension can reach an alert
 band alone: a furious post nobody read tops out near 50, and a viral cheerful
 post cannot climb past ~30. An alert therefore always means "negative *and*
 travelling", which is the only combination worth an analyst's time.
+
+Those band numbers were originally 74/65/50 and were unreachable: the highest
+score the live corpus ever produced was 66.1. See ALERT_THRESHOLD in config.py
+for the measurements behind the current values. The weights themselves were not
+changed — the ceiling was never the formula, it was that the posts with the
+worst language are also the ones nobody shared.
 """
 from __future__ import annotations
 
@@ -103,6 +109,6 @@ def band(score: float) -> str:
         return "critical"
     if score >= settings.ALERT_THRESHOLD:
         return "high"
-    if score >= 50:
+    if score >= settings.ELEVATED_THRESHOLD:
         return "elevated"
     return "routine"

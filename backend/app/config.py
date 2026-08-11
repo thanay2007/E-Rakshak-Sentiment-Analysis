@@ -229,8 +229,32 @@ class Settings(BaseSettings):
     PIPER_VOICE: str = ""
 
     NLP_MODE: str = "full"  # full | lite
-    ALERT_THRESHOLD: int = 65
-    CRITICAL_THRESHOLD: int = 74
+    # Concern bands. Recalibrated against the live distribution: the previous
+    # 65/74 pair was unreachable in practice — across 8,203 scored posts the
+    # highest concern score ever produced was 66.1, so ALERT caught one post
+    # and CRITICAL caught none. A band nothing can enter is indistinguishable
+    # from a quiet week, which is the worst way for a monitoring tool to fail.
+    #
+    # The formula was not at fault and is unchanged: every component is
+    # observed at its own ceiling somewhere in the corpus (negativity 50/50,
+    # toxicity 21.9/22, reach 18/18). What no single post has is all of them at
+    # once — only 33 posts are both strongly negative and toxic, and 85% of
+    # those were effectively unread, so the reach term contributes almost
+    # nothing to exactly the posts the bands were built to catch.
+    #
+    # These values put the funnel where the data actually is:
+    #     >= 60 critical   3 posts     (0.04%)
+    #     >= 50 high      34 posts     (0.41%)
+    #     >= 35 elevated ~200 posts    (2.4%)
+    # Raise them again once reach is being collected properly — see
+    # REDDIT_CLIENT_ID, without which 93% of Reddit posts carry no engagement
+    # at all and score with a structurally zero reach term.
+    ALERT_THRESHOLD: int = 50
+    CRITICAL_THRESHOLD: int = 60
+    #: Floor of the "needs a look" band. Was hardcoded in score.band() while
+    #: the two above were configurable, so tuning the bands moved two of the
+    #: three boundaries and silently left the third behind.
+    ELEVATED_THRESHOLD: int = 35
     SIMULATION_ENABLED: bool = True
 
     # Deployment scope — the cities this instance monitors (seed pages, default

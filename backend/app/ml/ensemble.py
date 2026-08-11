@@ -169,8 +169,29 @@ def apply_groq_check(consensus: dict, groq_label: str, groq_confidence: float,
         consensus["confidence"] = round(min(0.99, consensus["confidence"] + 0.10 * conf), 4)
     elif conf >= GROQ_OVERRIDE_CONFIDENCE:
         consensus["label"] = groq_label
-        consensus["confidence"] = round(conf, 4)
-        consensus["score"] = round(SENT_VALUE[groq_label] * conf, 3)
+        # Capped at the same 0.99 every other path uses. An LLM's self-reported
+        # certainty is not a calibrated probability — it returns a round 1.0
+        # readily — and writing it through verbatim produced stored rows at
+        # confidence 1.00 and score ±1.000 exactly: a maximally extreme reading
+        # asserted with more certainty than the ensemble can express anywhere
+        # else. `combine()` caps for exactly this reason; the override was the
+        # one path that skipped it.
+        confidence = min(0.99, conf)
+        score = SENT_VALUE[groq_label] * confidence
+
+        # Re-apply the context calibration. It was computed against this post's
+        # text and account, so it holds no matter which model produced the
+        # label — but it used to be dropped on override, leaving the evidence
+        # drawer showing "irony cue -0.10" beside a number that adjustment had
+        # never touched. Reasoning on display has to be reasoning that ran.
+        adjustments = consensus.get("context_adjustments") or []
+        if adjustments:
+            delta = sum(a["delta"] for a in adjustments)
+            confidence = max(0.05, min(0.99, confidence + delta))
+            score *= max(0.55, 1.0 + min(0.0, delta))
+
+        consensus["confidence"] = round(confidence, 4)
+        consensus["score"] = round(max(-1.0, min(1.0, score)), 3)
         consensus["chosen_by"] = f"Groq final check ({model_used or 'llm'}) — overrode {consensus['agreement']} model consensus"
         record["overrode"] = True
     else:
