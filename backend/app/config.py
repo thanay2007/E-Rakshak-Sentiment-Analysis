@@ -302,6 +302,49 @@ class Settings(BaseSettings):
     GROQ_MAX_PER_TICK: int = 8
     GROQ_TIMEOUT_SECONDS: int = 20
 
+    # Gemini — the assistant's LLM, both the voice one and the typed one.
+    #
+    # Split deliberately by workload rather than by preference. The post
+    # pipeline (verification, translation, evidence dossiers) stays on Groq:
+    # it is high-volume batch work where the per-model daily budgets and the
+    # existing cooldown chain are exactly the right shape. The assistant is the
+    # opposite — low volume, latency-visible, and it is the one surface where a
+    # drained Groq quota is felt live by an officer mid-sentence. Giving it a
+    # separate provider with a separate quota means the two can no longer
+    # starve each other: a heavy ingestion tick cannot mute the assistant, and
+    # a long assistant session cannot eat the budget the feed needs.
+    #
+    # Reached through Google's OpenAI-compatible endpoint, so the request and
+    # response shapes — tool calls included — are the ones groq_client already
+    # builds and parses. Verified against this endpoint: tool calling and JSON
+    # mode both work, which is what the assistant actually needs.
+    GEMINI_API_KEY: str = ""
+    GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai"
+    # Aliases rather than pinned versions on purpose: Google retires dated model
+    # ids for new keys (`gemini-2.5-flash` already 404s with "no longer
+    # available to new users"), and an alias keeps working across that.
+    GEMINI_MODEL: str = "gemini-flash-latest"
+    GEMINI_FALLBACK_MODELS: list[str] = [
+        "gemini-3.6-flash",
+        "gemini-3.5-flash",
+        "gemini-flash-lite-latest",
+    ]
+    # All of the above were confirmed to return tool_calls for a function-tool
+    # request, so unlike the Groq chain this is not a narrower allowlist. It
+    # stays a separate setting because the moment one of them stops calling
+    # tools it has to be droppable from the assistant without being dropped
+    # from plain completions.
+    GEMINI_TOOL_MODELS: list[str] = [
+        "gemini-flash-latest",
+        "gemini-3.6-flash",
+        "gemini-3.5-flash",
+    ]
+    GEMINI_TIMEOUT_SECONDS: int = 30
+    #: Which provider the assistant tries FIRST. Groq and Ollama remain behind
+    #: it in the same order as before, so a dead Gemini key degrades the
+    #: assistant to what it was rather than switching it off.
+    ASSISTANT_LLM_PROVIDER: str = "gemini"
+
     # Ollama — a model running on this machine, tried when every Groq model in
     # the chain has failed, and the only LLM at all when there is no Groq key.
     # It is what keeps the assistant answering through a drained free tier, a

@@ -182,7 +182,8 @@ async def run(question: str, ctx: ToolContext) -> AgentAnswer:
 
     for step in range(MAX_STEPS):
         message, model_used = await groq_client.chat_tools(
-            messages, tools=schemas, temperature=0.2)
+            messages, tools=schemas, temperature=0.2,
+            prefer=settings.ASSISTANT_LLM_PROVIDER)
 
         if message is None:
             # Every model in the chain failed. If a tool already ran we can
@@ -251,7 +252,8 @@ async def run(question: str, ctx: ToolContext) -> AgentAnswer:
                      "content": "Answer now in two spoken sentences using only "
                                 "what you have already looked up."})
     content, model_used = await groq_client.chat(messages, json_mode=False,
-                                                 temperature=0.2)
+                                                 temperature=0.2,
+                                                 prefer=settings.ASSISTANT_LLM_PROVIDER)
     answer = guard.scrub(content or "") or _UNAVAILABLE
     return AgentAnswer(reply=answer, speech=answer, navigate=navigate,
                        data=display, trace=trace, model=model_used,
