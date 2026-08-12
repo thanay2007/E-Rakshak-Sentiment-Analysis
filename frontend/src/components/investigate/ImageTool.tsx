@@ -1,18 +1,20 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   Camera, ExternalLink, Fingerprint, ImageUp, Link2, MapPin, Radar, ScanSearch,
   ShieldCheck, Upload, Users,
 } from "lucide-react";
 import GlassCard, { SectionTitle } from "../GlassCard";
 import { api } from "../../services/api";
-import type { Appearance, ImageAnalysis, ImageSource, PersonFind, ReverseImage } from "../../services/api";
+import type { Appearance, ImageAnalysis, ImageSource, Identification, PersonFind, ReverseImage } from "../../services/api";
 import { AccountChip, EmptyHint, FindingRow, KV, Meter, Pill, RunButton, Spinner, TextInput } from "./shared";
 import { safeHref } from "../../lib/safeUrl";
+import IdentifiedPersonsPanel, { buildFaceOutcomes } from "./PersonIdentification";
 
 type Mode = "upload" | "url" | "feed";
 interface Result {
   analysis: ImageAnalysis; reverse_image: ReverseImage; person: PersonFind;
   source?: ImageSource; preview?: string | null; thumbnail?: ImageAnalysis | null;
+  identification?: Identification;
 }
 
 function fmtDuration(s?: number | null): string {
@@ -67,7 +69,7 @@ export default function ImageTool() {
     try {
       const r = await api.investigateImageFromUrl(url.trim());
       if (!r.ok || !r.analysis) { setErr(r.error || "Could not resolve media from that URL."); }
-      else setResult({ analysis: r.analysis, reverse_image: r.reverse_image!, person: r.person!, source: r.source, preview: r.analysis.media_type === "video" ? null : r.source?.image_url, thumbnail: r.thumbnail });
+      else setResult({ analysis: r.analysis, reverse_image: r.reverse_image!, person: r.person!, source: r.source, preview: r.analysis.media_type === "video" ? null : r.source?.image_url, thumbnail: r.thumbnail, identification: r.identification });
     } catch (e) { setErr((e as Error).message); }
     finally { setLoading(false); }
   }
@@ -77,7 +79,7 @@ export default function ImageTool() {
     try {
       const r = await api.investigatePostMedia(postId.trim() || "top");
       if (!r.ok || !r.analysis) { setErr(r.error || "That post has no attached media."); }
-      else setResult({ analysis: r.analysis, reverse_image: r.reverse_image!, person: r.person!, source: r.source, preview: r.analysis.media_type === "video" ? null : r.source?.image_url, thumbnail: r.thumbnail });
+      else setResult({ analysis: r.analysis, reverse_image: r.reverse_image!, person: r.person!, source: r.source, preview: r.analysis.media_type === "video" ? null : r.source?.image_url, thumbnail: r.thumbnail, identification: r.identification });
     } catch (e) { setErr((e as Error).message); }
     finally { setLoading(false); }
   }
@@ -86,6 +88,13 @@ export default function ImageTool() {
   const rev = result?.reverse_image;
   const person = result?.person;
   const src = result?.source;
+  const faceMatches = a?.forensics?.face_matches;
+  const identification = result?.identification;
+  // Every face gets exactly what the real registry search found for it — a
+  // confirmed match, a below-threshold lead, or an honest "not identified".
+  // Nothing here is invented: a blurry or unenrolled face must never render
+  // as a specific named person.
+  const faceOutcomes = useMemo(() => buildFaceOutcomes(faceMatches, identification), [faceMatches, identification]);
 
   const MODES: { id: Mode; label: string; icon: typeof Upload }[] = [
     { id: "upload", label: "Upload", icon: Upload },
@@ -171,6 +180,7 @@ export default function ImageTool() {
       {err && <GlassCard className="p-4 text-sm text-red-400">Error: {err}</GlassCard>}
 
       {a && !loading && (
+        <>
         <div className="grid gap-4 lg:grid-cols-2">
           {/* ── forensics ─────────────────────────────────── */}
           <GlassCard className="space-y-3 p-4">
@@ -234,11 +244,16 @@ export default function ImageTool() {
                           const leftPct = (f.bounding_box.left / a.width!) * 100;
                           const widthPct = ((f.bounding_box.right - f.bounding_box.left) / a.width!) * 100;
                           const heightPct = ((f.bounding_box.bottom - f.bounding_box.top) / a.height!) * 100;
+                          const outcome = faceOutcomes[i];
+                          const label = outcome?.kind === "confirmed" ? outcome.identity.name
+                            : outcome?.kind === "lead" ? `${outcome.name}?`
+                            : "Not identified";
+                          const color = outcome?.kind === "confirmed" ? "#14B8C4"
+                            : outcome?.kind === "lead" ? "#F59E0B" : "#64748B";
                           return (
-                            <div key={i} className="absolute border-2 border-[#14B8C4] bg-[#14B8C4]/20"
-                              style={{ top: `${topPct}%`, left: `${leftPct}%`, width: `${widthPct}%`, height: `${heightPct}%` }}>
-                              <div className="absolute -top-5 left-[-2px] whitespace-nowrap bg-[#14B8C4] px-1 text-[9px] font-bold text-[#0F1420]">
-                                {f.matched_suspect || `Unknown #${i+1}`}
+                            <div key={i} className="absolute border-2" style={{ borderColor: color, backgroundColor: `${color}33`, top: `${topPct}%`, left: `${leftPct}%`, width: `${widthPct}%`, height: `${heightPct}%` }}>
+                              <div className="absolute -top-5 left-[-2px] whitespace-nowrap px-1 text-[9px] font-bold text-[#0F1420]" style={{ backgroundColor: color }}>
+                                {label}
                               </div>
                             </div>
                           );
@@ -324,6 +339,17 @@ export default function ImageTool() {
             )}
           </GlassCard>
         </div>
+
+        {faceOutcomes.length > 0 && (
+          <IdentifiedPersonsPanel
+            outcomes={faceOutcomes}
+            boxes={a.forensics?.face_matches.map((f) => f.bounding_box)}
+            mediaW={a.width}
+            mediaH={a.height}
+            previewSrc={a.media_type === "image" ? result?.preview : null}
+          />
+        )}
+        </>
       )}
     </div>
   );

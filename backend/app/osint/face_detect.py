@@ -56,7 +56,14 @@ _MAX_FACES = 40               # crowd photos: stop enriching past this many
 
 # Quality thresholds — a face below these is reported but not matched.
 _MIN_FACE_PX = 42             # below this the embedding is noise
-_MIN_SHARPNESS = 12.0         # variance-of-Laplacian on a size-normalised crop
+# variance-of-Laplacian on a size-normalised crop. Originally 12.0; the social
+# media evidence this tool actually sees is routinely soft-focus or
+# recompressed, and that stricter gate was refusing to even attempt a search
+# on faces still sharp enough for dlib to encode usefully. Lowered rather than
+# removed — this only decides whether a search is attempted at all; the
+# confirmed/probable/possible distance bands below are what actually guard
+# against a false identification, and those are unchanged.
+_MIN_SHARPNESS = 7.0
 _MAX_YAW = 0.62               # nose offset / inter-eye distance ≈ 45° turn
 
 _ENGINE: dict = {"loaded": False, "fr": None, "np": None, "cnn": False, "reason": ""}
@@ -381,8 +388,12 @@ def detect_faces(img, *, want_encodings: bool = True, deep: bool = False) -> dic
                 # model="large" (68-point alignment) must match what
                 # encode_reference uses — mixing the 5- and 68-point predictors
                 # aligns the chips differently and inflates match distances.
+                # num_jitters=3 (was 1): a few resampled encodings averaged
+                # together ride out compression noise and mild blur better than
+                # a single pass, for a small, per-request cost worth paying
+                # since only faces that already passed the quality gate embed.
                 encs = fr.face_encodings(full_np, known_face_locations=locs,
-                                         num_jitters=1, model="large")
+                                         num_jitters=3, model="large")
                 for f, enc in zip(wanted, encs):
                     f["encoding"] = [round(float(x), 6) for x in enc]
             except Exception as exc:

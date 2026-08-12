@@ -147,6 +147,8 @@ class Suspect(SQLModel, table=True):
 
     gender: str = ""
     age: int = 0
+    height_cm: int = 0
+    occupation: str = ""
     nationality: str = ""
     identifying_marks: str = ""
     notes: str = ""

@@ -84,6 +84,8 @@ class SuspectCreate(BaseModel):
     wanted_since: str = ""
     gender: str = ""
     age: int = 0
+    height_cm: int = 0
+    occupation: str = ""
     nationality: str = ""
     identifying_marks: str = ""
     notes: str = ""
@@ -104,6 +106,8 @@ class SuspectUpdate(BaseModel):
     wanted_since: Optional[str] = None
     gender: Optional[str] = None
     age: Optional[int] = None
+    height_cm: Optional[int] = None
+    occupation: Optional[str] = None
     nationality: Optional[str] = None
     identifying_marks: Optional[str] = None
     notes: Optional[str] = None

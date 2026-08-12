@@ -316,6 +316,8 @@ def to_dict(s: Suspect, *, include_vectors: bool = False) -> dict:
         "wanted_since": s.wanted_since,
         "gender": s.gender,
         "age": s.age,
+        "height_cm": s.height_cm,
+        "occupation": s.occupation,
         "nationality": s.nationality,
         "identifying_marks": s.identifying_marks,
         "notes": s.notes,

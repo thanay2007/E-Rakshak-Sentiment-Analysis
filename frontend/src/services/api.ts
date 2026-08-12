@@ -433,7 +433,8 @@ export interface Suspect {
   record_type: string; risk_level: string; status: string;
   case_ids: string[]; charges: Charge[]; convictions: number;
   jurisdiction: string; last_known_location: string; wanted_since: string;
-  gender: string; age: number; nationality: string; identifying_marks: string;
+  gender: string; age: number; height_cm: number; occupation: string;
+  nationality: string; identifying_marks: string;
   notes: string; social_handles: SocialHandle[];
   photo_thumb: string; source: string; active: boolean;
   enrolled_faces: number; face_templates: FaceTemplate[];

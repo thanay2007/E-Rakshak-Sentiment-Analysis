@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  AlertTriangle, BookOpen, Brain, Building2, ExternalLink, Flag, Gauge,
+  AlertTriangle, BookOpen, Brain, Building2, ExternalLink, Fingerprint, Flag, Gauge,
   Languages, Newspaper, ScrollText, ShieldCheck, Sparkles, UserRound, X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -8,11 +8,13 @@ import { createPortal } from "react-dom";
 import {
   concernBand, concernColor, sentimentColor,
 } from "../data/constants";
-import type { EvidenceReport, EvidenceSource, Post } from "../services/api";
+import type { EvidenceReport, EvidenceSource, Post, PostImageReport } from "../services/api";
 import { api, API_BASE } from "../services/api";
 import { BotChip, LanguageChip, PlatformIcon, SentimentBadge } from "./Badges";
 import { PostMediaGrid } from "./PostMedia";
 import { safeHref } from "../lib/safeUrl";
+import IdentifiedPersonsPanel, { buildFaceOutcomes } from "./investigate/PersonIdentification";
+import { Spinner } from "./investigate/shared";
 
 /** Icon per evidence-source kind, so the provenance list scans at a glance. */
 const KIND_ICON: Record<string, typeof Brain> = {
@@ -125,13 +127,50 @@ export default function PostDetail({
   const [dossier, setDossier] = useState<EvidenceReport | null>(null);
   const [dossierBusy, setDossierBusy] = useState(false);
   const [dossierError, setDossierError] = useState(false);
+  const [faceReport, setFaceReport] = useState<PostImageReport | null>(null);
+  const [faceChecking, setFaceChecking] = useState(false);
+  const [facePreviewUrl, setFacePreviewUrl] = useState<string | null>(null);
 
   useEffect(() => {
     setFactCheck(null);
     setEscalated(null);
     setDossier(null);
     setDossierError(false);
+    setFaceReport(null);
   }, [post?.id]);
+
+  // Automatic — no button to press. Any post with attached media gets its
+  // faces run against the suspect registry the moment its detail opens, the
+  // same real detection + matching the Forensics tool uses on a manual
+  // upload. Silent on failure/no-media: this is a supplementary signal, not
+  // the reason the drawer is open.
+  useEffect(() => {
+    if (!post?.id || !post.media_urls?.length) return;
+    let cancelled = false;
+    setFaceChecking(true);
+    api.investigatePostMedia(post.id)
+      .then((r) => { if (!cancelled) setFaceReport(r); })
+      .catch(() => { /* face verification is best-effort */ })
+      .finally(() => { if (!cancelled) setFaceChecking(false); });
+    return () => { cancelled = true; };
+  }, [post?.id, post?.media_urls]);
+
+  // The face-crop thumbnails need actual pixels to draw from, but a post's
+  // source image lives on a third-party CDN — an <img>/background-image
+  // pointed straight at it would both violate the console's CSP and (the
+  // reason that CSP exists) tell that platform which post an officer is
+  // looking at. Route it through the same authenticated media proxy
+  // PostMedia.tsx uses, and hand the resulting blob: URL to the crop instead.
+  useEffect(() => {
+    const src = faceReport?.analysis?.media_type === "image" ? faceReport?.source?.image_url : undefined;
+    if (!src) { setFacePreviewUrl(null); return; }
+    let live = true;
+    let created: string | null = null;
+    api.media(src)
+      .then((blob) => { if (!live) return; created = URL.createObjectURL(blob); setFacePreviewUrl(created); })
+      .catch(() => { if (live) setFacePreviewUrl(null); });
+    return () => { live = false; if (created) URL.revokeObjectURL(created); };
+  }, [faceReport]);
 
   const asideRef = useRef<HTMLElement>(null);
   const onCloseRef = useRef(onClose);
@@ -181,6 +220,7 @@ export default function PostDetail({
   const report = dossier ?? (post?.evidence_report?.summary ? post.evidence_report : undefined);
   const consensus = post?.sentiment_consensus;
   const fc = post ? factCheck ?? post.fact_check : undefined;
+  const faceOutcomes = buildFaceOutcomes(faceReport?.analysis?.forensics?.face_matches, faceReport?.identification);
 
   const generateDossier = async () => {
     if (!post || dossierBusy) return;
@@ -414,6 +454,26 @@ export default function PostDetail({
                     </div>
                   )}
                 </div>
+
+                {/* ── automatic face verification ───────────────────────── */}
+                {faceChecking && (
+                  <div className="glass mt-4 flex items-center justify-center gap-2 p-3 text-[11px] text-slate-500">
+                    <Fingerprint size={13} className="text-accent" />
+                    <Spinner label="Checking faces against the suspect registry…" />
+                  </div>
+                )}
+                {!faceChecking && faceOutcomes.length > 0 && (
+                  <div className="mt-4">
+                    <IdentifiedPersonsPanel
+                      outcomes={faceOutcomes}
+                      boxes={faceReport?.analysis?.forensics?.face_matches?.map((f) => f.bounding_box)}
+                      mediaW={faceReport?.analysis?.width}
+                      mediaH={faceReport?.analysis?.height}
+                      previewSrc={facePreviewUrl}
+                      singleColumn
+                    />
+                  </div>
+                )}
 
                 {/* ── 3-model consensus + Groq final check ──────────────── */}
                 {(consensus?.votes?.length ?? 0) > 0 && (
