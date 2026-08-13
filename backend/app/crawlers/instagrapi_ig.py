@@ -9,13 +9,43 @@ IG_BUSINESS_ACCOUNT_ID pair is set. It reads the *same* IG_SEED_USERNAMES list,
 so dropping a Graph API token into .env upgrades the source in place with no
 other config change.
 
-Four things are fetched, and each answers a different question:
+Six things are fetched, and each answers a different question:
 
   * **posts** — media from the seed civic pages (what the city is announcing)
   * **hashtags** — media matching watchlist tags (what the city is saying)
+  * **locations** — media geo-tagged to places in the target cities (what the
+    people who are actually *there* are posting, hashtag or not)
   * **users** — media from accounts an officer put on the watchlist, plus the
     real profile behind an author discovered through a hashtag
+  * **discovered accounts** — the influencers, food pages, college pages and
+    neighbourhood desks the adapter found for itself, read on rotation
   * **comments** — the thread under the loudest media of the cycle
+
+The last two exist because the seed roster answers the wrong question. It is
+municipal corporations, police and news desks — what the four cities announce
+about themselves — and public sentiment is not held there. Nor can a list of
+every influencer and community page in four cities be maintained by hand; it
+would be stale the week after it was written, and guessing handles is how this
+project once shipped a Surat seed page that had never existed.
+
+So the adapter finds them instead, two ways, and remembers what it found in
+backend/discovered_accounts.json (crawlers/roster.py):
+
+  * a **location feed** is Instagram's own per-place media — everyone who
+    geo-tagged a place in Surat, whether or not they used a watched tag. Every
+    author it turns up is a real, currently-active account in that city, which
+    makes it the highest-quality discovery signal available and it costs
+    nothing beyond the read itself.
+  * **account search** over a city × category matrix ("rajkot food blogger",
+    "vadodara college") reaches the accounts that post about a city without
+    ever geo-tagging it.
+
+Discovery is deliberately cheap and therefore imprecise: it reports whoever
+posted, private accounts and nine-follower accounts included. The correction
+happens on first read — an account that turns out private, deleted or smaller
+than IG_DISCOVERED_MIN_FOLLOWERS is dropped from the roster, so the read budget
+stops draining into it. Configured seeds are never dropped; a deployment is
+entitled to keep watching a page that is quiet this week.
 
 Per media that yields: caption, hashtags (Unicode-aware, so Gujarati and
 Devanagari tags survive), author handle + numeric user id, follower count,
@@ -82,11 +112,14 @@ import asyncio
 import logging
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import NamedTuple
 
 from app.config import BASE_DIR, settings
+from app.crawlers import instagram_public, roster
 from app.crawlers.base import Collector
+from app.crawlers.common import extract_hashtags as _hashtags
+from app.crawlers.common import rotate as _rotate
 from app.schemas import RawPost
 from app.services.watch_targets import watched_accounts
 
@@ -99,6 +132,24 @@ SEED_MEDIA_LIMIT = 12
 # of them, they are added ad hoc, and the recent few posts are what an officer
 # who just added the handle actually wants to see.
 WATCHED_MEDIA_LIMIT = 8
+# Discovered accounts get the shallowest read of all — there are hundreds of
+# them and none was chosen by a person, so a deep timeline read spends the
+# cycle's budget on one stranger.
+DISCOVERED_MEDIA_LIMIT = 6
+
+#: Where the resolved city places live. A separate roster key from the accounts
+#: because a place id is not a handle and nothing should ever try to read one
+#: as an account.
+PLACES_KEY = "instagram_places"
+
+# What account search is asked for, per city. Not "news and police" — those are
+# already seeds. Every term here is a category of account that carries how a
+# city feels rather than what it announces.
+DISCOVERY_TERMS: list[str] = [
+    "", "news", "updates", "food", "foodie", "cafe", "blogger", "influencer",
+    "photography", "diaries", "college", "students", "jobs", "business",
+    "market", "events", "fitness", "fashion", "youth", "community", "traffic",
+]
 # A handle that does not resolve is usually a typo, a deleted account or a
 # pattern the officer meant for another platform. Retrying it every cycle is a
 # wasted private-API call each time, so failures are remembered this long.
@@ -109,6 +160,10 @@ MISSING_ACCOUNT_RETRY_HOURS = 6
 # that fixing .env or dropping in a new ig_session.json takes effect without a
 # restart.
 AUTH_RETRY_MINUTES = 30
+# How long a leg stays parked after Instagram refuses its endpoint outright
+# (see _is_gated). Hours rather than minutes: this is a property of the
+# account, not a passing fault, and re-asking is itself what escalates.
+GATED_LEG_COOLDOWN_HOURS = 6
 
 # Instagram usernames: letters, digits, dots, underscores, 30 max. The
 # watchlist has no platform column, so its account rows are a mixed bag —
@@ -116,22 +171,6 @@ AUTH_RETRY_MINUTES = 30
 # meant as a wildcard. Anything that cannot be an IG handle is dropped here
 # rather than spent as a failed lookup.
 _IG_HANDLE_RE = re.compile(r"^[A-Za-z0-9._]{1,30}$")
-
-# Hashtag body = word characters, and \w alone is not enough. It is Unicode-
-# aware, but only for letters and digits (categories L*/N*) — combining marks
-# are excluded, and every Indic vowel sign, anusvara and virama is one. Plain
-# r"#(\w+)" therefore truncates #आंदोलन to "आ" at the anusvara, which on a
-# Gujarat deployment silently guts most local-script tags while looking fine in
-# English. These ranges add the marks back for Devanagari and Gujarati, plus
-# ZWJ/ZWNJ, which sit *inside* correctly spelled Indic words.
-_MARKS = (r"̀-ͯ"              # generic combining diacriticals
-          r"ऀ-ःऺ-ॏ॑-ॗॢ-ॣ"  # Devanagari
-          r"ઁ-ઃ઼-્ૢ-ૣ"              # Gujarati
-          r"‌‍")              # ZWNJ / ZWJ
-# Stops at the punctuation in "#surat,#protest" and "#rajkot." — the whitespace
-# split this replaced returned the first as one unusable token and kept the
-# trailing dot on the second.
-_HASHTAG_RE = re.compile(rf"#([\w{_MARKS}]+)", re.UNICODE)
 
 
 class Profile(NamedTuple):
@@ -207,6 +246,39 @@ def _auth_reason(exc: Exception) -> str:
     return f"{type(exc).__name__}: {text[:160]}"
 
 
+#: Failures that mean "Instagram would not answer", as opposed to "Instagram
+#: answered, and the account is no good". The distinction decides whether a
+#: discovered account is deleted from the roster, so it is not cosmetic: a
+#: throttled lookup recorded as a rejection retires a live account forever.
+_TRANSIENT_MARKERS = ("429", "too many", "rate limit", "please wait", "timeout",
+                      "timed out", "connection", "max retries", "retryerror",
+                      "temporarily", "login_required", "logged out", "502",
+                      "503", "504", "ssl", "proxy")
+
+
+def _is_transient(exc: Exception) -> bool:
+    text = f"{type(exc).__name__} {exc}".lower()
+    return any(marker in text for marker in _TRANSIENT_MARKERS)
+
+
+def _lookup(client, username: str):
+    """Profile by handle, preferring the *private* route.
+
+    instagrapi's `user_info_by_username` tries the public web route first, and
+    that route is rate-limited per IP after a handful of calls — one cycle
+    reading eight discovered accounts exhausts it, and every lookup after that
+    fails for reasons that have nothing to do with the accounts. A session
+    Instagram trusts for profiles should use the endpoint it trusts it for.
+    """
+    private = getattr(client, "user_info_by_username_v1", None)
+    if private is not None:
+        try:
+            return private(username)
+        except Exception:
+            pass  # fall through to instagrapi's own public/private walk
+    return client.user_info_by_username(username)
+
+
 def _profile_of(info) -> Profile:
     """instagrapi User -> Profile."""
     return Profile(
@@ -226,16 +298,55 @@ def _naive(ts: datetime | None) -> datetime | None:
     return ts.replace(tzinfo=None) if ts.tzinfo else ts
 
 
-def _hashtags(text: str) -> list[str]:
-    """Deduped, case-folded, order preserved — Instagram treats #Surat and
-    #surat as one tag and so must the trend counter."""
-    out, seen = [], set()
-    for tag in _HASHTAG_RE.findall(text or ""):
-        low = tag.lower()
-        if low not in seen:
-            seen.add(low)
-            out.append(low)
-    return out
+def _stale(rows: list[dict], ttl_hours: int) -> bool:
+    """True when the newest of these roster entries is older than the TTL — or
+    when none of them carries a readable timestamp, since a roster that cannot
+    say how old it is should be refreshed rather than trusted."""
+    newest = max((r.get("found_at", "") for r in rows), default="")
+    if not newest:
+        return True
+    try:
+        found = datetime.fromisoformat(newest)
+    except ValueError:
+        return True
+    if found.tzinfo is None:
+        found = found.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - found).total_seconds() > ttl_hours * 3600
+
+
+#: Gujarat's bounding box (lat_min, lat_max, lng_min, lng_max), generous enough
+#: to include the whole state and the sea front. Coordinates are how a place is
+#: judged wherever it has them: "Surat" is also a province of Thailand (lat ~9,
+#: lng ~99) and a district of Bangladesh (lng ~91.8), and Instagram's place
+#: search returns both — but no amount of naming ambiguity moves a point on the
+#: globe. The text checks below are the fallback for places that carry no
+#: coordinates at all.
+GUJARAT_BBOX = (20.0, 24.8, 68.0, 74.6)
+_FOREIGN_PLACE_MARKERS = ("thani", "thailand", "bangladesh", "sylhet",
+                          "pakistan", "indonesia")
+
+
+def _in_city(place, city: str) -> bool:
+    """Is this search result the target city, or its namesake elsewhere?
+
+    Coordinates decide when the place has them. Where it does not — Instagram
+    place records are frequently just a name — the name must contain the city
+    and the record must look Indian, which is the same two-signal rule the
+    Facebook page filter uses and for the same reason: the city name alone
+    matches other continents.
+    """
+    text = " ".join(str(getattr(place, attr, "") or "")
+                    for attr in ("name", "address", "city")).casefold()
+    if any(bad in text for bad in _FOREIGN_PLACE_MARKERS):
+        return False
+    lat = float(getattr(place, "lat", 0) or 0)
+    lng = float(getattr(place, "lng", 0) or 0)
+    if lat and lng:
+        lat_min, lat_max, lng_min, lng_max = GUJARAT_BBOX
+        return lat_min <= lat <= lat_max and lng_min <= lng <= lng_max
+    if city.casefold() not in text:
+        return False
+    return "gujarat" in text or "india" in text
 
 
 def _media_urls(m) -> list[str]:
@@ -260,21 +371,26 @@ def _reach(m) -> int:
     return int(getattr(m, "like_count", 0) or 0) + int(getattr(m, "comment_count", 0) or 0)
 
 
-def _rotate(items: list, cursor: int, size: int) -> tuple[list, int]:
-    """A `size`-long slice starting where the last cycle stopped, wrapping
-    round. Taking items[:size] every cycle — which is what this replaced —
-    means the watchlist's 4th term onwards is never queried at all."""
-    if not items or size <= 0:
-        return [], cursor
-    n = len(items)
-    start = cursor % n
-    take = min(size, n)
-    return [items[(start + i) % n] for i in range(take)], start + take
-
-
 class InstagrapiCollector(Collector):
     name = "Instagram (instagrapi)"
     min_interval_seconds = settings.IG_MIN_INTERVAL_SECONDS
+    # Legitimately slow rather than stuck, and budgeted from the per-cycle
+    # limits rather than fixed. instagrapi sleeps 2-5 s between private-API
+    # calls on purpose (that gap is what keeps the account alive), so a cycle's
+    # duration is essentially its request count — and the default 120 s ceiling
+    # was written when a cycle was a handful of seed pages. With the location
+    # and discovery legs a cycle is dozens of calls, and a timeout would cut it
+    # off mid-read every time, always in the same place: the legs at the end of
+    # the list, which are the ones that reach beyond the official pages.
+    timeout_seconds = 120 + 10 * (
+        settings.IG_SEEDS_PER_CYCLE
+        + settings.IG_WATCHED_ACCOUNTS_PER_CYCLE
+        + settings.IG_DISCOVERED_ACCOUNTS_PER_CYCLE
+        + settings.IG_HASHTAGS_PER_CYCLE
+        + settings.IG_LOCATIONS_PER_CYCLE
+        + settings.IG_DISCOVERY_QUERIES_PER_CYCLE
+        + settings.IG_COMMENTS_MAX_MEDIA_PER_CYCLE
+        + settings.IG_PROFILE_LOOKUPS_PER_CYCLE)
 
     def __init__(self) -> None:
         self._client = None  # instagrapi.Client, created lazily on first collect
@@ -292,6 +408,12 @@ class InstagrapiCollector(Collector):
         self._tag_cursor = 0
         self._account_cursor = 0
         self._seed_cursor = 0
+        self._location_cursor = 0
+        self._discovered_cursor = 0
+        self._query_cursor = 0
+        self._public_cursor = 0
+        # leg name -> monotonic time Instagram refused its endpoint outright.
+        self._gated: dict[str, float] = {}
         # Why the last auth attempt failed, and when — see AUTH_RETRY_MINUTES.
         self._auth_error = ""
         self._auth_failed_at = 0.0
@@ -477,6 +599,45 @@ class InstagrapiCollector(Collector):
 
     # ---- users ------------------------------------------------------------
 
+    # ---- gated endpoints ---------------------------------------------------
+
+    def _is_gated(self, leg: str) -> bool:
+        """Has Instagram refused this endpoint recently for this account?
+
+        `login_required` from a session that is demonstrably logged in — the
+        seed pages, their media and their comments all read fine on the same
+        client — does not mean the session is bad. It means Instagram does not
+        extend *this account* to *that endpoint*, which is what it does to new
+        and low-trust accounts for exactly the discovery surfaces: tags/,
+        fbsearch/, locations/. Nothing about that changes in thirty minutes.
+
+        Retrying anyway is not merely wasted: a client that keeps calling
+        endpoints it is refused is the profile of a scraper rather than a
+        phone, and this account was pushed into a checkpoint that way. So a
+        refusal parks the leg for hours while every leg that *is* trusted
+        keeps collecting.
+        """
+        refused_at = self._gated.get(leg)
+        if refused_at is None:
+            return False
+        if time.monotonic() - refused_at < GATED_LEG_COOLDOWN_HOURS * 3600:
+            return True
+        del self._gated[leg]
+        return False
+
+    def _note_gate(self, leg: str, exc: Exception) -> bool:
+        """Record a refusal. True when it was a gate rather than a real error."""
+        if "login_required" not in str(exc).lower():
+            return False
+        first = leg not in self._gated
+        self._gated[leg] = time.monotonic()
+        if first:
+            log.warning("instagrapi: Instagram does not allow this account the "
+                        "%s endpoint (login_required) — pausing that leg for "
+                        "%dh; every other leg keeps collecting",
+                        leg, GATED_LEG_COOLDOWN_HOURS)
+        return True
+
     def _cached_account(self, username: str) -> Profile | None:
         hit = self._accounts.get(username)
         if hit is None:
@@ -494,25 +655,46 @@ class InstagrapiCollector(Collector):
         return False
 
     def _account_medias_sync(self, client, username: str, city: str,
-                             limit: int) -> list[tuple]:
+                             limit: int, discovered: bool = False) -> list[tuple]:
         """(media, city, Profile) for one account, or [] if it can't be read.
 
         Two calls at most: the profile (cached) and the media page. A private
         or deleted account raises on one of them and is remembered as missing
         so the next cycle doesn't pay for it again.
+
+        `discovered` marks an account nobody chose — one this adapter found in
+        a location feed or a search. Those are also *judged* on this read, and
+        dropped from the roster if they turn out unreadable or too small to be
+        worth a slot. Doing it here rather than at discovery time is the whole
+        economy of the thing: the follower count arrives with a lookup we were
+        going to make anyway, so nothing is spent checking accounts in advance
+        that the rotation might never have reached.
         """
         if self._is_missing(username):
             return []
         try:
             profile = self._cached_account(username)
             if profile is None:
-                profile = _profile_of(client.user_info_by_username(username))
+                profile = _profile_of(_lookup(client, username))
                 self._accounts[username] = (time.monotonic(), profile)
                 if profile.pk:
                     self._profiles[profile.pk] = (time.monotonic(), profile)
+            if discovered and profile.followers < settings.IG_DISCOVERED_MIN_FOLLOWERS:
+                self._missing[username] = time.monotonic()
+                roster.prune("instagram", [username],
+                             f"@{username} has {profile.followers} followers")
+                return []
             medias = client.user_medias(profile.pk, amount=limit)
         except Exception as exc:
             self._missing[username] = time.monotonic()
+            # Only a verdict about the *account* removes it from the roster.
+            # A 429, a dropped connection or a refused endpoint says nothing
+            # about the account at all — and treating one as a rejection
+            # deleted nine live Surat accounts in a single cycle, the moment
+            # Instagram's public profile route hit its per-IP burst limit.
+            # They then look identical to accounts that never existed.
+            if discovered and not _is_transient(exc):
+                roster.prune("instagram", [username], f"unreadable ({exc})")
             log.warning("instagrapi: account @%s unreadable (%s) — skipping for %dh",
                         username, exc, MISSING_ACCOUNT_RETRY_HOURS)
             return []
@@ -566,6 +748,184 @@ class InstagrapiCollector(Collector):
         for username in slice_:
             found.extend(self._account_medias_sync(client, username, "", WATCHED_MEDIA_LIMIT))
         return found
+
+    def _discovered_accounts_sync(self, client) -> list[tuple]:
+        """Accounts this adapter found for itself, read on rotation.
+
+        Kept on its own budget rather than sharing the seed one, so a roster
+        that grows to hundreds can never crowd out the civic pages: the
+        official desks are read at exactly the rate they were before discovery
+        existed, and everything found is extra.
+        """
+        budget = settings.IG_DISCOVERED_ACCOUNTS_PER_CYCLE
+        if budget <= 0:
+            return []
+        seeds = {u.casefold() for u, _ in settings.IG_SEED_USERNAMES}
+        pool = [(h, c) for h, c in roster.handles("instagram")
+                if h.casefold() not in seeds and _IG_HANDLE_RE.match(h)]
+        slice_, self._discovered_cursor = _rotate(pool, self._discovered_cursor,
+                                                  budget)
+        found: list[tuple] = []
+        for username, city in slice_:
+            found.extend(self._account_medias_sync(
+                client, username, city, DISCOVERED_MEDIA_LIMIT, discovered=True))
+        return found
+
+    # ---- discovery --------------------------------------------------------
+
+    def _record_authors(self, medias: list, city: str, source: str) -> None:
+        """Remember the accounts behind media we just read.
+
+        Only the location leg calls this, and that is the point: a location
+        feed's authors are geo-proven — they posted from a place in this city,
+        this week — which is a far stronger signal than a name that happens to
+        contain "surat". Nothing here is verified yet; the first read of each
+        will judge it (see _account_medias_sync).
+        """
+        entries, seen = [], set()
+        for m in medias:
+            handle = getattr(getattr(m, "user", None), "username", "") or ""
+            key = handle.casefold()
+            if not handle or key in seen or not _IG_HANDLE_RE.match(handle):
+                continue
+            seen.add(key)
+            entries.append({
+                "handle": handle,
+                "city": city,
+                "name": getattr(getattr(m, "user", None), "full_name", "") or "",
+                "source": source,
+            })
+        if entries:
+            roster.add("instagram", entries)
+
+    def _places_sync(self, client, city: str) -> list[tuple[int, str, str]]:
+        """(place pk, city, name) for one city — resolved once, then reused.
+
+        Places do not move, so this is cached on disk rather than re-searched
+        every cycle; IG_LOCATION_TTL_HOURS only exists so a city whose search
+        was throttled retries within the week rather than never.
+
+        The filter is not optional. "Surat" is also a province of Thailand and
+        a district of Bangladesh, and Instagram's place search returns both —
+        a roster polluted with them spends the crawl budget abroad.
+        """
+        rows = [e for e in roster.entries(PLACES_KEY)
+                if e.get("city") == city and str(e.get("handle", "")).isdigit()]
+        if rows and not _stale(rows, settings.IG_LOCATION_TTL_HOURS):
+            return [(int(e["handle"]), city, e.get("name", "")) for e in rows]
+
+        if self._is_gated("place search"):
+            return [(int(e["handle"]), city, e.get("name", "")) for e in rows]
+        try:
+            places = client.fbsearch_places(f"{city} Gujarat")
+        except Exception as exc:
+            if not self._note_gate("place search", exc):
+                log.warning("instagrapi: place search for %s failed: %s", city, exc)
+            return [(int(e["handle"]), city, e.get("name", "")) for e in rows]
+
+        keep = []
+        for place in places[:40]:
+            if not _in_city(place, city):
+                continue
+            keep.append({"handle": str(getattr(place, "pk", "")), "city": city,
+                         "name": getattr(place, "name", "") or "",
+                         "source": "ig-places"})
+            if len(keep) >= settings.IG_LOCATIONS_PER_CITY:
+                break
+        if keep:
+            roster.add(PLACES_KEY, keep)
+            log.info("instagrapi: %d place(s) resolved for %s", len(keep), city)
+        merged = {e["handle"]: e for e in rows}
+        merged.update({e["handle"]: e for e in keep})
+        return [(int(h), city, e.get("name", "")) for h, e in merged.items()
+                if h.isdigit()]
+
+    def _location_medias(self, client, pk: int) -> list:
+        """Recent media for one place, falling back to the top tab.
+
+        Same shape as the hashtag leg's two routes and for the same reason:
+        Instagram serves the recent tab to some sessions and not others, and a
+        place with no recent tab still has a populated top one.
+        """
+        try:
+            return client.location_medias_recent(
+                pk, amount=settings.IG_LOCATION_MEDIA_LIMIT)
+        except Exception as exc:
+            log.info("instagrapi: place %s recent tab refused (%s), trying top",
+                     pk, str(exc)[:80])
+            return client.location_medias_top(
+                pk, amount=settings.IG_LOCATION_MEDIA_LIMIT)
+
+    def _locations_sync(self, client) -> list[tuple]:
+        """Media geo-tagged to the target cities — the leg that reaches people
+        rather than pages.
+
+        Everything else here starts from a name somebody wrote down: a seed, a
+        watchlist entry, a hashtag. This starts from the city itself, so an
+        ordinary resident posting about a flooded road is collected on the
+        strength of *where they were*, which is the only route that does not
+        require them to already be known.
+        """
+        budget = settings.IG_LOCATIONS_PER_CYCLE
+        if budget <= 0:
+            return []
+        places: list[tuple[int, str, str]] = []
+        for city in settings.TARGET_CITIES:
+            places.extend(self._places_sync(client, city))
+        if not places:
+            return []
+        slice_, self._location_cursor = _rotate(places, self._location_cursor, budget)
+
+        found: list[tuple] = []
+        for pk, city, name in slice_:
+            if self._is_gated("location feed"):
+                break
+            try:
+                medias = self._location_medias(client, pk)
+            except Exception as exc:
+                if not self._note_gate("location feed", exc):
+                    log.warning("instagrapi: place %s (%s) failed: %s", name, pk, exc)
+                continue
+            self._record_authors(medias, city, f"ig-location:{pk}")
+            # The city is known from the place itself, so unlike the hashtag
+            # leg these posts carry a geo-tag the pipeline can trust.
+            found.extend((m, city, UNKNOWN) for m in medias)
+        return found
+
+    def _search_accounts_sync(self, client) -> None:
+        """One slice of the city × category query matrix, into the roster.
+
+        Nothing is read here — this leg only *names* accounts, and the account
+        rotation reads them later on its own budget. Keeping the two apart is
+        what stops a productive search from blowing the cycle's request count.
+        """
+        budget = settings.IG_DISCOVERY_QUERIES_PER_CYCLE
+        if budget <= 0 or self._is_gated("account search"):
+            return
+        queries = [(f"{city} {term}".strip(), city)
+                   for city in settings.TARGET_CITIES
+                   for term in DISCOVERY_TERMS]
+        slice_, self._query_cursor = _rotate(queries, self._query_cursor, budget)
+        for query, city in slice_:
+            try:
+                # One argument. instagrapi's search_users takes the query and
+                # nothing else — passing a count raises TypeError, which is not
+                # a network fault and would have made this leg silently dead.
+                users = client.search_users(query)
+            except Exception as exc:
+                if self._note_gate("account search", exc):
+                    return
+                log.warning("instagrapi: account search %r failed: %s", query, exc)
+                continue
+            entries = [{"handle": u.username, "city": city,
+                        "name": getattr(u, "full_name", "") or "",
+                        "source": f"ig-search:{query}"}
+                       for u in users
+                       if getattr(u, "username", "")
+                       and not getattr(u, "is_private", False)
+                       and _IG_HANDLE_RE.match(u.username)]
+            if entries:
+                roster.add("instagram", entries)
 
     def _enrich_authors_sync(self, client, harvest: list[tuple]) -> list[tuple]:
         """Fill in the real profile behind media whose author we only know as a
@@ -706,6 +1066,13 @@ class InstagrapiCollector(Collector):
         harvest = self._seed_accounts_sync(client)
         harvest.extend(self._watched_accounts_sync(client))
         harvest.extend(self._hashtags_sync(client, watch_terms))
+        harvest.extend(self._locations_sync(client))
+        harvest.extend(self._discovered_accounts_sync(client))
+        # Last, and after the reads: a search that finds fifty accounts costs
+        # nothing this cycle — they are read on later ones, on their own
+        # budget — so it must never be the thing that exhausts the request
+        # allowance before the seed pages have been read.
+        self._search_accounts_sync(client)
         harvest = self._enrich_authors_sync(client, harvest)
 
         posts: list[RawPost] = []
@@ -718,7 +1085,84 @@ class InstagrapiCollector(Collector):
 
         comments = self._comments_sync(client, harvest, posts_by_media)
         posts.extend(comments)
-        log.info("instagrapi: %d media + %d comments", len(posts) - len(comments), len(comments))
+
+        # Instagram withholds tags/, fbsearch/ and locations/ from accounts it
+        # does not trust, and this one is refused all three while reading seed
+        # profiles, media and comments perfectly well. That leaves the session
+        # able to read what it is *told* to read and unable to find anything
+        # new — which is precisely the half this deployment needs, since a
+        # city's opinion is not held on its municipal page.
+        #
+        # The signed-out routes answer those same questions with no credential
+        # at all, so they fill the gap rather than the session being wasted on
+        # endpoints that will keep refusing. There is nothing here to log out
+        # and nothing to checkpoint: it is the anonymous web.
+        signed_out: list[RawPost] = []
+        if (self._is_gated("location feed") or self._is_gated("account search")) \
+                and not self._is_gated("public hashtags"):
+            signed_out = self._public_sync(watch_terms)
+            posts.extend(signed_out)
+
+        log.info("instagrapi: %d media + %d comments + %d signed-out",
+                 len(posts) - len(comments) - len(signed_out), len(comments),
+                 len(signed_out))
+        return posts
+
+    # ---- the signed-out floor ---------------------------------------------
+
+    def _public_sync(self, watch_terms: list[str]) -> list[RawPost]:
+        """Collect with no account at all (crawlers/instagram_public.py).
+
+        This runs when the session is refused, which on this platform is a
+        recurring state rather than an exception: the account gets
+        checkpointed, the cookie is revoked, the password goes stale. Every one
+        of those used to mean Instagram contributed nothing for however long it
+        took a human to notice.
+
+        Only the hashtag route is used here, and it is the right one to have:
+        signed out, it is the *only* route that reaches accounts nobody has
+        listed — #surat answers with whoever is posting under it — while the
+        seed pages it cannot read are exactly the accounts a live session
+        reads best. The public profile route is deliberately not called in
+        bulk; it rate-limits after a handful of requests per IP, and spending
+        that budget here would break it for the analyst-facing lookups too.
+        """
+        tags = [t.lstrip("#") for t in watch_terms
+                if t and t.replace("#", "").isalnum()]
+        # The target cities themselves, always: a watchlist tuned to a current
+        # incident can legitimately contain no city tag at all, and the point
+        # of this path is that something still arrives.
+        tags = list(dict.fromkeys([c.lower() for c in settings.TARGET_CITIES] + tags))
+        budget = max(1, settings.IG_HASHTAGS_PER_CYCLE or 3)
+        slice_, self._public_cursor = _rotate(tags, self._public_cursor, budget)
+
+        session = instagram_public._session()
+        posts: list[RawPost] = []
+        for tag in slice_:
+            try:
+                found = instagram_public.hashtag_medias(
+                    tag, HASHTAG_MEDIA_LIMIT, session)
+            except instagram_public.PublicRateLimited:
+                log.info("instagrapi: signed-out route is rate-limited — "
+                         "pausing it for %dh", GATED_LEG_COOLDOWN_HOURS)
+                self._gated["public hashtags"] = time.monotonic()
+                break
+            except Exception as exc:
+                log.warning("instagrapi: signed-out #%s failed: %s", tag, exc)
+                continue
+            for mid, post in found:
+                if self._fresh("media", mid):
+                    posts.append(post)
+        if posts:
+            # Everyone who posted is a real, currently-active account in this
+            # city's conversation — the same discovery signal the location leg
+            # provides when there is a session to run it with.
+            roster.add("instagram", [
+                {"handle": p.author_handle, "city": "", "name": p.author_name,
+                 "source": "ig-public-hashtag"} for p in posts
+                if _IG_HANDLE_RE.match(p.author_handle)])
+        log.info("instagrapi: signed out — %d post(s) from %d tag(s)",
+                 len(posts), len(slice_))
         return posts
 
     async def collect(self, watch_terms: list[str]) -> list[RawPost]:
@@ -726,17 +1170,28 @@ class InstagrapiCollector(Collector):
             client = await self._login()
             return await asyncio.to_thread(self._collect_sync, client, watch_terms)
         except AuthFailed as exc:
-            # Latched, so the adapter reports offline and stops retrying for a
+            # Latched, so the adapter stops retrying the credential for a
             # while. A credential Instagram has refused will not start working
             # because we asked again ninety seconds later, and repeated failed
             # logins are exactly the pattern that escalates a soft block.
             self._client = None
             self._auth_error = str(exc)
             self._auth_failed_at = time.monotonic()
-            log.warning("instagrapi: Instagram is OFFLINE — no auth route worked "
-                        "(%s). Retrying in %d minutes.", exc, AUTH_RETRY_MINUTES)
-            return []
+            log.warning("instagrapi: no auth route worked (%s). Falling back to "
+                        "the signed-out routes; retrying the session in %d "
+                        "minutes.", exc, AUTH_RETRY_MINUTES)
         except Exception as exc:
             self._client = None  # force a fresh login next tick after any failure
             log.warning("instagrapi Instagram collect failed: %s", exc)
+            return []
+
+        # Reached only when the session was refused. Collecting less is worth
+        # a great deal more than collecting nothing, and this path holds no
+        # credential — there is nothing here for Instagram to log out.
+        if self._is_gated("public hashtags"):
+            return []
+        try:
+            return await asyncio.to_thread(self._public_sync, watch_terms)
+        except Exception as exc:
+            log.warning("instagrapi: signed-out fallback failed: %s", exc)
             return []

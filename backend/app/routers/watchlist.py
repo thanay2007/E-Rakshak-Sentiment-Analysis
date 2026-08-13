@@ -165,6 +165,18 @@ def apply_preset(slug: str, session: Session = Depends(get_session)) -> dict:
             "skipped": len(pack["items"]) - added}
 
 
+@router.get("/watchlist/suggestions")
+def watchlist_suggestions(hours: int = 24) -> list[dict]:
+    """Spiking negative terms not yet watched — offered, never auto-added.
+
+    The trends page used to insert these itself on every poll. Surfacing them
+    here instead keeps the watchlist a record of analyst decisions.
+    """
+    from app.services.trend_service import watch_suggestions
+
+    return watch_suggestions(hours=max(1, min(hours, 168)))
+
+
 @router.get("/watchlist/export")
 def export_csv(session: Session = Depends(get_session)) -> StreamingResponse:
     buf = io.StringIO()

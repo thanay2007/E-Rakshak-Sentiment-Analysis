@@ -82,9 +82,33 @@ def _script_counts(text: str) -> tuple[int, int, int]:
     return gu, dev, lat
 
 
+#: A hashtag and its body. Stripped before the script counts are taken.
+_HASHTAG_RE = re.compile(r"#\S+")
+
+
+def _body(text: str) -> str:
+    """The post minus its hashtags — what the author actually wrote.
+
+    Hashtags are overwhelmingly Latin even on posts written entirely in
+    Gujarati ("...ચપ્પલથી કોઈ બચી શકે? #surticomedy #gujaraticomedy #reels
+    #instagram"), and a social-media caption can carry twenty of them. Counted
+    as body text they swamp the script ratio, and the post is filed as English:
+    on live Instagram data this mislabelled most Gujarati captions, which then
+    lose their translation, their code-mixing flag, and any language filter an
+    analyst applies. They are already collected separately into `hashtags`, so
+    nothing is lost by leaving them out of this judgement.
+
+    A caption that is *only* hashtags keeps them — there is nothing else to
+    read, and guessing English for a wall of Gujarati tags would be the same
+    mistake in the other direction.
+    """
+    stripped = _HASHTAG_RE.sub(" ", text)
+    return stripped if len(stripped.strip()) >= 5 else text
+
+
 def detect_language(text: str) -> tuple[str, bool]:
     """Returns (language, code_mixed)."""
-    norm = normalize(text)
+    norm = normalize(_body(text))
     gu, dev, lat = _script_counts(norm)
     letters = gu + dev + lat
     if letters == 0:

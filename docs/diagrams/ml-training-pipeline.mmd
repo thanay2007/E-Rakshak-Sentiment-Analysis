@@ -1,24 +1,28 @@
 flowchart TD
-    BOOT["python -m app.ml.bootstrap\n(the one command)"]
+    BOOT["python -m app.ml.bootstrap<br/>(the one command)"]
 
-    BOOT --> DEPS["Install base + ML deps\n(CUDA torch if GPU present)"]
-    DEPS --> DL["download_datasets.py\n22 raw public datasets → app/data/datasets/\nKaggle · Hugging Face · GitHub (~400 MB, zero keys)"]
+    BOOT --> DEPS["install base + ML deps<br/>CUDA torch wheel when a GPU is present"]
+    DEPS --> DL["download_datasets.py<br/>21 raw public datasets → app/data/datasets/<br/>Kaggle · Hugging Face · GitHub (~400 MB, no keys)"]
 
-    DL --> CORPUS["corpus.py — assemble corpus in memory\nreads raw CSV / parquet / CoNLL directly\n(no merged intermediates ever written)"]
+    DL --> CORPUS["corpus.py — assembled in memory<br/>reads raw CSV / parquet / CoNLL directly<br/>(no merged intermediates ever written)"]
 
     DL --> AUG{"GROQ_API_KEY set?"}
-    AUG -- yes --> GROQAUG["groq_augment.py — LLM augmentation\ngujlish-pairs 3.7k · genz 2.4k · gujarati 2.3k\nhinglish 2.3k · hindi 1.9k · gujlish 1.5k\nlabels always come from real data"]
-    AUG -- no --> ROM["romanize.py fallback\nmechanical Gujarati → Gujlish transliteration"]
+    AUG -- yes --> GROQAUG["groq_augment.py — LLM augmentation<br/>~14k rows across all 5 language forms<br/>resumable · labels always from real data"]
+    AUG -- no --> ROM["romanize.py<br/>mechanical Gujarati → Gujlish transliteration"]
     GROQAUG --> CORPUS
     ROM --> CORPUS
 
-    CORPUS --> TSENT["train_sentiment.py\nfine-tune google/muril-base-cased\n50k rows · 5 languages"]
-    CORPUS --> TTHREAT["train.py\nfine-tune MuRIL threat classifier\n4 categories, template corpus"]
-    CORPUS --> TBASE["train_baseline.py\nTF-IDF + LinearSVC baseline"]
+    CORPUS --> CTX["ctx1 discourse prefix applied identically<br/>to BOTH models — ml/context.py"]
 
-    TSENT --> ESENT["eval_sentiment.py\n5,768 REAL held-out rows\noverall acc 0.706 · macro-F1 0.703"]
-    TTHREAT --> ETHREAT["evaluate.py\n151 held-out samples, disjoint slots"]
-    TBASE --> ESENT
+    CTX --> TSENT["train_sentiment.py<br/>fine-tune google/muril-base-cased<br/>50,733 train · 3 epochs"]
+    CTX --> TBASE["train_baseline.py<br/>TF-IDF word 1-2 + char 2-5 → LinearSVC"]
 
-    ESENT --> MODELS["app/ml/models/\nsentiment-classifier · threat-classifier\n+ eval reports"]
-    ETHREAT --> MODELS
+    TSENT --> ESENT["sentiment_eval_report.json<br/>5,973 held-out rows<br/>acc 0.705 · macro-F1 0.704"]
+    TBASE --> EBASE["baseline_report.json<br/>same split<br/>acc 0.647 · macro-F1 0.648"]
+
+    ESENT --> EV["evaluate.py — end-to-end pipeline<br/>→ eval_report.json"]
+    EBASE --> EV
+    EV --> MODELS["app/ml/models/sentiment-classifier/<br/>+ reports read by the Settings page"]
+
+    NOTE["both models share the ctx1 prefix,<br/>so they must be retrained together"]
+    CTX -.-> NOTE

@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react";
-import { Megaphone, MapPin } from "lucide-react";
+import { Clock, Megaphone, MapPin, Users } from "lucide-react";
 import GlassCard, { SectionTitle } from "../GlassCard";
+import { PlatformIcon } from "../Badges";
+import { usePostDetail } from "../PostDetailProvider";
 import { api } from "../../services/api";
 import type { PrCampaign, PrReport } from "../../services/api";
 import { sentimentColor } from "../../data/constants";
-import { EmptyHint, Pill, Spinner } from "./shared";
+import { AiExplanation, EmptyHint, Meter, Pill, Spinner } from "./shared";
 
 const TYPE_COLORS: Record<string, string> = {
   manufactured_outrage: "#EF4444",
-  disinformation_push: "#A855F7",
   image_whitewash: "#F59E0B",
   narrative_push: "#14B8C4",
 };
@@ -16,20 +17,23 @@ const WINDOWS = [24, 48, 72, 168];
 
 function CampaignCard({ c }: { c: PrCampaign }) {
   const color = TYPE_COLORS[c.type] ?? "#14B8C4";
+  const { openPostId } = usePostDetail();
+  const [showAccounts, setShowAccounts] = useState(false);
+
   return (
     <GlassCard className="space-y-3 p-4">
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-mono text-[11px] text-slate-500">{c.id}</span>
             <span className="text-sm font-semibold" style={{ color }}>{c.type_label}</span>
           </div>
-          <div className="mt-1 flex flex-wrap gap-1.5">
-            <Pill color={sentimentColor(c.law_order_category)}>{c.law_order_category}</Pill>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            <Pill color={sentimentColor(c.sentiment_lean)}>{c.sentiment_lean} lean</Pill>
             <Pill color="#64748B">{c.account_count} accounts</Pill>
             <Pill color="#64748B">{c.posts} posts</Pill>
             {c.bot_ratio > 0 && <Pill color="#EF4444">{Math.round(c.bot_ratio * 100)}% bots</Pill>}
-            <Pill color="#64748B">{c.sentiment_lean} lean</Pill>
+            {c.platforms.length > 1 && <Pill color="#A855F7">{c.platforms.length} platforms</Pill>}
           </div>
         </div>
         <div className="shrink-0 text-right">
@@ -38,41 +42,94 @@ function CampaignCard({ c }: { c: PrCampaign }) {
         </div>
       </div>
 
-      <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[13px] italic text-slate-300">“{c.sample_text}”</div>
+      <Meter value={Math.round(c.confidence * 100)} color={color} />
+
+      <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[13px] italic text-slate-300">
+        “{c.sample_text}”
+      </div>
 
       <div>
         <div className="mb-1 text-[11px] uppercase tracking-wide text-slate-500">Why flagged</div>
         <ul className="space-y-1">
-          {c.why.map((w, i) => <li key={i} className="flex gap-2 text-[12px] text-slate-400"><span style={{ color }}>›</span>{w}</li>)}
+          {c.why.map((w, i) => (
+            <li key={i} className="flex gap-2 text-[12px] text-slate-400"><span style={{ color }}>›</span>{w}</li>
+          ))}
         </ul>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
+      {/* The actual posts, openable — a campaign card with no way to read the
+          evidence is an assertion the analyst cannot check. */}
+      {c.sample_posts.length > 0 && (
+        <div>
+          <div className="mb-1 text-[11px] uppercase tracking-wide text-slate-500">
+            Evidence · highest concern first
+          </div>
+          <div className="space-y-1">
+            {c.sample_posts.map((p) => (
+              <button key={p.id} onClick={() => openPostId(p.id)}
+                className="flex w-full items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-2.5 py-1.5 text-left transition-colors hover:border-white/[0.16]">
+                <PlatformIcon platform={p.platform} size={13} />
+                <span className="shrink-0 font-mono text-[11px] text-slate-500">@{p.author_handle}</span>
+                <span className="min-w-0 flex-1 truncate text-[11.5px] text-slate-300">{p.text}</span>
+                <span className="shrink-0 font-mono text-[10px] text-slate-500">{Math.round(p.concern_score)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-white/[0.06] pt-2 text-[11px] text-slate-500">
+        <span className="inline-flex items-center gap-1">
+          <Clock size={11} />posted over {c.spread_minutes < 60 ? `${c.spread_minutes}m` : `${Math.round(c.spread_minutes / 60)}h`}
+        </span>
         <span>reach ≈ {c.reach_estimate.toLocaleString()}</span>
-        {c.locations.length > 0 && <span className="inline-flex items-center gap-1"><MapPin size={11} />{c.locations.join(", ")}</span>}
-        {c.top_hashtags.length > 0 && <span className="text-accent">{c.top_hashtags.map((t) => `#${t}`).join(" ")}</span>}
+        <span>avg concern {c.avg_concern}</span>
+        {c.locations.length > 0 && (
+          <span className="inline-flex items-center gap-1"><MapPin size={11} />{c.locations.join(", ")}</span>
+        )}
+        {c.top_hashtags.length > 0 && (
+          <span className="text-accent">{c.top_hashtags.map((t) => `#${t}`).join(" ")}</span>
+        )}
+        <button onClick={() => setShowAccounts((s) => !s)}
+          className="ml-auto inline-flex items-center gap-1 text-slate-400 hover:text-accent">
+          <Users size={11} /> {showAccounts ? "hide" : "show"} roster
+        </button>
       </div>
+
+      {showAccounts && (
+        <div className="flex flex-wrap gap-1">
+          {c.accounts.map((a) => (
+            <span key={a} className="rounded-md border border-white/[0.08] bg-white/[0.03] px-1.5 py-0.5 font-mono text-[10.5px] text-slate-400">
+              @{a}
+            </span>
+          ))}
+        </div>
+      )}
     </GlassCard>
   );
 }
 
 export default function PrTool() {
   const [hours, setHours] = useState(72);
+  const [minAccounts, setMinAccounts] = useState(3);
   const [data, setData] = useState<PrReport | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    api.investigatePrCampaigns(hours).then((d) => { if (alive) setData(d); }).finally(() => { if (alive) setLoading(false); });
+    api.investigatePrCampaigns(hours, minAccounts)
+      .then((d) => { if (alive) setData(d); })
+      .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [hours]);
+  }, [hours, minAccounts]);
 
   return (
     <div className="space-y-4">
       <GlassCard className="p-4">
-        <SectionTitle title="Fake PR Campaign Analysis"
-          sub="Coordinated inauthentic messaging that manufactures a narrative — scoped to law-and-order impact."
+        <SectionTitle
+          title="Coordinated Narrative Detection"
+          sub="Accounts pushing near-identical copy at the same time — outrage, whitewash or narrative push."
           right={
             <div className="flex gap-1">
               {WINDOWS.map((w) => (
@@ -83,18 +140,52 @@ export default function PrTool() {
               ))}
             </div>
           } />
-        {data && <div className="flex items-center gap-2 text-[13px] text-slate-400"><Megaphone size={15} className="text-accent" /> {data.campaigns_found} campaign(s) with law-and-order impact in the last {hours < 72 ? `${hours}h` : `${hours / 24} days`}</div>}
+
+        <div className="flex flex-wrap items-center gap-4">
+          <label className="flex items-center gap-2 text-[12px] text-slate-400">
+            Cluster size ≥
+            <input type="range" min={2} max={10} value={minAccounts}
+              onChange={(e) => setMinAccounts(Number(e.target.value))}
+              className="w-28 accent-[#14B8C4]" />
+            <span className="w-16 font-mono text-slate-200">{minAccounts} accounts</span>
+          </label>
+          {data && (
+            <div className="flex items-center gap-2 text-[12.5px] text-slate-400">
+              <Megaphone size={15} className="text-accent" />
+              {data.campaigns_found} campaign{data.campaigns_found === 1 ? "" : "s"} in the last{" "}
+              {hours < 72 ? `${hours}h` : `${hours / 24} days`}
+            </div>
+          )}
+        </div>
+
+        {/* What was actually looked at. Without this an empty result is
+            ambiguous between "nothing coordinated" and "nothing ran". */}
+        {data && !loading && (
+          <p className="mt-2 text-[11px] text-slate-600">
+            Scanned {data.posts_scanned.toLocaleString()} posts · {data.clusters_found} near-duplicate
+            cluster{data.clusters_found === 1 ? "" : "s"} found
+            {data.neutral_clusters_ignored > 0 &&
+              ` · ${data.neutral_clusters_ignored} neutral cluster${data.neutral_clusters_ignored === 1 ? "" : "s"} ignored as ordinary syndication`}
+          </p>
+        )}
       </GlassCard>
 
-      {loading && <GlassCard className="p-2"><Spinner label="Scanning for coordinated campaigns…" /></GlassCard>}
+      {loading && <GlassCard className="p-2"><Spinner label="Clustering near-duplicate copy across the window…" /></GlassCard>}
 
       {data && !loading && (
         data.campaigns.length ? (
-          <div className="grid gap-4 xl:grid-cols-2">
-            {data.campaigns.map((c) => <CampaignCard key={c.id} c={c} />)}
-          </div>
+          <>
+            <AiExplanation tool="pr" report={data} deps={[hours, minAccounts, data.campaigns_found]} />
+            <div className="grid gap-4 xl:grid-cols-2">
+              {data.campaigns.map((c) => <CampaignCard key={c.id} c={c} />)}
+            </div>
+          </>
         ) : (
-          <EmptyHint>No coordinated law-and-order PR campaigns detected in this window. Try a wider window.</EmptyHint>
+          <EmptyHint>
+            No coordinated campaign in this window. {data.clusters_found > 0
+              ? `${data.clusters_found} cluster(s) matched on text but leaned neutral, which reads as ordinary syndication.`
+              : "Try a wider window or a smaller cluster size."}
+          </EmptyHint>
         )
       )}
     </div>

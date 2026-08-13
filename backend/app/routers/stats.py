@@ -132,9 +132,20 @@ def models() -> dict:
 
 
 @router.get("/emerging")
-def emerging(hours: int = 24) -> dict:
+def emerging(hours: int = 24, limit: int = 40, offset: int = 0,
+             platform: str = "", location: str = "", sentiment: str = "",
+             min_spread: float = 0.0) -> dict:
     """Posts spreading fast from a single, uncorroborated source — flagged for
-    police to check before a possible rumour goes viral."""
+    police to check before a possible rumour goes viral.
+
+    Paged and filterable so the dashboard can show the top few while the
+    dedicated review page walks the whole set.
+    """
     from app.services.emerging import detect_emerging
 
-    return detect_emerging(hours=max(1, min(hours, 168)))
+    return detect_emerging(
+        hours=max(1, min(hours, 168)),
+        limit=max(1, min(limit, 200)), offset=max(0, offset),
+        platform=platform, location=location, sentiment=sentiment,
+        min_spread=max(0.0, min(min_spread, 100.0)),
+    )

@@ -1,0 +1,23 @@
+flowchart TB
+    MIC["browser microphone<br/>16 kHz PCM, 20 ms frames"] --> WS["/ws/voice — token checked in handshake"]
+    WS --> PICK{"VOICE_REALTIME_ENABLED<br/>and GEMINI_API_KEY?"}
+
+    PICK -->|"yes (default)"| RT["realtime.py — one Gemini Live socket<br/>model does VAD, STT, LLM, TTS"]
+    RT --> OUT["audio back to the browser"]
+    RT -.->|"2 consecutive failures"| COOL["cooldown 180 s<br/>VOICE_REALTIME_REQUIRED decides<br/>fail loudly vs fall through"]
+    COOL --> CAS
+    PICK -->|"no"| CAS
+
+    subgraph CAS["cascade — services/voice/"]
+        direction TB
+        DN["denoiser.py"] --> VAD["vad.py — energy or silero"]
+        VAD --> STT["transformer/stt.py<br/>Deepgram nova-3 stream / Groq Whisper"]
+        STT --> EOS["end_of_speech.py — 350 ms base,<br/>shorter after punctuation,<br/>longer after a conjunction"]
+        EOS --> ASST["services/assistant — same guard,<br/>same rank-filtered tools, same audit"]
+        ASST --> AGG["aggregator.py — sentence at a time"]
+        AGG --> NRM["normalizer/ — numbers, dates, handles"]
+        NRM --> TTS["transformer/tts.py<br/>ElevenLabs / Sarvam / browser"]
+    end
+    TTS --> OUT
+    OUT --> SPK["playback"]
+    SPK -.->|"officer talks over it"| INT["InterruptionDetected —<br/>stop LLM, stop TTS,<br/>drop queued audio, roll back the turn"]

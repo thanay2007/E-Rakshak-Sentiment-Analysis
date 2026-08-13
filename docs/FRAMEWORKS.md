@@ -1,9 +1,11 @@
 # SENTINEL — Framework Guide
 
-How each framework in the stack is used in this project, with the patterns verified
-against current official documentation (fetched via Context7 from
-fastapi.tiangolo.com, sqlmodel.tiangolo.com and the Vite v5 docs). File references
-point into this repo.
+How each framework in the stack is used in this project, with the patterns
+verified against current official documentation (fetched via Context7 from
+fastapi.tiangolo.com, sqlmodel.tiangolo.com and the Vite v5 docs; the lifespan
+pattern below was re-confirmed against FastAPI's current docs, where `on_event`
+carries a `@deprecated` decorator pointing at lifespan). File references point
+into this repo.
 
 ---
 
@@ -74,10 +76,11 @@ point into this repo.
 
 ### Hugging Face Transformers (`backend/app/ml/`)
 
-- Fine-tunes `google/muril-base-cased` twice (threat 4-way, sentiment 3-way) with
-  the `Trainer` API, fp16 on GPU; models load once at startup (singleton) and fall
-  back full → generic pretrained → lite lexicon so the app never crashes without
-  models.
+- Fine-tunes `google/muril-base-cased` for 3-way sentiment with the `Trainer`
+  API, fp16 on GPU; the model loads once at startup (a singleton) and falls back
+  full → generic pretrained → lite lexicon, so the app never crashes without
+  models. (An earlier build trained a second 4-way "threat" head; that taxonomy
+  was removed deliberately — see [SCORING.md](SCORING.md).)
 - Gotchas recorded in the repo memory: Windows MAX_PATH must be enabled for HF
   cache paths, and CUDA torch comes from the `cu128` index when a GPU is present.
 
@@ -125,7 +128,8 @@ point into this repo.
 ### Tailwind CSS 3 (`frontend/tailwind.config.js`, `frontend/src/index.css`)
 
 - Design tokens live in `theme.extend`: `base.*` surface scale, `accent` cyan
-  (#14B8C4), and semantic `threat.*` colors (critical/inflammatory/fake/neutral).
+  (#14B8C4), and semantic colours for the concern bands
+  (critical / high / elevated / routine) and the three sentiment labels.
 - Reusable surfaces are `@apply`-based component classes in `index.css`
   (`.glass`, `.glass-hover`, `.shimmer`, `.bg-grid`) rather than long utility
   strings repeated per component.

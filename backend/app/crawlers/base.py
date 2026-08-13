@@ -15,6 +15,16 @@ class Collector(ABC):
     name: str = "base"
     # 0 = run every tick (simulator); live adapters set a real politeness gap.
     min_interval_seconds: int = 0
+    # How long the scheduler waits for one collect() before giving up on it and
+    # moving to the next platform. Adapters are called one after another in a
+    # single tick, so an adapter that never returns does not just lose its own
+    # platform — it starves every platform below it in the list and every tick
+    # that follows, because the tick never finishes. Instagram's private-API
+    # client has done exactly that (a refused login that blocks instead of
+    # raising), taking Facebook and the whole loop down with it while every
+    # source still reported itself online. Raise it for an adapter that is
+    # legitimately slow rather than stuck; the browser-driven ones are.
+    timeout_seconds: int = 120
 
     @abstractmethod
     def is_configured(self) -> bool:

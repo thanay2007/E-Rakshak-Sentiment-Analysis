@@ -50,6 +50,17 @@ telethon>=1.36
 instagrapi==2.18.12
 pycryptodomex>=3.23.0,<4
 PySocks>=1.7.1,<2
+# Facebook has no keyless route at all — the page feed is rendered by JS behind
+# a login wall — so the "Facebook (browser)" adapter drives a real Chrome.
+# Optional: without selenium (or without Chrome on the host) that adapter
+# reports itself offline and Facebook runs on a Graph API token only.
+# 4.6+ ships Selenium Manager, which resolves chromedriver itself — no
+# webdriver-manager and no chromedriver on PATH needed.
+selenium>=4.20
+# Parses the rendered feed HTML for the same adapter. Already arrives
+# transitively; declared because a dependency update that drops it would break
+# collection, not a side feature.
+beautifulsoup4>=4.12
 # YouTube Data API v3 for OSINT (video search, comments, channel info)
 google-api-python-client>=2.100
 google-auth-oauthlib>=1.2

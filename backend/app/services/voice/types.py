@@ -423,6 +423,11 @@ class Component(Protocol):
     async def close(self) -> None: ...
 
 
+# The three Protocols below are the contracts `denoiser.create`,
+# `vad.create` and `end_of_speech.create` are annotated with: each of those
+# picks between implementations that share no base class, so the Protocol is
+# what says they are interchangeable. (Recognisers and synthesisers do have a
+# shared base - transformer/base.py - so they need no Protocol here.)
 @runtime_checkable
 class Denoiser(Component, Protocol):
     async def process(self, packet: DenoiseAudioPacket) -> None: ...
@@ -440,40 +445,6 @@ class EndOfSpeechDetector(Component, Protocol):
 
 
 @runtime_checkable
-class SpeechToTextTransformer(Component, Protocol):
-    """A recogniser. `feed` takes speech audio; `flush` closes the utterance
-    and forces a final transcript out of providers that buffer."""
-
-    name: str
-
-    async def feed(self, packet: SpeechToTextAudioPacket) -> None: ...
-    async def flush(self, context_id: str) -> None: ...
-
-
-@runtime_checkable
-class TextToSpeechTransformer(Component, Protocol):
-    """A synthesiser.
-
-    `speak` may emit many `TextToSpeechAudioPacket`s for one sentence, so
-    playback can start before synthesis finishes. `interrupt` must make the
-    already-emitted ones stop mattering, which is why the session tracks the
-    context id rather than trusting the provider to cancel cleanly.
-    """
-
-    name: str
-
-    async def speak(self, packet: TextToSpeechTextPacket) -> None: ...
-    async def interrupt(self, context_id: str) -> None: ...
-
-
-@runtime_checkable
-class TextAggregator(Component, Protocol):
-    async def aggregate(self, *packets: Packet) -> None: ...
-    async def flush(self, context_id: str) -> None: ...
-    def reset(self) -> None: ...
-
-
-@runtime_checkable
 class TextNormalizer(Protocol):
     """Pure text in, pure text out. Deliberately synchronous and stateless so
     the chain is trivially testable and order-independent to reason about."""
@@ -481,12 +452,6 @@ class TextNormalizer(Protocol):
     name: str
 
     def normalize(self, text: str) -> str: ...
-
-
-def is_audio(packet: Packet) -> bool:
-    return isinstance(packet, (UserAudioReceivedPacket, DenoiseAudioPacket,
-                               DenoisedAudioPacket, VadSpeechActivityPacket,
-                               SpeechToTextAudioPacket, TextToSpeechAudioPacket))
 
 
 def describe(packet: Packet) -> dict[str, Any]:

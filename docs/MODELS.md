@@ -1,175 +1,206 @@
-# SENTINEL — Model Documentation
+# The three models
 
-This document describes every machine-learning model E-Rakshak / SENTINEL uses,
-the data each was trained on, how each is evaluated, and how their predictions
-are combined and independently verified. All accuracy figures are **measured on
-a held-out test split** and are read live by the portal from the evaluation
-report JSONs in `backend/app/ml/` — they are not hand-typed.
+Every post gets exactly one label — **positive**, **negative** or **neutral** —
+and that label is a vote, not a verdict. Three models with three different
+failure modes each predict it independently, the ensemble decides, and an LLM
+reviews the decision afterwards.
 
-The portal exposes the same information at **`GET /api/models`** and on the
-**Settings → Models** panel, so a reviewer can confirm these numbers in the
-running system.
+The reason for three is not accuracy for its own sake. A single model that is
+70% right is also 30% wrong *silently*: nothing in its output tells an analyst
+which 30%. Three models that disagree tell you exactly where the answer is
+soft, and that disagreement is stored on the post and shown in the UI.
 
----
-
-## 1. Why three models (the consensus design)
-
-A single model that is wrong is wrong silently. SENTINEL runs **three
-independent sentiment models of three different families** on every post; they
-vote, and the system chooses the best answer. Because the models fail in
-different ways (a rule model trips on sarcasm, a linear model on long-range
-context, a transformer on rare slang), their **agreement is real signal** — not
-three copies of the same mistake. A fourth layer, a Groq LLM, then
-independently double-checks the winning label.
-
-| # | Model | Family | Overall accuracy* | Role |
-|---|-------|--------|-------------------|------|
-| 1 | MuRIL Transformer | Deep learning (fine-tuned) | **70.6 %** | Primary — context & code-mixing |
-| 2 | TF-IDF + LinearSVC | Classical ML | **64.0 %** | Robust second opinion |
-| 3 | Multilingual Lexicon | Rule-based | — (zero-shot) | Transparent tie-breaker |
-| ✓ | Groq `llama-3.3-70b` | LLM verifier | — | Independent double-check |
-
-\* Overall accuracy on a **5,768-row held-out test set**, 5 languages.
-
-### Decision rule ("the best one is chosen")
-1. Each model outputs a **label** (negative / neutral / positive) and a
-   **confidence** in [0, 1].
-2. **If ≥ 2 models agree**, that label wins (majority). Its confidence is the
-   mean of the agreeing models plus a small consensus bonus.
-3. **If all three disagree**, the single **most-confident** model wins — the
-   "best one," weighted by each model's historical reliability.
-4. The numeric sentiment score (−1…+1) is the confidence-weighted average of the
-   models backing the winning label, so the score reflects consensus strength.
-5. Every model's individual vote and the `chosen_by` reason are **stored on the
-   post** and shown to the analyst — the decision is fully auditable.
-
-Implementation: [`backend/app/ml/ensemble.py`](../backend/app/ml/ensemble.py).
-
----
-
-## 2. Model 1 — MuRIL Transformer (deep learning)
-
-- **Base model:** `google/muril-base-cased` — a 12-layer BERT pre-trained by
-  Google on 17 Indian languages (monolingual + parallel + transliterated text).
-  Chosen over `ai4bharat/indic-bert` after the latter became a gated repo.
-- **Head:** 3-class sentiment classifier, fine-tuned for 3 epochs @ 2e-5.
-- **Why it's the primary model:** MuRIL understands *context* and *code-mixing*
-  natively — "service saru nathi" (Gujlish: "service is not good") is correctly
-  negative even though "saru" ("good") is positive in isolation.
-- **Measured accuracy (5,768 test rows):**
-
-  | Language | n | Accuracy | Macro-F1 |
-  |----------|---|----------|----------|
-  | Overall | 5,768 | **70.6 %** | 0.703 |
-  | Gujarati | 229 | 87.8 % | 0.719 |
-  | Gujlish | 595 | 85.9 % | 0.840 |
-  | Hindi | 1,144 | 74.1 % | 0.728 |
-  | English | 2,000 | 69.8 % | 0.692 |
-  | Hinglish | 1,800 | 62.0 % | 0.622 |
-
-- **Artifact:** `backend/app/ml/models/sentiment-classifier/` · report:
-  `sentiment_eval_report.json`. Retrain: `python -m app.ml.train_sentiment`.
-
-## 3. Model 2 — TF-IDF + LinearSVC (classical ML)
-
-- **Architecture:** a Linear Support-Vector Classifier over TF-IDF features:
-  **word n-grams (1–2)** + **character n-grams (2–5)**, ~320k features, with
-  `class_weight="balanced"`. LinearSVC was chosen over Naive Bayes / Logistic
-  Regression / Random Forest because Linear SVM won head-to-head on this corpus.
-- **Why char n-grams matter:** they absorb Hinglish/Gujlish **spelling
-  variation** ("bahut / bhut / bohot / bauhat") that a word-only model treats as
-  four unrelated tokens — the reason a classical model stays competitive on
-  code-mixed Indian text.
-- **Confidence:** LinearSVC has no native probabilities; SENTINEL applies a
-  **softmax over the one-vs-rest decision-function margins** to give the
-  ensemble a calibrated per-class confidence.
-- **Trained on the identical corpus** to the transformer, so the accuracy gap is
-  an honest measure of what the deep model earns:
-
-  | Language | n | Accuracy | Macro-F1 |
-  |----------|---|----------|----------|
-  | Overall | 5,768 | **64.0 %** | 0.638 |
-  | Gujlish | 595 | 75.1 % | 0.715 |
-  | Gujarati | 229 | 73.4 % | 0.595 |
-  | Hindi | 1,144 | 67.0 % | 0.655 |
-  | Hinglish | 1,800 | 61.3 % | 0.614 |
-  | English | 2,000 | 60.3 % | 0.599 |
-
-- **Artifact:** `backend/app/ml/models/sentiment-linear/model.joblib` · report:
-  `baseline_report.json`. Train + save: `python -m app.ml.train_baseline`.
-
-## 4. Model 3 — Multilingual Lexicon (rule-based)
-
-- **Method:** a VADER-style valence engine ported from `cjhutto/vaderSentiment`
-  and extended to Hindi, Gujarati, Hinglish and Gujlish. Negation flips valence
-  ("accha nahi", "saru nathi"), boosters/dampeners scale it ("bahut", "thoda"),
-  ALL-CAPS and `!`/`?` runs intensify, and a contrastive conjunction (but /
-  lekin / pan) re-weights the following clause. VADER's published constants are
-  preserved, so the port is faithful.
-- **Why keep it:** it needs **no training**, is **fully explainable** (every
-  score traces to matched words — vital for a police audit trail), and catches
-  fresh slang the trained models have never seen.
-- **Artifact:** none — code + curated lexicons
-  ([`backend/app/ml/sentiment.py`](../backend/app/ml/sentiment.py),
-  `lexicons.py`).
-
----
-
-## 5. Concern score (the police-facing number)
-
-There is **no threat classifier.** A post's only tag is its sentiment. The
-earlier four-label taxonomy (*Incitement to Violence, Inflammatory, Fake News,
-Neutral*) was removed because whether a post will incite violence, and whether a
-claim inside it is false, are investigative conclusions about the world — a
-model reading one post's words establishes neither, and printing them as model
-output invites an analyst to treat a guess as a finding.
-
-What replaces it is a number the pipeline can defend line by line:
-
-```
-concern = 100 × ( 0.50 × negativity × confidence
-                + 0.22 × toxicity
-                + 0.18 × virality
-                + 0.10 × term_severity )
+```mermaid
+flowchart TB
+    IN["post text"] --> CTX["ml/context.py<br/>discourse tags: [q] [neg] [rep] [sarc]"]
+    CTX --> T["1. TRANSFORMER<br/>MuRIL fine-tune"]
+    CTX --> C["2. CLASSICAL<br/>TF-IDF + LinearSVC"]
+    CTX --> L["3. LEXICON<br/>valence + rules"]
+    T --> E{"ensemble<br/>ml/ensemble.py"}
+    C --> E
+    L --> E
+    E -->|"2 or 3 agree"| MAJ["label = majority<br/>+ consensus bonus"]
+    E -->|"all 3 disagree"| BEST["label = most confident,<br/>weighted by reliability"]
+    MAJ --> META["metadata context<br/>adjusts CONFIDENCE only"]
+    BEST --> META
+    META --> G{"Groq review"}
+    G -->|"agrees"| UP["confidence raised"]
+    G -->|"disagrees, conf >= 0.75"| OV["label overridden,<br/>recorded as an override"]
+    G -->|"disagrees, conf < 0.75"| DIS["recorded as dissent,<br/>label unchanged"]
 ```
 
-- **Formula:** [`app/ml/score.py`](../backend/app/ml/score.py). `negativity` is
-  `max(0, −sentiment_score)`, so a positive post contributes nothing to it.
-- **Weights are shaped so no single dimension reaches an alert band alone:** a
-  furious post nobody read tops out near 50, a viral cheerful post cannot pass
-  ~30. An alert always means *negative **and** travelling*.
-- **Bands:** ≥74 critical (+ auto escalation packet) · ≥65 high · ≥50 elevated.
-- The per-factor contribution is stored on the post and rendered in the drawer
-  under *How this score was built*, so an analyst can see that a 71 came from
-  reach rather than from the language itself.
-- The lexicon layer (`app/ml/classifier.py`) still extracts violence, hostility,
-  abuse and mobilization **signals** — those are facts about the text, and they
-  feed toxicity and `term_severity`. They assert nothing beyond themselves.
+## Why these three
 
-## 6. Independent verification (Groq LLM)
+They are chosen to fail differently. Three transformers would agree with each
+other and with their shared pre-training bias; these three do not share one.
 
-Every risky or consensus prediction is sent to **Groq `llama-3.3-70b`** for an
-independent second opinion ([`app/services/groq_verifier.py`](../backend/app/services/groq_verifier.py)):
+### 1. Transformer — `google/muril-base-cased`, fine-tuned
 
-- **Agreement** with the ensemble strengthens confidence.
-- **Confident disagreement** (LLM confidence ≥ 0.75) **overrides** the label and
-  recomputes the score — never silently; the full LLM verdict, quoted evidence
-  and reasoning are stored and shown.
-- For the sentiment consensus, Groq's independent sentiment is recorded as
-  `groq_sentiment` / `groq_agrees` on the post.
+`app/ml/transformer_engine.py`, trained by `app/ml/train_sentiment.py`.
 
-Suspected **fake news** is additionally checked against **Google News India**
-for cross-source corroboration (`app/services/fact_check.py`), and an
-analyst-grade **evidence dossier** (`app/services/evidence.py`) compiles quoted
-evidence, claim-by-claim assessment and cited sources on demand.
+MuRIL is Google's multilingual model pre-trained on 17 Indian languages
+*including transliterated text*, which is the reason it is the base here rather
+than mBERT or XLM-R: half the traffic in a Gujarat city feed is romanized
+Gujarati and Hindi, and a model that has never seen "bau saru chhe" written in
+Latin script has to guess. (The original choice was `ai4bharat/indic-bert`; it
+became a gated Hugging Face repo requiring login, which made a one-command
+clone-and-train impossible.)
 
----
+* **Sees:** the full post text with the context prefix, as one sequence.
+* **Strength:** word order and long-range structure — negation scoped over a
+  clause, contrast ("સરસ છે, પણ..."), sarcasm marked by discourse cues.
+* **Weakness:** confidently wrong on domain-shifted text; expensive; needs a
+  GPU to train in reasonable time ([GPU.md](GPU.md)).
+* **Measured** (`app/ml/sentiment_eval_report.json`, 5,973 held-out rows):
+  accuracy **0.705**, macro-F1 **0.704**.
 
-## 7. Training data provenance
+### 2. Classical — TF-IDF + LinearSVC
 
-All models train on the same corpus assembled by `app/ml/corpus.py` from **22
-public datasets** (Kaggle + HuggingFace) covering English, Hindi, Gujarati,
-Hinglish and Gujlish social-media text, de-duplicated and per-language capped,
-plus LLM-augmented examples for minority classes. **48,774 train / 5,768 test**
-rows. See [`backend/app/data/datasets/README.md`](../backend/app/data/datasets/README.md)
-for the per-source breakdown. Rebuild everything with `python -m app.ml.bootstrap`.
+`app/ml/linear_model.py`, trained by `app/ml/train_baseline.py`.
+
+Word 1-2-grams **and character 2-5-grams**. The character n-grams are what make
+this model worth keeping: they survive spelling chaos that destroys word
+features — "bhaiiii", "nhi/nahi/nai", Gujarati typed in three different
+romanizations — because a character 4-gram of a misspelt word still overlaps
+the correctly spelt one.
+
+* **Sees:** the same context-tagged text, vectorised.
+* **Strength:** stable, fast, no GPU, and its decision is inspectable — you can
+  ask which n-grams moved it.
+* **Weakness:** no word order at all; "not good" and "good, not bad" look alike.
+* **Measured** (`app/ml/baseline_report.json`, same split): accuracy **0.647**,
+  macro-F1 **0.648**.
+
+### 3. Lexicon — multilingual valence + rules
+
+`app/ml/classifier.py` with `app/ml/lexicons.py`.
+
+A hand-curated valence lexicon across all five language forms plus VADER-style
+rules for negation, intensifiers, and emoji. It is the weakest of the three and
+the only one that can *explain itself in a sentence* — "matched 'ખરાબ' (-0.6),
+negated by 'નથી'" — which is what the evidence drawer shows an analyst.
+
+* **Strength:** zero training, fully explainable, no domain shift, works when
+  the ML stack is unavailable (`NLP_MODE=lite` runs this alone).
+* **Weakness:** blind to anything not in the lexicon; no composition.
+* **Reliability prior:** 0.560 (`MODEL_WEIGHTS` in `ensemble.py`).
+
+## Per-language accuracy — where each model is actually good
+
+Both trained models were evaluated per language form on the same 5,973-row
+held-out split. This table is the honest picture of what the system knows:
+
+| Language | rows | Transformer acc / F1 | Classical acc / F1 |
+|---|---:|---|---|
+| Gujarati (script) | 229 | **0.838** / 0.664 | 0.764 / 0.678 |
+| Gujlish (romanized Gujarati) | 800 | **0.828** / 0.787 | 0.759 / 0.697 |
+| Hindi (Devanagari) | 1,144 | **0.740** / 0.720 | 0.668 / 0.655 |
+| English | 2,000 | **0.687** / 0.678 | 0.611 / 0.605 |
+| Hinglish (romanized Hindi) | 1,800 | **0.632** / 0.631 | 0.611 / 0.613 |
+| **Overall** | **5,973** | **0.705** / 0.704 | 0.647 / 0.648 |
+
+Two things worth reading off it. The transformer beats the baseline in every
+single language form, which is why it carries the highest reliability weight
+(0.706 vs 0.640). And **Hinglish is the hardest class for both models** — it is
+the most lexically ambiguous form, sharing tokens with English while meaning
+something else, and it is also the highest-volume form in a real city feed. A
+low score there is the main reason the ensemble and the LLM review exist rather
+than a single classifier.
+
+Gujarati's high accuracy with a much lower macro-F1 is a class-imbalance
+artefact of a small (229-row) slice — it is good at the majority class there
+and thin on the rest. Do not read 0.838 as "solved".
+
+## The shared context prefix — why all three must be retrained together
+
+Every model reads the **same** input, produced by `ml/context.py`: the post text
+with a short deterministic tag prefix describing its discourse structure —
+interrogative, negated, reported speech, contrastive, sarcasm cues.
+
+This matters because of what a training corpus is. The 21 public datasets used
+here are plain `(text, label)` rows with no author, no platform and no reach, so
+any feature needing metadata could never be learned. Discourse structure *can*
+be derived from text alone, so it is rendered into the input identically in
+`train_sentiment.py`, `train_baseline.py` and at inference, and both models
+learn what `[q]` implies instead of being handed a flag they have never seen.
+
+The prefix is **version-stamped** (`ctx1`, recorded in both report files). An
+ensemble where one model was trained with the prefix and the other without it is
+two models answering different questions, so:
+
+> Retrain both together. `python -m app.ml.bootstrap` does that in one command.
+
+## The decision rule
+
+`app/ml/ensemble.py`:
+
+1. **Two or three agree** → that label wins. Confidence is the mean of the
+   agreeing models plus a consensus bonus.
+2. **All three disagree** → the single most confident model wins, weighted by
+   its historical reliability (`MODEL_WEIGHTS`, taken from the eval reports).
+3. **Metadata context** (`MetaContext`: account age, verification, follower
+   count, amplification, geo) then adjusts the **confidence only, never the
+   label**, and every adjustment carries a human-readable reason.
+4. **Groq reviews** the post and the ensemble's verdict. Agreement raises
+   confidence. Disagreement at confidence ≥ `GROQ_OVERRIDE_CONFIDENCE` (0.75)
+   replaces the label and is stored as an override; below that it is stored as
+   a dissent and the label stands.
+
+Step 3 is the rule that keeps this defensible. Metadata is excellent evidence
+about *reach* and terrible evidence about *sentiment* — a burner account is not
+more negative, it is more suspicious — so it moves how sure the system is, and
+never what it says.
+
+## What is stored, and why
+
+Every vote, every context adjustment and Groq's verdict are written onto the
+post (`class_probs`, `sentiment_consensus`, `llm_verification`). The evidence
+drawer reconstructs the whole decision from those fields. That is a
+chain-of-custody requirement, not a debugging nicety: an analyst acting on a
+label must be able to see that two models said negative, one said neutral, and
+the LLM agreed — before they act.
+
+## Training
+
+```bash
+cd backend
+python -m app.ml.bootstrap        # datasets + both models + eval, one command
+```
+
+The pipeline it runs:
+
+```mermaid
+flowchart LR
+    D["21 public datasets<br/>Kaggle · HuggingFace · GitHub"] --> CORP["ml/corpus.py<br/>read raw files directly"]
+    CORP --> ROM["ml/romanize.py<br/>synthesise Gujlish"]
+    ROM --> AUG["ml/groq_augment.py<br/>optional LLM augmentation"]
+    AUG --> SPLIT["stratified split<br/>50,733 train / 5,973 test"]
+    SPLIT --> CTX2["ctx1 prefix applied<br/>identically to both"]
+    CTX2 --> TR["train_sentiment.py<br/>MuRIL, 3 epochs"]
+    CTX2 --> BL["train_baseline.py<br/>TF-IDF + LinearSVC"]
+    TR --> R1["sentiment_eval_report.json"]
+    BL --> R2["baseline_report.json"]
+    R1 --> EV["evaluate.py<br/>end-to-end pipeline eval"]
+    R2 --> EV
+```
+
+Notes that save time:
+
+* The corpus is read from the **raw** downloaded files; there is no intermediate
+  JSONL to regenerate or keep in sync.
+* Gujlish rows are synthesised by transliterating Gujarati-script rows
+  (`ml/romanize.py`) because almost no labelled romanized-Gujarati corpus exists
+  publicly. That is why Gujlish scores well: the training data was built for it.
+* `groq_augment.py` is optional and skippable (`--skip-groq`), takes 2-3 hours
+  on the free tier, and is resumable.
+* Trained weights (~900 MB) are gitignored. A teammate re-runs bootstrap rather
+  than pulling them.
+* On Windows, long dataset paths can exceed MAX_PATH — enable long paths or
+  clone nearer the drive root.
+
+## Model artefacts and where the UI reads them
+
+`app/services/model_info.py` exposes what each model is, its reliability weight,
+and its eval numbers, so the Settings page shows the live picture rather than a
+hard-coded card. If a fine-tuned model is missing, the pipeline falls back to
+generic models and says so there.

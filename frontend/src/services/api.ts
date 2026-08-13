@@ -89,13 +89,29 @@ export interface EmergingItem {
   spread_score: number;
   source_count: number;
   url: string;
+  location: string;
+  language: string;
+  fact_check_verdict: string;
   reasons: string[];
   created_at: string;
 }
 export interface EmergingData {
   window_hours: number;
+  /** Items on this page. */
   count: number;
+  /** Items matching the filters across the whole window — what paging walks. */
+  total: number;
+  /** Posts the detector actually read, so an empty list is not ambiguous. */
+  scanned: number;
+  /** Why the rest were filtered out — makes a short queue legible. */
+  dropped: Partial<Record<"established" | "low_concern" | "not_spreading" | "corroborated", number>>;
+  platforms: string[];
+  locations: string[];
   items: EmergingItem[];
+}
+export interface EmergingFilters {
+  hours?: number; limit?: number; offset?: number;
+  platform?: string; location?: string; sentiment?: string; min_spread?: number;
 }
 
 export interface ModelVote {
@@ -244,21 +260,40 @@ export interface Stats {
 
 export interface TermStat {
   term: string;
+  kind: "hashtag" | "keyword";
   count: number;
   series: number[];
   change_pct: number;
   spike_z: number;
   spiking: boolean;
   top_label: string;
+  sentiment_mix: Record<string, number>;
+  negative_share: number;
+}
+
+export interface SentimentBucket {
+  label: string; positive: number; neutral: number; negative: number;
+  total: number; avg_concern: number;
 }
 
 export interface Trends {
   window_hours: number;
   total_posts: number;
+  avg_concern: number;
   hashtags: TermStat[];
   keywords: TermStat[];
   languages: { name: string; count: number; pct: number }[];
   regions: { name: string; count: number; avg_concern: number; threats: number; lat: number; lon: number }[];
+  platforms: { name: string; count: number; negative: number; positive: number; avg_concern: number }[];
+  sentiment_series: SentimentBucket[];
+  sentiment_totals: { positive: number; neutral: number; negative: number };
+}
+
+/** A spiking negative term not yet watched — offered to the analyst, never auto-added. */
+export interface WatchSuggestion {
+  kind: "keyword" | "hashtag";
+  value: string; count: number; spike_z: number;
+  change_pct: number; negative_share: number; reason: string;
 }
 
 export interface NetNode {
@@ -476,19 +511,6 @@ export interface Identification {
   registry: { active_records: number; enrolled_records: number; templates: number };
   summary: string; from_video_frame?: boolean;
 }
-export interface FaceEngine {
-  available: boolean; cnn_available: boolean; reason: string | null;
-  thresholds: { confirmed: number; probable: number; possible: number };
-  registry: { active_records: number; enrolled_records: number; templates: number; unenrolled_records: number };
-}
-export interface FaceSearchReport { analysis: ImageAnalysis; identification: Identification }
-export interface FaceSearchLogRow {
-  id: string; image_sha256: string; filename: string; faces_detected: number;
-  identified_count: number;
-  results: { suspect_id: string; name: string; distance: number; band: string }[];
-  created_at: string;
-}
-
 export interface ImageFinding { level: string; text: string }
 export interface ImageAnalysis {
   filename: string; size_bytes: number; sha256: string; media_type: string;
@@ -542,32 +564,34 @@ export interface ImageReport {
   identification?: Identification;
 }
 
-export interface UsernameHit { site: string; category: string; url: string; status: string; http: number | null }
+/** One platform's answer. `source` says whether the profile was *read* from an
+ *  API or merely inferred from a URL probe — the two are not equally trustworthy
+ *  and the UI labels them differently. */
+export interface UsernameHit {
+  site: string; category: string; url: string; status: string; http: number | null;
+  source: "api" | "probe";
+  handle: string; display_name: string; bio: string; avatar: string;
+  followers: number | null; created_at: string; verified: boolean;
+  location: string; link: string;
+  extra: Record<string, unknown>;
+  match?: { confidence: number; why: string[] };
+}
+/** An account under a different handle that the evidence ties to the same person. */
+export interface RelatedAccount {
+  site: string; handle: string; url: string; display_name: string; bio: string;
+  avatar: string; followers: number | null;
+  confidence: number; verdict: "strong_link" | "possible_link" | "weak"; why: string[];
+  discovered_by: "variant" | "search";
+}
 export interface UsernameReport {
   username: string; valid: boolean; error?: string; results: UsernameHit[];
-  summary: { found: number; not_found: number; blocked: number; unknown: number; checked: number };
-}
-
-export interface UrlFinding { level: string; text: string; on?: string }
-export interface UrlReport {
-  url: string; valid: boolean; error?: string; risk_score?: number; risk_level?: string;
-  meta?: Record<string, unknown>;
-  redirect?: { resolved: boolean; hops?: number; chain: { url: string; status: number }[]; final_url: string | null; reason?: string };
-  findings?: UrlFinding[];
-}
-
-export interface AnalyzedComment {
-  author_handle: string; author_name: string; text: string;
-  sentiment_label: string; sentiment_score: number; duplicate_ratio: number;
-  bot_score: number; bot_verdict: string; bot_signals: string[];
-}
-export interface CommentReport {
-  source: string; synthetic?: boolean;
-  post?: { post_id: string; platform: string; author_handle: string; text: string; sentiment_label: string };
-  total_comments: number;
-  sentiment_breakdown: { positive: number; neutral: number; negative: number; positive_pct: number; neutral_pct: number; negative_pct: number };
-  bot_analysis: { likely_bots: number; suspicious: number; suspected_pct: number; bot_pct: number; coordinated: boolean };
-  assessment: string[]; comments: AnalyzedComment[]; error?: string;
+  summary: { found: number; not_found: number; blocked: number; unknown: number; checked: number; via_api: number };
+  related?: RelatedAccount[];
+  identity?: {
+    display_name: string; display_names: string[]; locations: string[]; links: string[];
+    verified_on: string[]; total_reach: number; avatar: string; bio: string;
+  };
+  coverage?: Record<string, string>;
 }
 
 export interface PrCampaign {
@@ -576,19 +600,21 @@ export interface PrCampaign {
   bot_ratio: number; sentiment_lean: string; sentiment_uniformity: number;
   reach_estimate: number; top_hashtags: string[]; why: string[]; sample_text: string;
   locations: string[]; first_seen: string;
+  last_seen: string; spread_minutes: number; avg_concern: number; platforms: string[];
+  sample_posts: { id: string; platform: string; author_handle: string; text: string; concern_score: number; created_at: string }[];
 }
-export interface PrReport { window_hours: number; campaigns_found: number; campaigns: PrCampaign[]; note: string }
+/** LLM commentary on a report. `available: false` is normal — no key, rate
+ *  limits, or a report shape with no explainer — and `reason` says which. */
+export interface ExplainResult {
+  available: boolean;
+  explanation?: string;
+  model?: string;
+  reason?: string;
+}
 
-export interface Dossier {
-  handle: string; found: boolean; note?: string; error?: string;
-  profile?: { author_name: string; followers: number; verified: boolean; account_age_days: number; primary_platform: string; platforms: string[]; languages: string[]; locations: string[] };
-  activity?: { posts_tracked: number; posts_per_day: number; first_seen: string; last_seen: string; duplicate_ratio: number };
-  threat_profile?: { avg_concern_score: number; max_concern_score: number; label_breakdown: Record<string, number>; negative_posts: number };
-  sentiment_lean?: Record<string, number>;
-  authenticity: { score: number; verdict: string; signals: string[]; verified: boolean };
-  coordination?: { in_cluster: boolean; cluster_ids: string[]; amplified_posts: number };
-  notable_posts?: { id?: string; platform: string; sentiment_label: string; concern_score: number; text: string; url: string; created_at: string }[];
-  cross_platform?: UsernameReport;
+export interface PrReport {
+  window_hours: number; campaigns_found: number; campaigns: PrCampaign[]; note: string;
+  posts_scanned: number; clusters_found: number; neutral_clusters_ignored: number; min_accounts: number;
 }
 
 // ── Administration ─────────────────────────────────────────────────────
@@ -707,24 +733,7 @@ export interface AssistantSchema {
 }
 
 /** Shape of a `run_sql` result inside `AssistantAnswer.data`. */
-export interface AssistantSqlResult {
-  sql: string;
-  columns: string[];
-  rows: (string | number | boolean | null)[][];
-  elapsed_ms: number;
-}
-
 /** Shape of a `top_posts` result inside `AssistantAnswer.data`. */
-export interface AssistantPostRow {
-  post_id: string;
-  platform: string;
-  author_handle: string;
-  sentiment_label: string;
-  concern_score: number;
-  location: string;
-  text_excerpt?: string;
-}
-
 // ── HTTP helpers ───────────────────────────────────────────────────────
 
 /** Raised on 401 so callers can distinguish "signed out" from a real failure. */
@@ -858,7 +867,8 @@ export const api = {
   health: () => http<{ status: string }>("/api/health"),
   stats: () => http<Stats>("/api/stats"),
   models: () => http<ModelsInfo>("/api/models"),
-  emerging: (hours = 24) => http<EmergingData>(`/api/emerging?hours=${hours}`),
+  emerging: (f: EmergingFilters = {}) =>
+    http<EmergingData>(`/api/emerging${qs({ hours: 24, ...f } as Record<string, unknown>)}`),
   feed: (f: FeedFilters = {}) => http<FeedPage>(`/api/feed${qs(f as Record<string, unknown>)}`),
   post: (id: string) => http<Post>(`/api/feed/${id}`),
   factCheckPost: (id: string) =>
@@ -886,6 +896,8 @@ export const api = {
   bulkAddWatch: (items: { kind: string; value: string; note?: string; priority?: string }[]) =>
     http<{ added: number; skipped: number }>("/api/watchlist/bulk", { method: "POST", body: JSON.stringify({ items }) }),
   watchPresets: () => http<WatchPreset[]>("/api/watchlist/presets"),
+  watchSuggestions: (hours = 24) =>
+    http<WatchSuggestion[]>(`/api/watchlist/suggestions?hours=${hours}`),
   applyWatchPreset: (slug: string) =>
     http<{ pack: string; added: number; skipped: number }>(`/api/watchlist/presets/${slug}`, { method: "POST" }),
   downloadWatchlist: () => downloadFile("/api/watchlist/export", "watchlist.csv"),
@@ -964,15 +976,15 @@ export const api = {
     http<PostImageReport>("/api/investigate/image-from-url", { method: "POST", body: JSON.stringify({ url }) }),
   investigatePostMedia: (postId: string) =>
     http<PostImageReport>(`/api/investigate/post-media/${encodeURIComponent(postId)}`),
-  investigateUsername: (u: string) =>
-    http<UsernameReport>(`/api/investigate/username?u=${encodeURIComponent(u)}`),
-  investigateUrl: (url: string, resolve = true) =>
-    http<UrlReport>("/api/investigate/url", { method: "POST", body: JSON.stringify({ url, resolve }) }),
-  investigatePostComments: (postId: string) =>
-    http<CommentReport>(`/api/investigate/comments/${encodeURIComponent(postId)}`),
-  investigateComments: (comments: { author_handle: string; text: string; followers?: number; account_age_days?: number }[]) =>
-    http<CommentReport>("/api/investigate/comments", { method: "POST", body: JSON.stringify({ comments }) }),
-  investigatePrCampaigns: (hours = 72) => http<PrReport>(`/api/investigate/pr-campaigns?hours=${hours}`),
-  investigateSleuth: (handle: string, lookup = true) =>
-    http<Dossier>(`/api/investigate/sleuth?handle=${encodeURIComponent(handle)}&lookup=${lookup}`),
+  investigateUsername: (u: string, similar = true) =>
+    http<UsernameReport>(`/api/investigate/username?u=${encodeURIComponent(u)}&similar=${similar}`),
+  /** Model commentary on a report already on screen. The report is posted back
+   *  rather than recomputed, so the explanation describes what the officer is
+   *  actually looking at. */
+  investigateExplain: (tool: "image" | "username" | "pr", report: unknown) =>
+    http<ExplainResult>("/api/investigate/explain", {
+      method: "POST", body: JSON.stringify({ tool, report }),
+    }),
+  investigatePrCampaigns: (hours = 72, minAccounts = 3) =>
+    http<PrReport>(`/api/investigate/pr-campaigns?hours=${hours}&min_accounts=${minAccounts}`),
 };

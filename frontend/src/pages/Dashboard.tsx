@@ -232,8 +232,19 @@ export default function Dashboard() {
             value={stats.kpis.platforms_online}
             suffix={`/${stats.kpis.platforms_total}`}
             icon={Radio}
-            color="#10B981"
-            tooltip="Active social media pipelines (X, Telegram, Reddit, Facebook, Instagram, YouTube)."
+            color={stats.kpis.platforms_online === stats.kpis.platforms_total ? "#10B981" : "#F59E0B"}
+            // Which pipeline is down and why, not a fixed list of names. "4/6"
+            // on its own tells an operator something is wrong but not what to
+            // do about it; the reason string comes from the adapter that failed.
+            tooltip={
+              (stats.platforms ?? [])
+                .map((p) =>
+                  p.online
+                    ? `✓ ${p.name}${p.adapter && p.adapter !== p.name ? ` (${p.adapter})` : ""}`
+                    : `✗ ${p.name} — ${p.detail || "not configured"}`
+                )
+                .join("\n") || "Collection pipeline status unavailable."
+            }
           />
           <StatTile
             label="Bot Swarm Campaigns"
@@ -534,6 +545,26 @@ export default function Dashboard() {
                 </span>
               </div>
             </div>
+
+            {/* A dead collection pipeline is invisible on a bar chart — the bar
+                just stops growing, which looks identical to a quiet platform.
+                Name it, with the reason the adapter gave. */}
+            {(stats?.platforms ?? []).some((p) => !p.online) && (
+              <div className="flex flex-wrap gap-1 pt-1.5 shrink-0">
+                {(stats?.platforms ?? [])
+                  .filter((p) => !p.online)
+                  .map((p) => (
+                    <span
+                      key={p.name}
+                      title={p.detail || "No credentials configured for this platform."}
+                      className="inline-flex cursor-help items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/[0.08] px-1.5 py-0.5 text-[9.5px] font-bold text-amber-300"
+                    >
+                      <span className="h-1 w-1 rounded-full bg-amber-400" />
+                      {p.name} offline
+                    </span>
+                  ))}
+              </div>
+            )}
 
             {!stats ? (
               <SkeletonChart h={130} />

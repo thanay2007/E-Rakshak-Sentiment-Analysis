@@ -1,0 +1,24 @@
+flowchart TB
+    subgraph SEEDS["configured seeds — always watched"]
+        S1["FB_PAGE_IDS · IG_SEED_USERNAMES<br/>REDDIT_SUBREDDITS · TELEGRAM_CHANNELS"]
+    end
+
+    subgraph FIND["discovery — finds what a seed list cannot"]
+        FBD["facebook_discover.py — offline command<br/>page search, city × category,<br/>English + Gujarati + Devanagari + romanized"]
+        IGL["Instagram location feeds<br/>fbsearch_places → location media"]
+        IGS["Instagram account search<br/>city × category matrix"]
+        IGP["signed-out hashtags<br/>instagram_public.py — no credential"]
+    end
+
+    FBD --> R[("discovered_accounts.json<br/>crawlers/roster.py")]
+    IGL --> R
+    IGS --> R
+    IGP --> R
+
+    S1 --> ROT["rotation — separate budgets<br/>so discoveries can never crowd out the seeds"]
+    R --> ROT
+    ROT --> READ["read this cycle"]
+    READ --> J{"judged on first read"}
+    J -->|"private · deleted ·<br/>under min followers"| PRUNE["pruned from the roster"]
+    J -->|"429 · timeout ·<br/>login_required"| KEEP2["kept — a throttle is not a verdict"]
+    J -->|"usable"| KEEP["stays in rotation"]

@@ -57,21 +57,6 @@ export function SentimentBadge({
 }
 
 /** The 0-100 concern score on its own, banded by colour. */
-export function ConcernChip({ score, size = "md" }: { score: number; size?: "sm" | "md" }) {
-  const color = concernColor(score);
-  return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full border font-mono font-bold tracking-wide ${
-        size === "sm" ? "px-1.5 py-0.5 text-[10px]" : "px-2 py-0.5 text-[11px]"
-      }`}
-      style={{ color, borderColor: `${color}55`, backgroundColor: `${color}15` }}
-      title={`Concern score ${Math.round(score)}/100 — ${concernBand(score)}`}
-    >
-      {Math.round(score)}
-      <span className="font-sans font-medium opacity-70">{concernBand(score)}</span>
-    </span>
-  );
-}
 
 export function LanguageChip({ language, mixed }: { language: string; mixed?: boolean }) {
   return (

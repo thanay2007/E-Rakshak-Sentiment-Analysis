@@ -33,8 +33,9 @@ import re
 import time
 from dataclasses import dataclass, field
 
-from app.services.voice.types import (EndOfSpeechPacket, InterimEndOfSpeechPacket,
-                                      OnPacket, SpeechToTextPacket)
+from app.services.voice.types import (EndOfSpeechDetector, EndOfSpeechPacket,
+                                      InterimEndOfSpeechPacket, OnPacket,
+                                      SpeechToTextPacket)
 
 log = logging.getLogger("sentinel.voice.eos")
 
@@ -181,7 +182,8 @@ class SilenceBasedEndOfSpeech:
         self._timer = None
 
 
-def create(on_packet: OnPacket, provider: str = "silence_based_eos", **kwargs):
+def create(on_packet: OnPacket, provider: str = "silence_based_eos",
+           **kwargs) -> EndOfSpeechDetector:
     """Factory mirroring Rapida's `end_of_speech.New`.
 
     Rapida also offers LiveKit and Pipecat smart-turn detectors, which use a

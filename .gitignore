@@ -7,11 +7,18 @@ backend/sentinel.db
 # SQLite write-ahead log sidecars — regenerated next to the database itself
 backend/sentinel.db-shm
 backend/sentinel.db-wal
-# Telegram/X/Instagram login state — these are full account access, same as a password
+# Telegram/X/Instagram/Facebook login state — full account access, same as a password
 backend/*.session
 backend/*.session-journal
 backend/x_cookies.json
 backend/ig_session.json
+backend/fb_cookies.json
+# Accounts the crawlers found for themselves (crawlers/roster.py) — deployment
+# state, not source. Rebuilt by `python -m app.crawlers.facebook_discover` and
+# by the Instagram collector's own location/search legs.
+backend/discovered_accounts.json
+# the crawler's persistent Chrome profile — holds the live Facebook session
+backend/.fb_profile/
 backend/reports/*.pdf
 backend/reports/*.xlsx
 backend/app/ml/models/

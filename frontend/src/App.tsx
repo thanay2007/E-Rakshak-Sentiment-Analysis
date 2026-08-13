@@ -16,6 +16,7 @@ const Reports = lazy(() => import("./pages/Reports"));
 const Settings = lazy(() => import("./pages/Settings"));
 const ThreatFeed = lazy(() => import("./pages/ThreatFeed"));
 const Trends = lazy(() => import("./pages/Trends"));
+const Unverified = lazy(() => import("./pages/Unverified"));
 const Watchlist = lazy(() => import("./pages/Watchlist"));
 
 const Fallback = () => (
@@ -40,6 +41,7 @@ export default function App() {
               <Route path="investigate" element={<Investigate />} />
               <Route path="network" element={<NetworkPage />} />
               <Route path="trends" element={<Trends />} />
+              <Route path="unverified" element={<Unverified />} />
               <Route path="alerts" element={<Alerts />} />
               <Route path="reports" element={<Reports />} />
               <Route path="watchlist" element={<Watchlist />} />

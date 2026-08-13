@@ -1,4 +1,5 @@
-import { ExternalLink, Radio, TrendingUp } from "lucide-react";
+import { ArrowRight, ExternalLink, Radio, TrendingUp } from "lucide-react";
+import { Link } from "react-router-dom";
 import GlassCard, { SectionTitle } from "./GlassCard";
 import { PlatformIcon } from "./Badges";
 import { usePostDetail } from "./PostDetailProvider";
@@ -6,26 +7,41 @@ import { usePolling } from "../hooks/usePolling";
 import { api } from "../services/api";
 import { safeHref } from "../lib/safeUrl";
 
-/** "Emerging but unverified" watch-list: posts spreading fast from a single,
- *  uncorroborated source — the window to catch a rumour before it goes viral. */
+/** Dashboard preview of the "emerging but unverified" queue.
+ *
+ *  Deliberately only the worst few: this is a glance on an already-dense
+ *  dashboard, and the full queue — filterable and paged — is its own page.
+ *  It asks the API for exactly those few rather than fetching the whole set
+ *  and slicing in the browser. */
+const PREVIEW = 6;
+
 export default function EmergingPanel() {
-  const { data } = usePolling(() => api.emerging(24), 45000);
+  const { data } = usePolling(() => api.emerging({ hours: 24, limit: PREVIEW }), 45000);
   const { openPostId } = usePostDetail();
   const items = data?.items ?? [];
+  const total = data?.total ?? 0;
 
   return (
     <GlassCard className="border-amber-500/30 bg-amber-500/[0.02] p-5 shadow-xl">
       <SectionTitle
         title="Emerging · Unverified Rumor Triage"
         right={
-          <div className="flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-[11px] font-bold text-amber-300">
-            <Radio size={12} className="animate-pulse text-amber-400" />
-            <span>EARLY WARNING RADAR</span>
-            {items.length > 0 && (
-              <span className="ml-1 rounded-full bg-amber-500/30 px-1.5 py-0.2 font-mono text-[10px] text-amber-200">
-                {items.length}
-              </span>
-            )}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-[11px] font-bold text-amber-300">
+              <Radio size={12} className="animate-pulse text-amber-400" />
+              <span>EARLY WARNING RADAR</span>
+              {total > 0 && (
+                <span className="ml-1 rounded-full bg-amber-500/30 px-1.5 py-0.2 font-mono text-[10px] text-amber-200">
+                  {total}
+                </span>
+              )}
+            </div>
+            <Link
+              to="/app/unverified"
+              className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] font-bold text-slate-300 transition-colors hover:border-accent/40 hover:text-accent"
+            >
+              View all <ArrowRight size={12} />
+            </Link>
           </div>
         }
       />
@@ -35,7 +51,7 @@ export default function EmergingPanel() {
           No fast-spreading single-source posts detected in the last 24h window.
         </div>
       ) : (
-        <div className="max-h-[460px] overflow-y-auto pr-1.5 custom-scrollbar">
+        <div className="pr-1.5">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {items.map((it) => (
               <div
@@ -101,6 +117,14 @@ export default function EmergingPanel() {
               </div>
             ))}
           </div>
+          {total > items.length && (
+            <Link
+              to="/app/unverified"
+              className="mt-3 flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-amber-500/30 py-2.5 text-[12px] font-semibold text-amber-300/90 transition-colors hover:border-amber-500/60 hover:bg-amber-500/[0.06]"
+            >
+              {total - items.length} more in the triage queue <ArrowRight size={13} />
+            </Link>
+          )}
         </div>
       )}
     </GlassCard>

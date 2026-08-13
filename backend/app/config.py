@@ -312,6 +312,16 @@ class Settings(BaseSettings):
     # source blocked — batch, then wait.
     CRAWL_MIN_INTERVAL_SECONDS: int = 300
 
+    # Ceiling on backend/discovered_accounts.json — the accounts the crawlers
+    # found for themselves (crawlers/roster.py). Discovery is open-ended by
+    # design: a location feed reports whoever posted from the city, so left
+    # uncapped this file would grow without limit and the rotation would take
+    # weeks to come back round to any one account. At the default, a full sweep
+    # of an Instagram roster this size takes about four days at 8 accounts per
+    # 30-minute cycle, which is the right order for accounts that are not the
+    # official desks.
+    ROSTER_MAX_ENTRIES: int = 2000
+
     X_BEARER_TOKEN: str = ""
 
     # YouTube Data API v3. The quota is the binding constraint, not politeness:
@@ -450,6 +460,13 @@ class Settings(BaseSettings):
     TWILIO_WHATSAPP_TO: str = ""
     TWILIO_WHATSAPP_FROM: str = "+14155238886"
 
+    # GitHub REST API for the username lookup. Optional: the user endpoint is
+    # public, but unauthenticated callers share a 60-requests/hour-per-IP budget
+    # that one enumeration run can exhaust on its own. Any personal access token
+    # with no scopes at all lifts it to 5,000/hour — the token is read-only by
+    # construction, so it grants nothing beyond the rate limit.
+    GITHUB_TOKEN: str = ""
+
     # Reddit official OAuth API (script app: client id + secret)
     REDDIT_CLIENT_ID: str = ""
     REDDIT_CLIENT_SECRET: str = ""
@@ -481,6 +498,71 @@ class Settings(BaseSettings):
             if source.strip():
                 out.append((source.strip(), city.strip()))
         return out
+
+    # Facebook via a logged-in browser (unofficial, no Meta app review) —
+    # credentials of a real FB account (use a dedicated burner). Activates the
+    # "Facebook (browser)" adapter only when no FB_ACCESS_TOKEN is set; it
+    # reads the same FB_PAGE_IDS seeds. Cookies persist in backend/
+    # fb_cookies.json. FB_C_USER/FB_XS are the `c_user` and `xs` cookies from a
+    # logged-in browser and are preferred: they skip the fresh-login handshake
+    # that usually triggers Facebook's checkpoint.
+    FB_C_USER: str = ""
+    FB_XS: str = ""
+    # The device cookie the `xs` session was issued against. Facebook binds a
+    # session to it, so copying c_user/xs *without* datr presents a known
+    # session on an unknown device — which Facebook answers by revoking the
+    # session outright, usually after letting the first request through.
+    FB_DATR: str = ""
+    FB_EMAIL: str = ""
+    FB_PASSWORD: str = ""
+    # Chrome profile the crawler browses in. Persisting it is what keeps the
+    # device identity stable across runs — a fresh profile every cycle is a new
+    # device every cycle, which is the pattern that gets a session killed. Log
+    # in once with `python -m app.crawlers.facebook_login` and the session
+    # lives here; no cookie copying at all.
+    FB_PROFILE_DIR: Path = BASE_DIR / ".fb_profile"
+    # Headless is right for a server; set False to watch what the crawler sees
+    # while debugging a selector, and when Facebook starts serving the headless
+    # UA a different page.
+    FB_SCRAPE_HEADLESS: bool = True
+    # Driving a real session gets an account blocked far faster than Graph
+    # calls, so this politeness gap is deliberately wider than
+    # CRAWL_MIN_INTERVAL_SECONDS — same reasoning as IG_MIN_INTERVAL_SECONDS.
+    FB_SCRAPE_MIN_INTERVAL_SECONDS: int = 1800
+    # Seed pages read per cycle, round-robin. Each one costs a full page load
+    # plus several scrolls (~30 s of browsing), so reading every seed every
+    # cycle turns a polite crawl into an obvious one. 0 reads them all.
+    #
+    # The roster this rotates over is no longer just FB_PAGE_IDS: pages found
+    # by `python -m app.crawlers.facebook_discover` are read too, and that is
+    # hundreds of pages rather than a handful. Six a cycle is the compromise —
+    # roughly four minutes of browsing every 30 minutes, and a full sweep of a
+    # 200-page roster inside a day. Raising it further is a real cost: the
+    # adapters run one after another in a tick, so a long Facebook cycle delays
+    # every platform below it.
+    FB_PAGES_PER_CYCLE: int = 6
+    # Configured seed pages read per cycle, *on top of* the rotation above.
+    #
+    # Without this the two rosters share one rotation, and discovery quietly
+    # demotes the pages this deployment exists to watch: at 991 discovered
+    # pages and 6 a cycle, a full sweep takes three days, so the Surat police
+    # page would go from being read every half hour to twice a week. The seeds
+    # are a handful of official desks and they are the ones an officer expects
+    # to be current, so they get their own budget and the discoveries can never
+    # crowd them out. 0 folds them back into the single rotation.
+    FB_SEED_PAGES_PER_CYCLE: int = 3
+    # Discovery's follower floor (facebook_discover.py). A city's page search
+    # returns a great many 30-follower shops and personal pages; below this
+    # they cost a full page load per cycle and contribute nothing an analyst
+    # would read.
+    FB_DISCOVER_MIN_FOLLOWERS: int = 500
+    # Result pages pulled per search query. Facebook loads ~10 results a scroll.
+    FB_DISCOVER_SCROLLS: int = 6
+    # Scrolls per page. Facebook loads roughly 3-5 posts per scroll; more
+    # scrolls reach older posts, which the content hash then discards as
+    # already-seen — depth past the first screen or two rarely pays.
+    FB_SCRAPE_SCROLLS: int = 4
+    FB_POSTS_PER_PAGE: int = 12
 
     # Instagram Graph API — token + the linked IG business-account id (needed
     # for business_discovery / hashtag search) + seed creator/business handles.
@@ -573,6 +655,42 @@ class Settings(BaseSettings):
     # pages this deployment always watches, these are the handles an officer
     # added. 0 disables the leg.
     IG_WATCHED_ACCOUNTS_PER_CYCLE: int = 4
+
+    # ── Instagram: everybody else ───────────────────────────────────────────
+    # The seed roster covers what the four cities *announce* — corporations,
+    # police, districts, news desks. Public sentiment is not held there, and a
+    # hand-maintained list of every influencer, food page, college page and
+    # neighbourhood desk in four cities would be stale the week it was written.
+    # These two legs find those accounts instead of naming them, and everything
+    # they find is kept in backend/discovered_accounts.json (crawlers/roster.py)
+    # so the account rotation reads seeds and discoveries alike.
+
+    # Location feeds — Instagram's own per-place media, which is the only route
+    # that reaches ordinary residents: anyone who geo-tags a place in Surat is
+    # in it, whether or not they ever use a hashtag this deployment watches.
+    # Places are resolved once per city and cached; this budget is how many of
+    # them are read per cycle. 0 disables the leg.
+    IG_LOCATIONS_PER_CYCLE: int = 4
+    IG_LOCATION_MEDIA_LIMIT: int = 20
+    # Places kept per city. Beyond a handful the tail is small venues whose
+    # feeds are mostly the venue's own posts.
+    IG_LOCATIONS_PER_CITY: int = 6
+    # How long a resolved place list is trusted. Places do not move; this only
+    # exists so a city whose search failed once retries within the day.
+    IG_LOCATION_TTL_HOURS: int = 168
+
+    # Account search — one query per cycle from a city × category matrix
+    # ("surat food blogger", "rajkot college", …), which finds the accounts a
+    # location feed misses because they post without geo-tagging. 0 disables it.
+    IG_DISCOVERY_QUERIES_PER_CYCLE: int = 2
+    # Discovered accounts read per cycle, rotating — separate from the seed
+    # budget so growing the roster can never crowd out the civic pages.
+    IG_DISCOVERED_ACCOUNTS_PER_CYCLE: int = 8
+    # Discovery is cheap and therefore imprecise: it reports whoever posted,
+    # private accounts and nine-follower accounts included. The collector
+    # learns the truth the first time it reads one and drops anything under
+    # this from the roster, so the read budget stops draining into it.
+    IG_DISCOVERED_MIN_FOLLOWERS: int = 300
     # Author profile lookups per cycle. Media found through a hashtag carries
     # only a UserShort — no follower count, no reliable verified flag — so a
     # viral unknown account would be scored as having zero reach. This budget

@@ -1,40 +1,39 @@
 flowchart LR
-    subgraph COLLECT["Collectors — APScheduler loop, per-API politeness gaps"]
-        SIM["Simulated stream (default, zero-key)"]
-        FB["Facebook Graph API"]
-        IG["Instagram Graph API"]
-        RD["Reddit OAuth API"]
-        XA["X API v2"]
-        YT["YouTube Data API v3"]
-        RSS["Generic Web / RSS"]
+    subgraph COLLECT["Collectors — one adapter per platform, politeness-gapped"]
+        XA["X — API v2, else twikit"]
+        RD["Reddit — OAuth, else PullPush"]
+        TG["Telegram — MTProto, else t.me previews"]
+        YT["YouTube — Data API v3 (+ comments)"]
+        FB["Facebook — Graph, else logged-in browser"]
+        IG["Instagram — Graph, else instagrapi,<br/>else signed-out web routes"]
+        DISC["Discovery: page search, location feeds,<br/>account search → discovered_accounts.json"]
     end
 
-    subgraph NLP["NLP Pipeline — full (MuRIL) / lite (lexicon) engines"]
-        NORM["Normalize: slang, transliteration,\nURL/mention stripping"]
-        LID["Language ID\nen / hi / gu / hinglish / gujlish"]
-        THREAT["Threat classifier (4-way)\nfine-tuned MuRIL"]
-        SENT["Sentiment + intent\nfine-tuned MuRIL"]
-        TOX["Toxicity + hate flags"]
-        SCORE["Composite threat score 0–100"]
-        VERIFY["Groq LLM verification\n(optional second opinion)"]
+    subgraph PIPE["NLP pipeline — ml/pipeline.py enrich()"]
+        NORM["slang normalisation"]
+        LID["language ID<br/>en · hi · gu · hinglish · gujlish · mixed"]
+        CTX["context extraction<br/>TextContext + MetaContext"]
+        M3["3 sentiment models<br/>MuRIL · TF-IDF+SVC · lexicon"]
+        ENS["ensemble decision"]
+        TOX["toxicity"]
+        SCORE["concern score 0-100"]
+        VERIFY["Groq second opinion<br/>can override, always recorded"]
     end
 
     subgraph INTEL["Intelligence"]
-        TREND["Trend + z-score spike detection"]
-        NET["Network centrality (networkx)"]
-        BOT["Bot-cluster / coordinated\namplification detection"]
-        ALERT["Alerting + escalation packets"]
-        REPORT["PDF report generation"]
-        GEO["Per-city geo-tagging\nSurat · Ahmedabad · Vadodara · Rajkot"]
+        TREND["trends + emerging terms"]
+        NET["author network, clusters"]
+        GEO["geo-tag: 4 target cities"]
+        ALERT["alert bands + WhatsApp"]
+        REPORT["PDF / XLSX reports"]
+        OSINT["forensics: media, faces,<br/>usernames, campaigns"]
     end
 
-    COLLECT --> NORM --> LID --> THREAT --> SENT --> TOX --> SCORE --> VERIFY
+    COLLECT --> NORM --> LID --> CTX --> M3 --> ENS --> TOX --> SCORE --> VERIFY
     VERIFY --> INTEL
-
-    DB[("SQLite / Postgres\n(SQLModel)")]
-    API["FastAPI\nREST + WebSocket /ws/live"]
-    FE["React + Vite + TypeScript\nTailwind · GSAP · Recharts · d3-force"]
-
+    DB[("SQLite / Postgres — SQLModel<br/>append-only audit trigger")]
+    API["FastAPI — REST + /ws/live + /ws/voice"]
+    FE["React + Vite + TypeScript"]
     INTEL --> DB
-    NLP --> DB
+    PIPE --> DB
     DB --> API --> FE
