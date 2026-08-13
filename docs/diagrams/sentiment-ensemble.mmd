@@ -1,0 +1,24 @@
+flowchart TB
+    IN["post text"] --> CTX["ml/context.py — ctx1 discourse prefix<br/>[q] [neg] [rep] [contrast] [sarc]"]
+    CTX --> T["TRANSFORMER<br/>google/muril-base-cased fine-tune<br/>acc 0.705 · weight 0.706"]
+    CTX --> C["CLASSICAL<br/>TF-IDF word 1-2 + char 2-5 → LinearSVC<br/>acc 0.647 · weight 0.640"]
+    CTX --> L["LEXICON<br/>multilingual valence + negation/irony rules<br/>weight 0.560 · fully explainable"]
+
+    T --> E{"ensemble"}
+    C --> E
+    L --> E
+
+    E -->|"2 or 3 agree"| MAJ["label = majority<br/>confidence = mean + consensus bonus"]
+    E -->|"all 3 disagree"| BEST["label = most confident model,<br/>weighted by historical reliability"]
+
+    MAJ --> META["MetaContext calibration<br/>account · reach · amplification · geo<br/>adjusts CONFIDENCE ONLY, with reasons"]
+    BEST --> META
+
+    META --> G{"Groq review<br/>score >= 55, 8 per tick"}
+    G -->|"agrees"| UP["confidence raised"]
+    G -->|"disagrees, conf >= 0.75"| OV["label replaced —<br/>stored as an override"]
+    G -->|"disagrees, conf < 0.75"| DIS["stored as a dissent,<br/>label stands"]
+
+    UP --> OUT["positive / negative / neutral<br/>+ every vote stored for the drawer"]
+    OV --> OUT
+    DIS --> OUT

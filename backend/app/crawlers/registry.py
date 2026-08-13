@@ -7,15 +7,16 @@ upgrades the source in place, with no duplicate ingestion and nothing else to
 change; pulling the key back out falls straight back to the keyless path.
 
 Reddit and Telegram handle that switch internally (OAuth vs Atom feeds, MTProto
-vs t.me previews), so they appear once. X and Instagram need it here, because
-their official adapters (v2 / Graph API) and their session-based fallbacks
-(twikit / instagrapi) are separate classes emitting the same platform name —
-running both would ingest every post twice.
+vs t.me previews), so they appear once. X, Instagram and Facebook need it here,
+because their official adapters (v2 / Graph API) and their session-based
+fallbacks (twikit / instagrapi / a logged-in browser) are separate classes
+emitting the same platform name — running both would ingest every post twice.
 
 Adding a platform = one new file + one line here.
 """
 from app.crawlers.base import Collector
 from app.crawlers.facebook import FacebookCollector
+from app.crawlers.facebook_scrape import FacebookScrapeCollector
 from app.crawlers.instagram import InstagramCollector
 from app.crawlers.instagrapi_ig import InstagrapiCollector
 from app.crawlers.reddit import RedditCollector
@@ -31,7 +32,7 @@ _PLATFORMS: list[tuple[str, list[Collector]]] = [
     ("Reddit", [RedditCollector()]),
     ("Telegram", [TelegramCollector()]),
     ("YouTube", [YouTubeCollector()]),
-    ("Facebook", [FacebookCollector()]),
+    ("Facebook", [FacebookCollector(), FacebookScrapeCollector()]),
     ("Instagram", [InstagramCollector(), InstagrapiCollector()]),
 ]
 

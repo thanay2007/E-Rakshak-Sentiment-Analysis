@@ -43,9 +43,6 @@ def _term_stats(posts: list[Post], hours: int, getter, kind: str) -> list[dict]:
             labels[t][p.sentiment_label] += 1
 
     out = []
-    
-    # Auto-discovery: terms that are both spiking AND trending negative
-    spiking_negative = []
 
     for term, count in counts.most_common(14):
         s = series[term]
@@ -55,27 +52,79 @@ def _term_stats(posts: list[Post], hours: int, getter, kind: str) -> list[dict]:
         z = _spike_z(s)
         top_label = labels[term].most_common(1)[0][0]
         spiking = z >= 2.0
-        
-        if spiking and top_label == "negative":
-            spiking_negative.append({"kind": kind, "value": term})
+        sentiment_mix = dict(labels[term])
 
         out.append({
-            "term": term, "count": count, "series": s,
+            "term": term, "kind": kind, "count": count, "series": s,
             "change_pct": change, "spike_z": z, "spiking": spiking,
-            "top_label": top_label,
+            "top_label": top_label, "sentiment_mix": sentiment_mix,
+            "negative_share": round(
+                sentiment_mix.get("negative", 0) / max(count, 1), 2),
         })
-        
-    if spiking_negative:
-        from app.models import WatchlistItem
-        with session_scope() as s:
-            existing = {w.value for w in s.exec(select(WatchlistItem)).all()}
-            for st in spiking_negative:
-                if st["value"] not in existing:
-                    w = WatchlistItem(kind=st["kind"], value=st["value"], note="Auto-discovered due to threat spike", active=False)
-                    s.add(w)
-            s.commit()
-            
+
     return out
+
+
+def _bucketed_sentiment(posts: list, hours: int) -> list[dict]:
+    """Sentiment counts per time bucket, on the same grid as the term series."""
+    now = _now()
+    buckets = min(hours, 24)
+    bucket_len = hours / buckets
+    grid = [{"positive": 0, "neutral": 0, "negative": 0, "concern_sum": 0.0, "n": 0}
+            for _ in range(buckets)]
+    for p in posts:
+        age = max(0, int((now - p.created_at).total_seconds() // (bucket_len * 3600)))
+        idx = buckets - 1 - min(buckets - 1, age)
+        cell = grid[idx]
+        if p.sentiment_label in cell:
+            cell[p.sentiment_label] += 1
+        cell["concern_sum"] += p.concern_score or 0
+        cell["n"] += 1
+
+    out = []
+    for i, cell in enumerate(grid):
+        start = now - timedelta(hours=bucket_len * (buckets - i))
+        out.append({
+            "label": start.strftime("%H:%M" if bucket_len < 24 else "%d %b"),
+            "positive": cell["positive"], "neutral": cell["neutral"],
+            "negative": cell["negative"],
+            "total": cell["n"],
+            "avg_concern": round(cell["concern_sum"] / cell["n"], 1) if cell["n"] else 0.0,
+        })
+    return out
+
+
+def watch_suggestions(hours: int = 24) -> list[dict]:
+    """Spiking negative terms an analyst may want to start watching.
+
+    This used to be a side effect of *rendering the trends page*: every poll
+    inserted WatchlistItem rows. A GET that writes is bad enough on its own, but
+    it also meant the watchlist silently grew rules nobody chose, from any
+    dashboard left open. Now the same terms are offered as suggestions and only
+    become rules when an analyst accepts one.
+    """
+    from app.models import WatchlistItem
+
+    data = get_trends(hours)
+    with session_scope() as s:
+        existing = {(w.kind, w.value.lower())
+                    for w in s.exec(select(WatchlistItem)).all()}
+
+    out = []
+    for t in data["hashtags"] + data["keywords"]:
+        if not t["spiking"] or t["top_label"] != "negative":
+            continue
+        if (t["kind"], t["term"].lower()) in existing:
+            continue
+        out.append({
+            "kind": t["kind"], "value": t["term"], "count": t["count"],
+            "spike_z": t["spike_z"], "change_pct": t["change_pct"],
+            "negative_share": t["negative_share"],
+            "reason": (f"{t['count']} posts, {t['spike_z']}σ above its own baseline, "
+                       f"{int(t['negative_share'] * 100)}% negative"),
+        })
+    out.sort(key=lambda x: -x["spike_z"])
+    return out[:12]
 
 
 def get_trends(hours: int = 24) -> dict:
@@ -89,7 +138,7 @@ def get_trends(hours: int = 24) -> dict:
         posts = s.exec(
             select(Post.created_at, Post.language, Post.location,
                    Post.hashtags, Post.keywords, Post.sentiment_label,
-                   Post.concern_score)
+                   Post.concern_score, Post.platform)
             .where(Post.created_at >= since)
         ).all()
 
@@ -115,6 +164,20 @@ def get_trends(hours: int = 24) -> dict:
         })
     regions.sort(key=lambda r: -r["avg_concern"])
 
+    platform_rows: dict[str, list] = defaultdict(list)
+    for p in posts:
+        if p.platform:
+            platform_rows[p.platform].append(p)
+    platforms = sorted(
+        ({"name": name,
+          "count": len(ps),
+          "negative": sum(1 for q in ps if q.sentiment_label == "negative"),
+          "positive": sum(1 for q in ps if q.sentiment_label == "positive"),
+          "avg_concern": round(mean(q.concern_score for q in ps), 1)}
+         for name, ps in platform_rows.items()),
+        key=lambda r: -r["count"])
+
+    sentiment_counts = Counter(p.sentiment_label for p in posts)
     return {
         "window_hours": hours,
         "total_posts": len(posts),
@@ -122,4 +185,12 @@ def get_trends(hours: int = 24) -> dict:
         "keywords": _term_stats(posts, hours, lambda p: p.keywords, "keyword"),
         "languages": languages,
         "regions": regions,
+        "platforms": platforms,
+        "sentiment_series": _bucketed_sentiment(posts, hours),
+        "sentiment_totals": {
+            "positive": sentiment_counts.get("positive", 0),
+            "neutral": sentiment_counts.get("neutral", 0),
+            "negative": sentiment_counts.get("negative", 0),
+        },
+        "avg_concern": round(mean([p.concern_score for p in posts]), 1) if posts else 0.0,
     }

@@ -54,20 +54,58 @@ class _UF:
         if ra != rb: self.p[rb] = ra
 
 
-def _cluster(posts: list[Post]) -> list[list[Post]]:
-    cand = [p for p in posts if p.sentiment_label == "negative"][:400]
+# A shingle appearing in more than this share of the window is boilerplate
+# ("in the city of", a platform's own footer) and links everything to
+# everything if it is allowed to drive candidate generation.
+_COMMON_SHINGLE_RATIO = 0.10
+MAX_SCAN = 4000
+
+
+def _cluster(posts: list[Post], min_accounts: int = 3) -> list[list[Post]]:
+    """Near-duplicate clusters across the whole window, every sentiment.
+
+    Two things were wrong with comparing only negative posts. A whitewash
+    campaign — the same laudatory copy pushed by fifty accounts — is *positive*
+    by construction, so the branch that names one could never fire. And the
+    comparison was O(n²), which is why it was capped at the first 400 rows the
+    database happened to return; on a 10,000-post window that is a sample, not
+    a search, and the campaign was as likely to be outside it as in it.
+
+    So: candidates are generated from an inverted shingle index (only posts
+    that actually share phrasing are ever compared), which keeps the work
+    proportional to real overlap rather than to the square of the window.
+    """
+    cand = [p for p in posts if p.text and len(p.text.split()) >= 4][:MAX_SCAN]
     if len(cand) < 2:
         return []
+
     sh = [_shingles(p.text) for p in cand]
+
+    index: dict[str, list[int]] = defaultdict(list)
+    for i, shingles in enumerate(sh):
+        for g in shingles:
+            index[g].append(i)
+
+    ceiling = max(2, int(len(cand) * _COMMON_SHINGLE_RATIO))
     uf = _UF(len(cand))
-    for i in range(len(cand)):
-        for j in range(i + 1, len(cand)):
-            if _jaccard(sh[i], sh[j]) >= 0.5:
-                uf.union(i, j)
+    compared: set[tuple[int, int]] = set()
+    for holders in index.values():
+        if len(holders) < 2 or len(holders) > ceiling:
+            continue
+        for a_pos, i in enumerate(holders):
+            for j in holders[a_pos + 1:]:
+                pair = (i, j)
+                if pair in compared:
+                    continue
+                compared.add(pair)
+                if _jaccard(sh[i], sh[j]) >= 0.5:
+                    uf.union(i, j)
+
     groups: dict[int, list[Post]] = defaultdict(list)
     for i, p in enumerate(cand):
         groups[uf.find(i)].append(p)
-    return [g for g in groups.values() if len({p.author_handle for p in g}) >= 3]
+    return [g for g in groups.values()
+            if len({p.author_handle for p in g}) >= min_accounts]
 
 
 def _sentiment_lean(group: list[Post]) -> tuple[str, float]:
@@ -95,26 +133,42 @@ def _campaign_type(group: list[Post], lean: str) -> str:
 
 _TYPE_LABEL = {
     "manufactured_outrage": "Manufactured outrage",
-    "disinformation_push": "Disinformation push",
     "image_whitewash": "Coordinated whitewash / paid praise",
     "narrative_push": "Coordinated narrative push",
 }
 
 
-def detect_pr_campaigns(hours: int = 48) -> dict:
+def detect_pr_campaigns(hours: int = 48, min_accounts: int = 3) -> dict:
     since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=hours)
     with session_scope() as s:
-        posts = s.exec(select(Post).where(Post.created_at >= since)).all()
+        # The fifteen columns this reads, not all thirty-eight: four thousand
+        # rows × class-probability vectors, evidence dossiers and LLM
+        # verification blobs is a great deal of payload to drag out of a
+        # database that may be in another region, to compute a shingle overlap.
+        posts = s.exec(
+            select(Post.id, Post.platform, Post.author_handle,
+                   Post.author_followers, Post.author_account_age_days,
+                   Post.author_verified, Post.text, Post.translation,
+                   Post.sentiment_label, Post.concern_score, Post.engagement,
+                   Post.hashtags, Post.location, Post.is_amplified,
+                   Post.created_at)
+            .where(Post.created_at >= since)
+            .order_by(Post.created_at.desc()).limit(MAX_SCAN)
+        ).all()
 
+    clusters = _cluster(posts, min_accounts=min_accounts)
+    neutral_clusters = 0
     campaigns = []
-    for idx, group in enumerate(sorted(_cluster(posts), key=len, reverse=True)):
+    for idx, group in enumerate(sorted(clusters, key=len, reverse=True)):
         labels = Counter(p.sentiment_label for p in group)
         # Scope filter: a coordinated cluster of neutral logistics posts is a
         # marketing schedule, not something this console should surface.
         if labels.most_common(1)[0][0] == "neutral":
+            neutral_clusters += 1
             continue
 
         handles = sorted({p.author_handle for p in group})
+        platforms = sorted({p.platform for p in group if p.platform})
         times = [p.created_at for p in group]
         spread = (max(times) - min(times)).total_seconds()
         ages = [p.author_account_age_days for p in group]
@@ -151,6 +205,12 @@ def detect_pr_campaigns(hours: int = 48) -> dict:
         if amplified:
             conf += 0.05
             why.append(f"{amplified} posts flagged as paid/boosted amplification")
+        if len(platforms) > 1:
+            # Identical copy appearing on several platforms at once is not how
+            # a message spreads organically — someone distributed it.
+            conf += 0.10
+            why.append(f"same copy posted across {len(platforms)} platforms "
+                       f"({', '.join(platforms)})")
 
         reach = sum((p.engagement or {}).get("shares", 0) +
                     (p.engagement or {}).get("views", 0) for p in group)
@@ -172,8 +232,21 @@ def detect_pr_campaigns(hours: int = 48) -> dict:
             "top_hashtags": [t for t, _ in top_hashtags],
             "why": why,
             "sample_text": (group[0].translation or group[0].text)[:220],
+            "platforms": platforms,
             "locations": sorted({p.location for p in group if p.location}),
             "first_seen": min(times).isoformat() + "Z",
+            "last_seen": max(times).isoformat() + "Z",
+            "spread_minutes": int(spread // 60),
+            "avg_concern": round(mean(p.concern_score for p in group), 1),
+            # Enough posts to open the actual evidence from the UI, not the
+            # whole cluster — a 200-post campaign should not ship 200 bodies.
+            "sample_posts": [
+                {"id": p.id, "platform": p.platform, "author_handle": p.author_handle,
+                 "text": (p.translation or p.text)[:180],
+                 "concern_score": p.concern_score,
+                 "created_at": p.created_at.isoformat() + "Z"}
+                for p in sorted(group, key=lambda q: -q.concern_score)[:6]
+            ],
         })
 
     campaigns.sort(key=lambda c: (-c["confidence"], -c["reach_estimate"]))
@@ -181,6 +254,12 @@ def detect_pr_campaigns(hours: int = 48) -> dict:
         "window_hours": hours,
         "campaigns_found": len(campaigns),
         "campaigns": campaigns,
-        "note": "Only campaigns with law-and-order impact are shown "
-                "(manufactured outrage, disinformation, boycott/whitewash pushes).",
+        # Shown in the UI so an empty result reads as "nothing coordinated in
+        # this window", not as "the detector did not run".
+        "posts_scanned": len(posts),
+        "clusters_found": len(clusters),
+        "neutral_clusters_ignored": neutral_clusters,
+        "min_accounts": min_accounts,
+        "note": "A campaign here is ≥3 accounts posting near-identical copy. "
+                "Neutral clusters are ignored as ordinary syndication.",
     }

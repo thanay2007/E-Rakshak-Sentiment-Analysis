@@ -614,6 +614,8 @@ _PAGES = {
     "alerts": "/app/alerts", "alert": "/app/alerts",
     "reports": "/app/reports", "report": "/app/reports",
     "watchlist": "/app/watchlist",
+    "unverified": "/app/unverified", "unverified claims": "/app/unverified",
+    "rumours": "/app/unverified", "rumors": "/app/unverified",
     "settings": "/app/settings",
     "admin": "/app/admin", "admin panel": "/app/admin",
 }
@@ -633,7 +635,7 @@ _SORTS = ("recent", "score", "engagement")
 _SEVERITIES = ("critical", "high", "medium")
 _STATUSES = ("new", "acknowledged", "escalated")
 #: The investigation tools, by the id their tab uses.
-_INVESTIGATE_TABS = ("image", "username", "url", "comments", "pr", "sleuth")
+_INVESTIGATE_TABS = ("image", "username", "pr")
 
 #: Longest a spoken search phrase may be. The box is a keyword field, not a
 #: sentence, and an officer reading back a filter chip should be able to see
@@ -714,6 +716,12 @@ _PAGE_FILTERS: dict[str, dict[str, Any]] = {
         "severity": _one_of(_SEVERITIES),
     },
     "/app/trends": {"hours": _number(1, 168)},
+    "/app/unverified": {
+        "hours": _number(1, 168),
+        "platform": _one_of(_PLATFORMS),
+        "location": _one_of(tuple(settings.TARGET_CITIES)),
+        "sentiment": _one_of(_SENTIMENTS),
+    },
     "/app/network": {
         "hours": _number(1, 168),
         "platform": _one_of(_PLATFORMS),
@@ -1023,10 +1031,6 @@ def for_role(role: str) -> list[Tool]:
             role, settings.ASSISTANT_SQL_MIN_ROLE):
         tools = [t for t in tools if t.name != "run_sql"]
     return tools
-
-
-def schemas_for_role(role: str) -> list[dict]:
-    return [tool.schema() for tool in for_role(role)]
 
 
 def invoke(name: str, args: dict, ctx: ToolContext) -> ToolResult:

@@ -260,6 +260,11 @@ def test_the_adapter_goes_offline_when_no_route_authenticates(ig_env, monkeypatc
 
     collector = InstagrapiCollector()
     assert collector.is_configured()          # credentials are present
+    # The signed-out fallback runs but finds nothing this cycle, so the
+    # adapter's own state is what is under test here.
+    monkeypatch.setattr("app.crawlers.instagram_public._session", lambda: None)
+    monkeypatch.setattr("app.crawlers.instagram_public.hashtag_medias",
+                        lambda *a, **k: [])
     assert asyncio.run(collector.collect(["surat"])) == []
     assert not collector.is_configured()      # ... and refused
     assert "login_required" in collector.status_detail()

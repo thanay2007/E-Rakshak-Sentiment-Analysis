@@ -55,13 +55,34 @@ async def _crawl_tick_inner() -> None:
             continue  # politeness gap not elapsed yet
         _last_run[collector.name] = now
         try:
-            raws.extend(await collector.collect(terms))
+            # Bounded, because the adapters run one after another: an adapter
+            # that blocks forever costs every platform after it in this tick
+            # *and* every tick that follows, since max_instances=1 means the
+            # next one is skipped rather than queued. A hung source must cost
+            # its own platform only.
+            raws.extend(await asyncio.wait_for(collector.collect(terms),
+                                               timeout=collector.timeout_seconds))
+        except asyncio.TimeoutError:
+            # wait_for cancels the await; an adapter blocked inside a worker
+            # thread (asyncio.to_thread) keeps that thread until it returns on
+            # its own. The loop is what matters here — it moves on.
+            log.warning("%s collector timed out after %ds — skipping it this tick",
+                        collector.name, collector.timeout_seconds)
         except Exception as exc:  # adapters shouldn't raise, but never stall the loop
             log.warning("%s collector failed: %s", collector.name, exc)
     if raws:
         n = await ingest(raws)
         if n:
             log.debug("Ingested %d new posts", n)
+
+    # Rebuild the emerging-rumour window off the loop, so the first analyst to
+    # open the dashboard is served from a warm cache instead of waiting out a
+    # multi-second scan of every post's engagement and fact-check payload.
+    try:
+        from app.services.emerging import prime_cache
+        await asyncio.to_thread(prime_cache)
+    except Exception as exc:                      # noqa: BLE001 — never stall ingestion
+        log.debug("emerging cache prime skipped: %s", exc)
 
 
 def start_scheduler() -> None:

@@ -31,7 +31,8 @@ import numpy as np
 
 from app.services.voice.audio import pcm16_to_float32, rms
 from app.services.voice.types import (SAMPLE_RATE, DenoisedAudioPacket, OnPacket,
-                                      VadSpeechActivityPacket)
+                                      VadSpeechActivityPacket,
+                                      VoiceActivityDetector)
 
 log = logging.getLogger("sentinel.voice.vad")
 
@@ -201,7 +202,8 @@ class SileroVAD:
         self._model = None
 
 
-def create(on_packet: OnPacket, provider: str = "energy_vad", **kwargs):
+def create(on_packet: OnPacket, provider: str = "energy_vad",
+           **kwargs) -> VoiceActivityDetector:
     """Factory mirroring Rapida's `vad.New`.
 
     Silero is requested by name and silently degrades to energy detection if

@@ -9,6 +9,7 @@ import {
   Settings,
   Share2,
   ShieldCheck,
+  ShieldQuestion,
   TrendingUp,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
@@ -44,6 +45,13 @@ const NAV_GROUPS: { name: string; items: NavEntry[] }[] = [
         icon: Bell,
         badge: "HIGH",
         badgeColor: "bg-red-600/20 text-red-800 border-red-600/50 dark:bg-red-500/20 dark:text-red-300 dark:border-red-500/40 font-black",
+      },
+      {
+        to: "/app/unverified",
+        label: "Unverified Claims",
+        icon: ShieldQuestion,
+        badge: "TRIAGE",
+        badgeColor: "bg-amber-600/20 text-amber-800 border-amber-600/50 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-500/40 font-black",
       },
     ],
   },

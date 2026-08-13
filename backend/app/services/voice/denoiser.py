@@ -30,7 +30,7 @@ import numpy as np
 
 from app.services.voice.audio import float32_to_pcm16, pcm16_to_float32
 from app.services.voice.types import (DenoiseAudioPacket, DenoisedAudioPacket,
-                                      OnPacket)
+                                      Denoiser, OnPacket)
 
 log = logging.getLogger("sentinel.voice.denoiser")
 
@@ -125,7 +125,7 @@ class SpectralGateDenoiser:
         self._noise = None
 
 
-def create(on_packet: OnPacket, provider: str = "passthrough"):
+def create(on_packet: OnPacket, provider: str = "passthrough") -> Denoiser:
     """Factory mirroring Rapida's `denoiser.New` — provider chosen by name,
     with an unknown name degrading to passthrough rather than failing the
     session. Passthrough is the default since browser WebRTC handles noise cancellation."""

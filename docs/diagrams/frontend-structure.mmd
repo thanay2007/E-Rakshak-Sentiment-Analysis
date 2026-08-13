@@ -1,35 +1,46 @@
 flowchart LR
-    subgraph SERVICES["services/"]
-        APITS["api.ts\ntyped REST client for every endpoint"]
-        WSTS["ws.ts\nreconnecting /ws/live socket"]
+    subgraph SERVICES["src/services/"]
+        APITS["api.ts — typed REST client"]
+        AUTHTS["auth.ts — token storage, refresh"]
+        WSTS["ws.ts — reconnecting /ws/live socket"]
     end
 
-    subgraph HOOKS["hooks/"]
-        POLL["usePolling"]
-        LIVE["useLive / useLiveAlerts / useLiveStatus"]
-        GSAPH["useGsapReveal · useCountUp"]
+    subgraph PAGES["src/pages/"]
+        LAND["Landing · Login"]
+        DASH["Dashboard — KPIs, map, emerging"]
+        FEED["ThreatFeed — the post queue"]
+        UNV["Unverified — awaiting review"]
+        ALERT["Alerts"]
+        TREND["Trends"]
+        NET["NetworkPage — author graph"]
+        WATCH["Watchlist — the live crawl query"]
+        INV["Investigate — forensics tools"]
+        REP["Reports"]
+        SET["Settings — sources, models, LLM quotas"]
+        ADMIN["AdminPanel — users, audit, operations"]
     end
 
-    subgraph PAGES["pages/ (React Router)"]
-        LAND["/ Landing"]
-        DASH["/app Dashboard"]
-        FEED["/app/feed Threat Feed"]
-        NETP["/app/network Network"]
-        TRND["/app/trends Trends"]
-        ALRT["/app/alerts Alerts"]
-        REPT["/app/reports Reports"]
-        WTCH["/app/watchlist Watchlist"]
-        SETT["/app/settings Settings"]
+    subgraph SHARED["src/components/"]
+        LAYOUT["Layout · Sidebar · TopBar"]
+        GUARD["RequireAuth · RequireRole"]
+        POST["FeedItemCard · PostDetail<br/>PostMedia (via /api/media proxy)"]
+        VIZ["GujaratMap · NetworkGraph<br/>Sparkline · StatTile"]
+        VOICE["Sentinel — voice assistant panel"]
+        FX["BackgroundFX · GlassCard · Skeletons<br/>AlertToasts · ErrorBoundary"]
     end
 
-    subgraph COMPONENTS["components/"]
-        LAY["Layout · Sidebar · TopBar"]
-        CARDS["GlassCard · StatTile · FeedItemCard\nBadges · Skeletons · Sparkline"]
-        VIZ["GujaratMap (SVG geo)\nNetworkGraph (d3-force canvas)"]
-        FX["BackgroundFX · AlertToasts · DetailDrawer"]
+    subgraph TOOLS["src/components/investigate/"]
+        IMG["ImageTool — EXIF, hashes, edit signals"]
+        PID["PersonIdentification — face search"]
+        PRT["PrTool — campaign clusters"]
+        USR["UsernameTool — cross-platform lookup"]
     end
 
-    APITS --> POLL --> PAGES
-    WSTS --> LIVE --> PAGES
-    PAGES --> COMPONENTS
-    GSAPH --> COMPONENTS
+    APITS --> PAGES
+    AUTHTS --> GUARD
+    WSTS --> FEED
+    WSTS --> DASH
+    WSTS --> ALERT
+    INV --> TOOLS
+    PAGES --> SHARED
+    VOICE -.->|"/ws/voice"| APITS

@@ -6,7 +6,7 @@ import {
 import GlassCard, { SectionTitle } from "../GlassCard";
 import { api } from "../../services/api";
 import type { Appearance, ImageAnalysis, ImageSource, Identification, PersonFind, ReverseImage } from "../../services/api";
-import { AccountChip, EmptyHint, FindingRow, KV, Meter, Pill, RunButton, Spinner, TextInput } from "./shared";
+import { AccountChip, AiExplanation, EmptyHint, FindingRow, KV, Meter, Pill, RunButton, Spinner, TextInput } from "./shared";
 import { safeHref } from "../../lib/safeUrl";
 import IdentifiedPersonsPanel, { buildFaceOutcomes } from "./PersonIdentification";
 
@@ -181,6 +181,7 @@ export default function ImageTool() {
 
       {a && !loading && (
         <>
+        <AiExplanation tool="image" report={result} deps={[a.sha256, a.filename]} />
         <div className="grid gap-4 lg:grid-cols-2">
           {/* ── forensics ─────────────────────────────────── */}
           <GlassCard className="space-y-3 p-4">

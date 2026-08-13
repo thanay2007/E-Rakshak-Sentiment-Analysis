@@ -1,5 +1,8 @@
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Sparkles } from "lucide-react";
+import { api } from "../../services/api";
+import type { ExplainResult } from "../../services/api";
 import { safeHref } from "../../lib/safeUrl";
 
 /** Severity colour used across every investigation finding. */
@@ -21,11 +24,6 @@ export const BOT_COLORS: Record<string, string> = {
   authentic: "#10B981",
 };
 
-export const SENT_COLORS: Record<string, string> = {
-  positive: "#10B981",
-  neutral: "#64748B",
-  negative: "#EF4444",
-};
 
 export function Pill({ color, children }: { color: string; children: ReactNode }) {
   return (
@@ -62,6 +60,81 @@ export function Meter({ value, color, label }: { value: number; color: string; l
       <div className="h-2 overflow-hidden rounded-full bg-white/[0.06]">
         <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(value, 100)}%`, backgroundColor: color }} />
       </div>
+    </div>
+  );
+}
+
+/**
+ * Model commentary on the report above it.
+ *
+ * Placed *below* the findings and visibly framed as commentary, because that
+ * is the relationship: the findings are computed and reproducible, this is a
+ * language model reading them back. An officer who cannot tell which is which
+ * ends up quoting a paraphrase into a case file.
+ *
+ * Failure is shown rather than hidden — a missing key or an exhausted rate
+ * limit reads as "no commentary", never as "nothing to say about this".
+ */
+export function AiExplanation({
+  tool, report, deps = [],
+}: {
+  tool: "image" | "username" | "pr";
+  report: unknown;
+  /** Extra values that mean "this is a different report now". */
+  deps?: unknown[];
+}) {
+  const [result, setResult] = useState<ExplainResult | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!report) { setResult(null); return; }
+    let alive = true;
+    setLoading(true);
+    setResult(null);
+    api.investigateExplain(tool, report)
+      .then((r) => { if (alive) setResult(r); })
+      .catch((e: unknown) => {
+        if (alive) {
+          setResult({ available: false, reason: e instanceof Error ? e.message : "unavailable" });
+        }
+      })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tool, ...deps]);
+
+  if (!report) return null;
+
+  return (
+    <div className="rounded-xl border border-violet-500/20 bg-violet-500/[0.04] p-3.5">
+      <div className="mb-1.5 flex items-center gap-2">
+        <Sparkles size={13} className="text-violet-300" />
+        <span className="text-[11px] font-bold uppercase tracking-wider text-violet-300">
+          AI reading of this report
+        </span>
+        {result?.model && (
+          <span className="ml-auto font-mono text-[9.5px] text-slate-600">{result.model}</span>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="flex items-center gap-2 py-1 text-[12px] text-slate-500">
+          <Loader2 size={12} className="animate-spin" /> reading the findings…
+        </div>
+      ) : result?.available ? (
+        <>
+          <p className="text-[12.5px] leading-relaxed text-slate-300">{result.explanation}</p>
+          <p className="mt-2 text-[10px] leading-relaxed text-slate-600">
+            Commentary on the findings above, not an additional finding. The evidence and scores
+            are computed by the pipeline; this paragraph is a language model explaining them and
+            can be wrong about emphasis.
+          </p>
+        </>
+      ) : (
+        <p className="text-[11.5px] text-slate-500">
+          {result?.reason ?? "No commentary available."}
+        </p>
+      )}
     </div>
   );
 }

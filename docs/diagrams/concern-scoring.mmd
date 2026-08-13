@@ -1,0 +1,25 @@
+flowchart TD
+    POST["scored post"]
+
+    POST --> A["0.50 × negativity × confidence<br/>negativity = max(0, −sentiment_score)<br/>positive posts contribute 0"]
+    POST --> B["0.22 × toxicity<br/>abusive / hateful language intensity"]
+    POST --> C["0.18 × virality<br/>log10(1 + likes + 3·shares + 2·comments + views/50) / 4<br/>+0.15 when amplification is detected"]
+    POST --> D["0.10 × term_severity<br/>strongest matched lexicon term"]
+
+    A --> SUM["concern = 100 × clamp01(Σ)"]
+    B --> SUM
+    C --> SUM
+    D --> SUM
+
+    SUM --> BAND{"band — env-tunable"}
+    BAND -- ">= 60" --> CRIT["critical — 3 posts / 0.04%"]
+    BAND -- ">= 50" --> HIGH["high — alert, 34 posts / 0.41%"]
+    BAND -- ">= 35" --> ELEV["elevated — needs a look, ~2.4%"]
+    BAND -- "< 35" --> ROUT["routine"]
+
+    CRIT --> UI["alerts page, toasts,<br/>WhatsApp, report generation"]
+    HIGH --> UI
+    ELEV --> UI
+
+    NOTE["no single dimension reaches an alert band alone:<br/>a furious unread post tops out near 50,<br/>a viral cheerful post cannot pass ~30"]
+    SUM -.-> NOTE

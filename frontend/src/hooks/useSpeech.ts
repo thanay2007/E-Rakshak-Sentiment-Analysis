@@ -82,12 +82,6 @@ function recognitionCtor(): SrConstructor | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
-export function speechSupport(): { listen: boolean; speak: boolean } {
-  return {
-    listen: recognitionCtor() !== null,
-    speak: typeof window !== "undefined" && "speechSynthesis" in window,
-  };
-}
 
 // ── speaking ───────────────────────────────────────────────────────────
 

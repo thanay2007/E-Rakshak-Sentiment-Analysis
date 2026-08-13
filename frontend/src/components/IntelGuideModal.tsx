@@ -332,8 +332,8 @@ export default function IntelGuideModal({ open, onClose }: Props) {
                       <kbd className="rounded border border-white/20 bg-base-800 px-2 py-0.5 font-mono text-[11px] text-slate-300">Esc</kbd>
                     </div>
                     <div className="flex items-center justify-between border-b border-white/[0.05] pb-2">
-                      <span className="text-slate-300">Open Sentinel Voice AI Assistant</span>
-                      <span className="text-slate-400">Click Sentinel button at bottom right or speak query</span>
+                      <span className="text-slate-300">Sentinel Voice AI Assistant</span>
+                      <span className="text-slate-400">Mic button at bottom right — on, it listens until muted</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-slate-300">Inspect Full Post Dossier</span>

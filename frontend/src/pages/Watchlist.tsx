@@ -1,8 +1,9 @@
 import {
-  Activity, Download, Eye, Hash, Layers, MapPin, PackagePlus, Plus, Search,
-  Trash2, Type, Upload, UserRound, X,
+  Activity, ArrowUpRight, Download, Eye, Hash, Layers, MapPin, PackagePlus,
+  Plus, Search, Sparkles, Trash2, Type, Upload, UserRound, X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import GlassCard, { SectionTitle } from "../components/GlassCard";
 import { SkeletonRow } from "../components/Skeletons";
 import { useGsapReveal } from "../hooks/useGsapReveal";
@@ -43,18 +44,31 @@ function timeAgo(iso: string | null): string {
   return `${Math.round(s / 86400)}d ago`;
 }
 
+/** Where a rule's matches live in the feed, so a rule can be inspected rather
+ *  than only counted. A location rule filters by district; everything else is
+ *  a text search, which is what the crawler matched on in the first place. */
+function feedHrefFor(w: WatchItem): string {
+  if (w.kind === "location") return `/app/feed?location=${encodeURIComponent(w.value)}`;
+  return `/app/feed?q=${encodeURIComponent(w.value.replace(/^[@#]/, ""))}`;
+}
+
 export default function Watchlist() {
   const { data, loading, refresh } = usePolling(() => api.watchlist(), 30000);
   const { data: presets } = usePolling(() => api.watchPresets(), 300000);
+  const { data: suggestions, refresh: refreshSuggestions } =
+    usePolling(() => api.watchSuggestions(24), 120000);
   const [kind, setKind] = useState("keyword");
   const [priority, setPriority] = useState("medium");
   const [value, setValue] = useState("");
   const [note, setNote] = useState("");
   const [query, setQuery] = useState("");
+  const [status, setStatus] = useState<"all" | "active" | "paused">("all");
   const [showBulk, setShowBulk] = useState(false);
   const [bulkText, setBulkText] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [dismissed, setDismissed] = useState<string[]>([]);
+  const [purgeArmed, setPurgeArmed] = useState(false);
   const revealRef = useGsapReveal<HTMLDivElement>(data?.length ?? 0);
 
   const flash = (msg: string) => {
@@ -105,17 +119,52 @@ export default function Watchlist() {
     }
   };
 
+  const acceptSuggestion = async (s: { kind: string; value: string; reason: string }) => {
+    setBusy(`sug-${s.value}`);
+    try {
+      await api.addWatch({
+        kind: s.kind, value: s.value, priority: "high",
+        note: `Accepted from spike suggestion — ${s.reason}`,
+      });
+      flash(`Now watching “${s.value}”`);
+      refresh();
+      refreshSuggestions();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const removeInactive = async () => {
+    const dead = (data ?? []).filter((w) => !w.active);
+    setBusy("purge");
+    try {
+      await Promise.all(dead.map((w) => api.deleteWatch(w.id)));
+      flash(`Removed ${dead.length} paused rule${dead.length === 1 ? "" : "s"}`);
+      refresh();
+      refreshSuggestions();
+    } finally {
+      setBusy(null);
+      setPurgeArmed(false);
+    }
+  };
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return data ?? [];
-    return (data ?? []).filter(
+    let rows = data ?? [];
+    if (status !== "all") rows = rows.filter((w) => (status === "active" ? w.active : !w.active));
+    if (!q) return rows;
+    return rows.filter(
       (w) =>
         w.value.toLowerCase().includes(q) ||
         w.note.toLowerCase().includes(q) ||
         (w.category ?? "").toLowerCase().includes(q) ||
         w.priority.includes(q)
     );
-  }, [data, query]);
+  }, [data, query, status]);
+
+  const openSuggestions = (suggestions ?? []).filter((s) => !dismissed.includes(s.value));
+  const inactiveCount = (data ?? []).filter((w) => !w.active).length;
+  const silentCount = (data ?? []).filter((w) => w.active && (w.hits_7d ?? 0) === 0).length;
 
   const stats = useMemo(() => {
     const all = data ?? [];
@@ -185,6 +234,81 @@ export default function Watchlist() {
         ))}
       </div>
 
+      {/* Suggested targets.
+          These used to be inserted straight into the watchlist by the trends
+          page on every poll — rules nobody chose, appearing from a GET. They
+          are now offered here and only become rules when accepted. */}
+      {openSuggestions.length > 0 && (
+        <GlassCard className="border border-accent/25 bg-accent/[0.03] p-4">
+          <SectionTitle
+            title="Suggested Targets"
+            sub="Terms spiking negative in the last 24h that you are not watching yet"
+            right={<Sparkles size={16} className="text-accent" />}
+          />
+          <div className="space-y-2">
+            {openSuggestions.map((s) => (
+              <div key={`${s.kind}-${s.value}`}
+                className="flex flex-wrap items-center gap-2.5 rounded-xl border border-white/[0.07] bg-base-950/60 px-3 py-2">
+                <span className="font-mono text-xs font-bold text-slate-100">
+                  {s.kind === "hashtag" ? "#" : ""}{s.value}
+                </span>
+                <span className="rounded-md border border-white/10 px-1.5 py-0.5 text-[9.5px] uppercase tracking-wider text-slate-400">
+                  {s.kind}
+                </span>
+                <span className="text-[11px] text-slate-400">{s.reason}</span>
+                <div className="ml-auto flex items-center gap-1.5">
+                  <Link to={`/app/feed?q=${encodeURIComponent(s.value)}`}
+                    className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2 py-1 text-[11px] font-semibold text-slate-300 hover:text-accent">
+                    inspect <ArrowUpRight size={11} />
+                  </Link>
+                  <button onClick={() => void acceptSuggestion(s)} disabled={busy === `sug-${s.value}`}
+                    className="rounded-lg bg-accent px-2.5 py-1 text-[11px] font-black text-base-950 hover:bg-accent-light disabled:opacity-50">
+                    {busy === `sug-${s.value}` ? "Adding…" : "Watch"}
+                  </button>
+                  <button onClick={() => setDismissed((d) => [...d, s.value])}
+                    aria-label="Dismiss suggestion"
+                    className="rounded-lg p-1 text-slate-500 hover:text-slate-200">
+                    <X size={13} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </GlassCard>
+      )}
+
+      {/* Rule health — a watchlist nobody prunes stops being a watchlist. */}
+      {(inactiveCount > 0 || silentCount > 0) && (
+        <GlassCard className="flex flex-wrap items-center gap-3 border border-white/[0.08] p-3.5 text-[11.5px]">
+          {silentCount > 0 && (
+            <span className="text-slate-400">
+              <strong className="text-slate-200">{silentCount}</strong> active rule{silentCount === 1 ? "" : "s"} matched
+              nothing in 7 days
+            </span>
+          )}
+          {inactiveCount > 0 && (
+            <>
+              <span className="text-slate-400">
+                <strong className="text-slate-200">{inactiveCount}</strong> paused rule{inactiveCount === 1 ? "" : "s"} are
+                steering nothing
+              </span>
+              <button
+                onClick={() => (purgeArmed ? void removeInactive() : setPurgeArmed(true))}
+                disabled={busy === "purge"}
+                className={`ml-auto inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold disabled:opacity-50 ${
+                  purgeArmed
+                    ? "border-threat-critical bg-threat-critical/20 text-threat-critical"
+                    : "border-white/[0.1] bg-white/[0.04] text-slate-400 hover:border-threat-critical/40 hover:text-threat-critical"
+                }`}
+              >
+                <Trash2 size={12} />
+                {busy === "purge" ? "Removing…" : purgeArmed ? "Click again to delete them" : "Remove paused rules"}
+              </button>
+            </>
+          )}
+        </GlassCard>
+      )}
+
       {/* Preset Packs */}
       <GlassCard className="p-4 border border-white/[0.08]">
         <SectionTitle
@@ -249,14 +373,25 @@ export default function Watchlist() {
           >
             <Plus size={14} /> Add Rule
           </button>
-          <div className="relative ml-auto">
-            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Filter watchlist…"
-              className="w-48 rounded-xl border border-white/[0.1] bg-white/[0.04] py-2 pl-9 pr-3 text-xs text-slate-100 placeholder:text-slate-500 focus:border-accent/60 focus:outline-none"
-            />
+          <div className="ml-auto flex items-center gap-2">
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value as "all" | "active" | "paused")}
+              className="rounded-xl border border-white/[0.1] bg-base-800 py-2 pl-3 pr-8 text-xs text-slate-200 hover:border-white/20 focus:border-accent/60 focus:outline-none"
+            >
+              <option value="all">All rules</option>
+              <option value="active">Active only</option>
+              <option value="paused">Paused only</option>
+            </select>
+            <div className="relative">
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Filter watchlist…"
+                className="w-48 rounded-xl border border-white/[0.1] bg-white/[0.04] py-2 pl-9 pr-3 text-xs text-slate-100 placeholder:text-slate-500 focus:border-accent/60 focus:outline-none"
+              />
+            </div>
           </div>
         </form>
 
@@ -328,16 +463,25 @@ export default function Watchlist() {
                           {w.value}
                         </span>
                         <PriorityBadge p={w.priority} />
-                        <button
-                          onClick={async () => {
-                            await api.deleteWatch(w.id);
-                            refresh();
-                          }}
-                          className="ml-auto rounded-lg p-1 text-slate-500 hover:bg-threat-critical/20 hover:text-threat-critical transition-all"
-                          aria-label="Delete rule"
-                        >
-                          <Trash2 size={13} />
-                        </button>
+                        <div className="ml-auto flex items-center gap-1">
+                          <Link
+                            to={feedHrefFor(w)}
+                            title="Open the posts this rule matched"
+                            className="rounded-lg p-1 text-slate-500 transition-all hover:bg-accent/15 hover:text-accent"
+                          >
+                            <ArrowUpRight size={13} />
+                          </Link>
+                          <button
+                            onClick={async () => {
+                              await api.deleteWatch(w.id);
+                              refresh();
+                            }}
+                            className="rounded-lg p-1 text-slate-500 hover:bg-threat-critical/20 hover:text-threat-critical transition-all"
+                            aria-label="Delete rule"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
                       </div>
 
                       <div className="mt-2 flex flex-wrap items-center gap-3 pl-9 text-[11px] text-slate-400">

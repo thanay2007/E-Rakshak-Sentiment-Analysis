@@ -88,14 +88,6 @@ def news_status() -> dict:
     }
 
 
-# Back-compat for callers that only asked about GNews.
-def gnews_status() -> dict:
-    _roll_day()
-    return {"configured": bool(settings.GNEWS_API_KEY),
-            "used_today": _used[GNEWS],
-            "daily_budget": settings.GNEWS_DAILY_BUDGET}
-
-
 async def _google_news(client: httpx.AsyncClient, query: str) -> list[dict]:
     r = await client.get(RSS.format(q=quote_plus(query)))
     r.raise_for_status()
