@@ -67,8 +67,8 @@ export default defineConfig(({ mode }) => {
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
       manifest: {
-        name: 'E-Rakshak Command Center',
-        short_name: 'E-Rakshak',
+        name: 'SENTINEL Command Center',
+        short_name: 'SENTINEL',
         description: 'Sentinel Threat Analysis Dashboard',
         theme_color: '#04080F',
         background_color: '#04080F',

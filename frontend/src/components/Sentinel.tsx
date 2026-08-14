@@ -11,7 +11,7 @@ import { api } from "../services/api";
 import type { AssistantAnswer } from "../services/api";
 
 /**
- * E-RAKSHAK, as one microphone button.
+ * SENTINEL, as one microphone button.
  *
  * There is no panel, no transcript and no typed input: the assistant is spoken
  * to and answers out loud, so the only thing an officer needs on screen is

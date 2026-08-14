@@ -126,7 +126,7 @@ export default function Sidebar({
           }`}
         >
           <div className="font-mono text-sm font-black tracking-[0.18em] text-white flex items-center gap-1.5 whitespace-nowrap">
-            <span>E-RAKSHAK</span>
+            <span>SENTINEL</span>
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400 animate-pulse" />
           </div>
         </div>

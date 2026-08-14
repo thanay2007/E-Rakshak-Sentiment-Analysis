@@ -56,7 +56,7 @@ export default function IntelGuideModal({ open, onClose }: Props) {
               </span>
               <div>
                 <h2 className="text-base font-bold tracking-wide text-slate-100">
-                  E-RAKSHAK · Intelligence & Operational Guide
+                  SENTINEL · Intelligence & Operational Guide
                 </h2>
                 <p className="text-xs text-slate-400">
                   Sentiment tagging, concern scoring, spike statistics and OSINT investigation reference
@@ -102,8 +102,8 @@ export default function IntelGuideModal({ open, onClose }: Props) {
             {tab === "overview" && (
               <div className="space-y-6">
                 <div className="rounded-xl border border-accent/20 bg-accent/[0.06] p-4 text-xs leading-relaxed text-slate-200">
-                  <div className="font-bold text-accent">What is E-Rakshak?</div>
-                  E-Rakshak is a real-time OSINT threat intelligence platform designed for state cyber command centers. It monitors social media platforms (X, Reddit, Facebook, Instagram, Telegram, YouTube) to detect communal incitement, viral disinformation, coordinated bot campaigns, and regional tension in native scripts (Gujarati, Hindi, English) as well as code-mixed vernaculars (Hinglish, Gujlish).
+                  <div className="font-bold text-accent">What is SENTINEL?</div>
+                  SENTINEL is a real-time OSINT threat intelligence platform designed for state cyber command centers. It monitors social media platforms (X, Reddit, Facebook, Instagram, Telegram, YouTube) to detect communal incitement, viral disinformation, coordinated bot campaigns, and regional tension in native scripts (Gujarati, Hindi, English) as well as code-mixed vernaculars (Hinglish, Gujlish).
                 </div>
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -260,7 +260,7 @@ export default function IntelGuideModal({ open, onClose }: Props) {
             {tab === "nlp" && (
               <div className="space-y-4">
                 <p className="text-xs text-slate-400">
-                  E-Rakshak utilizes a multi-stage Indic NLP pipeline specifically tuned for Western and Northern Indian languages and dialects:
+                  SENTINEL utilizes a multi-stage Indic NLP pipeline specifically tuned for Western and Northern Indian languages and dialects:
                 </p>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -348,7 +348,7 @@ export default function IntelGuideModal({ open, onClose }: Props) {
           {/* Footer */}
           <div className="flex items-center justify-between border-t border-white/[0.08] bg-base-950/60 px-6 py-3.5">
             <span className="font-mono text-[11px] text-slate-400">
-              E-RAKSHAK OSINT THREAT INTELLIGENCE SYSTEM · CONFIDENTIAL
+              SENTINEL OSINT THREAT INTELLIGENCE SYSTEM · CONFIDENTIAL
             </span>
             <button
               onClick={onClose}

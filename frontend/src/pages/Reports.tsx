@@ -39,7 +39,7 @@ function ReportModal({ report, onClose }: { report: Report; onClose: () => void 
         <div className="flex items-start justify-between gap-3 border-b border-white/[0.08] pb-4">
           <div>
             <div className="font-mono text-[10px] font-black uppercase tracking-widest text-accent">
-              E-RAKSHAK INTELLIGENCE · {report.kind.toUpperCase()} REPORT · {report.id}
+              SENTINEL INTELLIGENCE · {report.kind.toUpperCase()} REPORT · {report.id}
             </div>
             <h2 className="mt-1 text-base font-black text-white sm:text-lg">{report.title}</h2>
             <div className="font-mono text-xs text-slate-400">
