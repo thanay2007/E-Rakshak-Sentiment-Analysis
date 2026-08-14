@@ -2,6 +2,7 @@ import { gsap } from "gsap";
 import {
   Activity,
   AlertOctagon,
+  ArrowRight,
   ArrowUpRight,
   Bot,
   CheckCircle2,
@@ -411,6 +412,15 @@ export default function Dashboard() {
           <GlassCard className="flex flex-1 flex-col justify-between p-4 overflow-hidden">
             <SectionTitle
               title="Viral Hashtags"
+              hint="Hashtags being used most across the monitored platforms in this window. The σ badge marks a statistical spike — the tag is running far above its own normal rate, which matters more than a high count on its own. Click any tag to read the posts using it."
+              right={
+                <Link
+                  to="/app/trends"
+                  className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] font-bold text-slate-300 transition-colors hover:border-accent/40 hover:text-accent"
+                >
+                  View all <ArrowRight size={12} />
+                </Link>
+              }
             />
             {trendsError && !trends ? (
               <div className="py-4 text-xs text-slate-400">{trendsError}</div>
