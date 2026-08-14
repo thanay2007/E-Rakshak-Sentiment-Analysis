@@ -1,47 +1,9 @@
 import { gsap } from "gsap";
-import {
-  ArrowRight,
-  Bot,
-  Globe2,
-  Lock,
-  Radio,
-  ShieldAlert,
-} from "lucide-react";
+import { ArrowRight, Lock } from "lucide-react";
 import { useLayoutEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import BackgroundFX from "../components/BackgroundFX";
 import { Logo } from "../components/Sidebar";
-
-const CAPABILITIES = [
-  {
-    icon: Globe2,
-    title: "Multilingual Indic NLP",
-    desc: "Deep cognitive analysis and sentiment scoring engineered for Gujarati, Hindi, Gujlish, Hinglish & English vernaculars, deciphering code-mixed dialects, slang, idioms, and covert threat language.",
-    tag: "99.2% Accuracy",
-    chips: ["Gujarati", "Hindi", "Hinglish", "Gujlish", "English"],
-  },
-  {
-    icon: Radio,
-    title: "Real-Time OSINT Ingestion",
-    desc: "Continuous high-velocity data stream ingestion across open-source intelligence channels with sub-second parsing, classification, and automated metadata extraction.",
-    tag: "<100ms Latency",
-    chips: ["X (Twitter)", "Telegram", "Reddit", "YouTube", "Meta Feeds"],
-  },
-  {
-    icon: Bot,
-    title: "Coordinated Bot Swarm Detection",
-    desc: "Advanced graph clustering algorithms and behavioral anomaly scoring isolate astroturfed outrage campaigns, synchronized bot deployments, and synthetic narrative manipulation.",
-    tag: "Swarm AI Engine",
-    chips: ["Graph Clustering", "Sybil Scoring", "Astroturf Isolation", "Pattern Analysis"],
-  },
-  {
-    icon: ShieldAlert,
-    title: "Automated Threat Escalation",
-    desc: "Autonomous law & order threat triage triggering instant dispatch notifications, interactive geo-spatial hotspot mapping, and tamper-evident forensic dossier generation.",
-    tag: "Instant Dispatch",
-    chips: ["Automated Alerting", "Geo-Threat Heatmaps", "Forensic Dossiers", "Risk Triage"],
-  },
-];
 
 const TELEMETRY_STATS = [
   { label: "Real-time Monitoring", value: "24/7", sub: "Autonomous Telemetry" },
@@ -77,12 +39,6 @@ export default function Landing() {
         .fromTo(
           ".hero-stats",
           { y: 24, opacity: 0 },
-          { y: 0, opacity: 1, duration: 0.55 },
-          "-=0.2"
-        )
-        .fromTo(
-          ".hero-cards",
-          { y: 26, opacity: 0, stagger: 0.08 },
           { y: 0, opacity: 1, duration: 0.55 },
           "-=0.2"
         )
@@ -127,7 +83,7 @@ export default function Landing() {
       {/* Headline */}
       <div className="hero-title text-center">
         <h1 className="font-mono text-4xl font-black tracking-[0.25em] text-white sm:text-6xl md:text-7xl drop-shadow-[0_0_30px_rgba(245,158,11,0.4)]">
-          E-RAKSHAK
+          SENTINEL
         </h1>
         <div className="mt-3 text-xs font-extrabold uppercase tracking-[0.3em] text-accent sm:text-sm md:text-base">
           OSINT Threat Intelligence & Sentiment Matrix
@@ -157,64 +113,8 @@ export default function Landing() {
         ))}
       </div>
 
-      {/* Core Capabilities Showcase */}
-      <div className="hero-cards grid w-full max-w-5xl grid-cols-1 gap-5 md:grid-cols-2 md:gap-6">
-        {CAPABILITIES.map((cap, i) => {
-          const Icon = cap.icon;
-          return (
-            <div
-              key={i}
-              className="group relative flex flex-col justify-between overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-white/[0.06] to-white/[0.02] p-6 sm:p-7 md:p-8 backdrop-blur-2xl transition-all duration-300 hover:-translate-y-1.5 hover:border-accent/50 hover:bg-white/[0.08] hover:shadow-[0_0_35px_-5px_rgba(245,158,11,0.25)]"
-            >
-              {/* Subtle top ambient glow line */}
-              <div
-                className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent/40 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-                aria-hidden
-              />
-
-              <div>
-                {/* Top Row: Icon + Title + Tag Badge */}
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-accent/40 bg-accent/15 text-accent shadow-[0_0_15px_rgba(245,158,11,0.15)] transition-all duration-300 group-hover:scale-110 group-hover:border-accent group-hover:bg-accent/20 group-hover:shadow-[0_0_25px_rgba(245,158,11,0.35)]">
-                      <Icon size={26} />
-                    </div>
-                    <div>
-                      <h2 className="text-lg font-bold text-white transition-colors duration-200 group-hover:text-accent-glow sm:text-xl">
-                        {cap.title}
-                      </h2>
-                    </div>
-                  </div>
-
-                  <span className="shrink-0 rounded-full border border-accent/35 bg-accent/10 px-3 py-1 font-mono text-[11px] font-bold text-accent uppercase tracking-wider backdrop-blur-md">
-                    {cap.tag}
-                  </span>
-                </div>
-
-                {/* Description */}
-                <p className="mt-4 text-sm leading-relaxed text-slate-300 transition-colors group-hover:text-slate-200 sm:text-base">
-                  {cap.desc}
-                </p>
-              </div>
-
-              {/* Chips / Sub-features */}
-              <div className="mt-6 flex flex-wrap gap-2 border-t border-white/[0.06] pt-4">
-                {cap.chips.map((chip, idx) => (
-                  <span
-                    key={idx}
-                    className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 font-mono text-[11px] font-medium text-slate-300 transition-colors group-hover:border-accent/30 group-hover:text-slate-200"
-                  >
-                    {chip}
-                  </span>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
       {/* Action CTA Button */}
-      <div className="hero-actions mt-12 flex items-center justify-center">
+      <div className="hero-actions mt-2 flex items-center justify-center">
         <button
           onClick={() => navigate("/app")}
           className="group relative inline-flex items-center gap-3 overflow-hidden rounded-2xl border border-accent bg-accent px-10 py-4 text-sm font-black tracking-wider text-slate-950 shadow-[0_0_25px_rgba(245,158,11,0.4)] transition-all duration-300 hover:bg-accent-glow hover:shadow-[0_0_35px_rgba(245,158,11,0.6)] hover:scale-105 active:scale-95"
