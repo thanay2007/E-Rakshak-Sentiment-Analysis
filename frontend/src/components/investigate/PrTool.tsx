@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { Clock, Megaphone, MapPin, Users } from "lucide-react";
+import { Clock, Megaphone, MapPin, ShieldCheck, Users } from "lucide-react";
 import GlassCard, { SectionTitle } from "../GlassCard";
 import { PlatformIcon } from "../Badges";
 import { usePostDetail } from "../PostDetailProvider";
 import { api } from "../../services/api";
-import type { PrCampaign, PrReport } from "../../services/api";
+import type { PrCampaign, PrReport, PrSyndication } from "../../services/api";
 import { sentimentColor } from "../../data/constants";
 import { AiExplanation, EmptyHint, Meter, Pill, Spinner } from "./shared";
 
@@ -30,7 +30,9 @@ function CampaignCard({ c }: { c: PrCampaign }) {
           </div>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             <Pill color={sentimentColor(c.sentiment_lean)}>{c.sentiment_lean} lean</Pill>
-            <Pill color="#64748B">{c.account_count} accounts</Pill>
+            {/* "Independent" because the same organisation's handles across
+                platforms are folded into one actor before counting. */}
+            <Pill color="#64748B">{c.account_count} independent accounts</Pill>
             <Pill color="#64748B">{c.posts} posts</Pill>
             {c.bot_ratio > 0 && <Pill color="#EF4444">{Math.round(c.bot_ratio * 100)}% bots</Pill>}
             {c.platforms.length > 1 && <Pill color="#A855F7">{c.platforms.length} platforms</Pill>}
@@ -158,16 +160,22 @@ export default function PrTool() {
           )}
         </div>
 
-        {/* What was actually looked at. Without this an empty result is
-            ambiguous between "nothing coordinated" and "nothing ran". */}
+        {/* Every cluster the detector saw has to be accounted for here. Without
+            it, an empty result is ambiguous between "nothing coordinated",
+            "nothing ran", and "it found things and threw them away". */}
         {data && !loading && (
           <p className="mt-2 text-[11px] text-slate-600">
             Scanned {data.posts_scanned.toLocaleString()} posts · {data.clusters_found} near-duplicate
             cluster{data.clusters_found === 1 ? "" : "s"} found
             {data.neutral_clusters_ignored > 0 &&
-              ` · ${data.neutral_clusters_ignored} neutral cluster${data.neutral_clusters_ignored === 1 ? "" : "s"} ignored as ordinary syndication`}
+              ` · ${data.neutral_clusters_ignored} neutral (ordinary announcements)`}
+            {!!data.syndication_ignored &&
+              ` · ${data.syndication_ignored} official/verified syndication`}
+            {!!data.weak_clusters_ignored &&
+              ` · ${data.weak_clusters_ignored} with no sign of coordination beyond shared wording`}
           </p>
         )}
+        {data && !loading && <p className="mt-1 text-[11px] text-slate-600">{data.note}</p>}
       </GlassCard>
 
       {loading && <GlassCard className="p-2"><Spinner label="Clustering near-duplicate copy across the window…" /></GlassCard>}
@@ -183,11 +191,51 @@ export default function PrTool() {
         ) : (
           <EmptyHint>
             No coordinated campaign in this window. {data.clusters_found > 0
-              ? `${data.clusters_found} cluster(s) matched on text but leaned neutral, which reads as ordinary syndication.`
+              ? `${data.clusters_found} cluster(s) matched on wording, but none of them held up as an organised push — see the breakdown above.`
               : "Try a wider window or a smaller cluster size."}
           </EmptyHint>
         )
       )}
+
+      {data && !loading && !!data.syndication?.length && <SyndicationPanel items={data.syndication} />}
     </div>
+  );
+}
+
+/** Clusters that duplicate copy but are not campaigns — official desks and
+ *  verified accounts carrying the same notice. Shown rather than dropped: an
+ *  officer who can see the duplication in the feed needs to know the detector
+ *  saw it too and what it concluded, otherwise "no campaigns" looks broken. */
+function SyndicationPanel({ items }: { items: PrSyndication[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <GlassCard className="p-4">
+      <button onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-2 text-left text-[13px] font-semibold text-slate-300 hover:text-slate-100">
+        <ShieldCheck size={14} className="text-emerald-400" />
+        {items.length} cluster{items.length === 1 ? "" : "s"} of duplicated copy set aside as legitimate syndication
+        <span className="ml-auto text-[11px] font-normal text-slate-500">{open ? "hide" : "show"}</span>
+      </button>
+      <p className="mt-1 text-[11px] text-slate-600">
+        Same words, many handles — but the accounts behind them are official desks, verified accounts, or one
+        organisation posting to its own several platforms. That is a press release travelling, not an organised push.
+      </p>
+      {open && (
+        <div className="mt-3 space-y-2">
+          {items.map((s) => (
+            <div key={s.id} className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {s.accounts.slice(0, 6).map((a) => (
+                  <span key={a} className="rounded-md border border-white/[0.08] bg-white/[0.03] px-1.5 py-0.5 font-mono text-[10.5px] text-slate-400">@{a}</span>
+                ))}
+                <span className="text-[11px] text-slate-600">· {s.posts} posts · {s.platforms.join(", ")}</span>
+              </div>
+              <div className="mt-1 truncate text-[12px] italic text-slate-400">“{s.sample_text}”</div>
+              <div className="mt-1 text-[11px] text-emerald-400/80">{s.why}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </GlassCard>
   );
 }

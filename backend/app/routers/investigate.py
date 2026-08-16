@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from sqlmodel import Session
 from app.database import get_session
 
+from app.osint import lens_search
 from app.osint.explain import explain_report
 from app.osint.face_intel import identify_faces, identify_media
 from app.osint.image_analysis import analyze_image
@@ -74,6 +75,47 @@ async def investigate_image_from_url(req: PostImageRequest, session: Session = D
     report = await analyze_from_url(req.url)
     report["identification"] = await identify_media(session, report, filename=req.url)
     return report
+
+# ── automatic reverse-image search ─────────────────────────────────────────
+#
+# Its own endpoint rather than part of /image on purpose: driving a browser
+# through Google takes ten to fifteen seconds, and metadata forensics takes
+# under one. Folding them together would make every upload wait for the slower
+# half, so the tool renders the forensics immediately and fills the trace in
+# when it lands.
+
+@router.post("/reverse-image", dependencies=[Expensive])
+async def investigate_reverse_image(file: UploadFile = File(...),
+                                    session: Session = Depends(get_session)) -> dict:
+    """Run Google Lens over an uploaded image and return what it found."""
+    from app.services.audit import log_action
+
+    data = await _read_capped(file, _MAX_IMAGE_BYTES, "image")
+    log_action(session, "osint_reverse_image", file.filename or "",
+               {"bytes": len(data)})
+    return await lens_search.search(data, filename=file.filename or "")
+
+
+@router.post("/reverse-image-url", dependencies=[Expensive])
+async def investigate_reverse_image_url(req: PostImageRequest,
+                                        session: Session = Depends(get_session)) -> dict:
+    """Same, for media the console already resolved from a post or feed item.
+
+    The image is fetched through the same SSRF-guarded downloader the rest of
+    the media tooling uses — this endpoint takes a URL from the analyst's
+    browser, and an unguarded fetch here would let it reach into the network the
+    API sits on.
+    """
+    from app.osint.post_media import _download_image
+    from app.services.audit import log_action
+
+    log_action(session, "osint_reverse_image_url", req.url)
+    got = await _download_image(req.url)
+    if not got:
+        return {"ok": False, "reason": "That image could not be fetched for search."}
+    data, name = got
+    return await lens_search.search(data, filename=name)
+
 
 @router.post("/audio", dependencies=[Expensive])
 async def investigate_audio(file: UploadFile = File(...), session: Session = Depends(get_session)) -> dict:

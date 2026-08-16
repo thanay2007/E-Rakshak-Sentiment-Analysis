@@ -449,6 +449,20 @@ export interface FaceIdentity {
   identified: boolean; searched?: boolean; ambiguous?: boolean;
   match?: SuspectCandidate | null; candidates: SuspectCandidate[];
   registry_size?: number; templates_searched?: number; reason?: string;
+  /** The reference-gallery search for the same face, run alongside the
+   *  registry one and kept separate: a name is not a record. */
+  known_person?: KnownPerson;
+}
+/** A hit in the reference gallery (the `pics/` folder, stored in the database).
+ *  This says who is in the photo — nothing about records, charges or risk. */
+export interface KnownPersonCandidate {
+  name: string; distance: number; confidence: number; band: string;
+  matched_photo: string; thumb: string; reference_photos: number;
+}
+export interface KnownPerson {
+  identified: boolean; searched: boolean; ambiguous?: boolean;
+  match?: KnownPersonCandidate | null; candidates: KnownPersonCandidate[];
+  people?: number; photos?: number; reason?: string;
 }
 export interface FaceMatch {
   index: number;
@@ -456,6 +470,8 @@ export interface FaceMatch {
   area_ratio: number;
   quality: FaceQuality;
   matched_suspect: string | null;
+  /** Name from the reference gallery, when it recognised this face. */
+  known_person?: string | null;
   confidence: number | null;
   identity?: FaceIdentity;
 }
@@ -513,10 +529,20 @@ export interface IdentityDossier {
   linked_alerts: { id: string; post_id: string; severity: string; status: string; title: string; summary: string; category: string; location: string; platform: string; concern_score: number; created_at: string }[];
   timeline: { kind: "charge" | "post" | "alert"; at: string; title: string; detail: string; status: string; ref?: string }[];
 }
+export interface GalleryStats {
+  directory: string; exists: boolean; people: number; photos: number;
+  stored_in?: string;
+  last_scan?: { scanned: number; enrolled: number };
+  skipped?: { file: string; person?: string; reason: string }[];
+  error?: string;
+}
 export interface Identification {
   faces_detected: number; identified: number; candidates: number;
+  /** People the reference gallery could name, whether or not they are on record. */
+  known_people?: number; known_names?: string[];
   identities: Record<string, IdentityDossier>;
   registry: { active_records: number; enrolled_records: number; templates: number };
+  gallery?: GalleryStats;
   summary: string; from_video_frame?: boolean;
 }
 export interface ImageFinding { level: string; text: string }
@@ -572,6 +598,24 @@ export interface ImageReport {
   identification?: Identification;
 }
 
+/** What Google Lens actually returned, rather than a link to go and ask it.
+ *  `ok: false` is a normal outcome (Chrome missing, or Google serving its
+ *  anti-automation check) and `reason` says which — the manual engine links
+ *  stay on screen either way. */
+export interface LensMatch { title: string; url: string; domain: string }
+export interface LensSearch {
+  ok: boolean;
+  engine?: string;
+  matches?: LensMatch[];
+  match_count?: number;
+  domains?: string[];
+  results_url?: string;
+  took_seconds?: number;
+  cached?: boolean;
+  challenged?: boolean;
+  reason?: string;
+}
+
 /** One platform's answer. `source` says whether the profile was *read* from an
  *  API or merely inferred from a URL probe — the two are not equally trustworthy
  *  and the UI labels them differently. */
@@ -617,8 +661,16 @@ export interface UsernameReport {
 
 export interface PrCampaign {
   id: string; type: string; type_label: string; confidence: number;
-  law_order_category: string; accounts: string[]; account_count: number; posts: number;
-  bot_ratio: number; sentiment_lean: string; sentiment_uniformity: number;
+  law_order_category: string; accounts: string[];
+  /** Independent actors — one organisation's several handles count once. */
+  account_count: number;
+  handle_count?: number;
+  /** Accounts in the cluster that ARE established public voices, listed so the
+   *  officer can see who was discounted from the roster and why. */
+  established_accounts?: string[];
+  posts: number;
+  bot_ratio: number; suspicious_ratio?: number;
+  sentiment_lean: string; sentiment_uniformity: number;
   reach_estimate: number; top_hashtags: string[]; why: string[]; sample_text: string;
   locations: string[]; first_seen: string;
   last_seen: string; spread_minutes: number; avg_concern: number; platforms: string[];
@@ -633,9 +685,20 @@ export interface ExplainResult {
   reason?: string;
 }
 
+/** A duplicate-copy cluster that is NOT a campaign — official desks or verified
+ *  accounts carrying the same notice. Shown so the officer can see the detector
+ *  considered it and why it was set aside, rather than wondering what happened
+ *  to a cluster they can see in the feed. */
+export interface PrSyndication {
+  id: string; accounts: string[]; actors: number; posts: number;
+  platforms: string[]; sentiment_lean: string; sample_text: string;
+  first_seen: string; why: string;
+}
 export interface PrReport {
   window_hours: number; campaigns_found: number; campaigns: PrCampaign[]; note: string;
   posts_scanned: number; clusters_found: number; neutral_clusters_ignored: number; min_accounts: number;
+  syndication_ignored?: number; syndication?: PrSyndication[];
+  weak_clusters_ignored?: number; min_confidence?: number;
 }
 
 // ── Administration ─────────────────────────────────────────────────────
@@ -997,6 +1060,16 @@ export const api = {
   },
   investigateImageFromUrl: (url: string) =>
     http<PostImageReport>("/api/investigate/image-from-url", { method: "POST", body: JSON.stringify({ url }) }),
+  /** Runs Google Lens server-side and returns the pages it found. Slow by
+   *  nature (a real browser drives a real search, ~15s), so the tool fires it
+   *  alongside the forensics rather than waiting for it. */
+  reverseImageSearch: (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return upload<LensSearch>("/api/investigate/reverse-image", fd);
+  },
+  reverseImageSearchUrl: (url: string) =>
+    http<LensSearch>("/api/investigate/reverse-image-url", { method: "POST", body: JSON.stringify({ url }) }),
   investigatePostMedia: (postId: string) =>
     http<PostImageReport>(`/api/investigate/post-media/${encodeURIComponent(postId)}`),
   /** `deep` runs the ~480-site sweep as well as the platform APIs. It is the

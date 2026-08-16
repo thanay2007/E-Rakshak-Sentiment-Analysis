@@ -137,15 +137,21 @@ def _score_cluster(group: list[Post]) -> tuple[float, list[str]]:
 def get_network(hours: int = 24, platform: str = "") -> dict:
     since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=hours)
     with session_scope() as s:
-        # Nine of thirty-eight columns — what clustering and scoring read, and
+        # Eleven of thirty-eight columns — what clustering and scoring read, and
         # nothing else. This is the widest window in the product (it can be
         # asked for a week), so it is also where fetching whole rows from a
         # remote database costs the most.
+        #
+        # id and translation are here only for the cluster payload's quoted
+        # sample. They are cheap, and leaving them out is not: a narrowed row
+        # raises AttributeError rather than returning None, so every request
+        # that detected a cluster used to 500 and the console showed an empty
+        # graph instead of the coordination it had just found.
         all_posts = s.exec(
-            select(Post.platform, Post.author_handle, Post.author_name,
+            select(Post.id, Post.platform, Post.author_handle, Post.author_name,
                    Post.author_followers, Post.author_account_age_days,
-                   Post.text, Post.hashtags, Post.sentiment_label,
-                   Post.concern_score, Post.created_at)
+                   Post.text, Post.translation, Post.hashtags,
+                   Post.sentiment_label, Post.concern_score, Post.created_at)
             .where(Post.created_at >= since)
         ).all()
     # tab badges always reflect the whole window; the graph uses the active filter
