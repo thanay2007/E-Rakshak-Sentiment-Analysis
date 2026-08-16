@@ -86,7 +86,11 @@ export interface EmergingItem {
   text: string;
   sentiment_label: string;
   concern_score: number;
-  spread_score: number;
+  /** Triage rank, 0-100. How alarming the claim is, whether it carries rumour
+   *  phrasing, and how much it is being passed on — NOT a spread measure. */
+  priority_score: number;
+  /** informational | opinion | call_to_action | rumor */
+  intent: string;
   source_count: number;
   url: string;
   location: string;
@@ -104,14 +108,14 @@ export interface EmergingData {
   /** Posts the detector actually read, so an empty list is not ambiguous. */
   scanned: number;
   /** Why the rest were filtered out — makes a short queue legible. */
-  dropped: Partial<Record<"established" | "low_concern" | "not_spreading" | "corroborated", number>>;
+  dropped: Partial<Record<"established" | "not_a_claim" | "low_concern" | "corroborated", number>>;
   platforms: string[];
   locations: string[];
   items: EmergingItem[];
 }
 export interface EmergingFilters {
   hours?: number; limit?: number; offset?: number;
-  platform?: string; location?: string; sentiment?: string; min_spread?: number;
+  platform?: string; location?: string; sentiment?: string; min_priority?: number;
 }
 
 export interface ModelVote {
@@ -233,13 +237,17 @@ export interface FeedPage {
 export interface Kpis {
   posts_monitored: number;
   posts_monitored_delta: number;
-  active_threats: number;
-  active_threats_delta: number;
-  critical_alerts: number;
-  critical_alerts_delta: number;
+  /** Alerts raised in the last 24h. */
+  alert_posts: number;
+  alert_posts_delta: number;
+  /** Critical alerts still sitting in "new" — the subset nobody has touched. */
+  critical_alerts_open: number;
+  /** Coordinated inauthentic messaging clusters in the last 48h. */
+  fake_pr_campaigns: number;
+  /** Single-source, uncorroborated claims in the 24h triage queue. */
+  unverified_rumours: number;
   platforms_online: number;
   platforms_total: number;
-  campaigns: number;
 }
 
 export interface Stats {
@@ -569,7 +577,14 @@ export interface ImageReport {
  *  and the UI labels them differently. */
 export interface UsernameHit {
   site: string; category: string; url: string; status: string; http: number | null;
-  source: "api" | "probe";
+  /** How the finding was obtained, weakest claim last:
+   *  "api"      — the platform's own profile endpoint answered
+   *  "preview"  — Meta's public link-preview card (Instagram / Threads / Facebook)
+   *  "mirror"   — X's profile data relayed by a third party
+   *  "sherlock" — the ~480-site sweep, using that site's own "no such user"
+   *               signature and re-tested against a handle nobody owns
+   *  "probe"    — a plain page fetch, the weakest of the five */
+  source: "api" | "preview" | "mirror" | "sherlock" | "probe";
   handle: string; display_name: string; bio: string; avatar: string;
   followers: number | null; created_at: string; verified: boolean;
   location: string; link: string;
@@ -585,7 +600,13 @@ export interface RelatedAccount {
 }
 export interface UsernameReport {
   username: string; valid: boolean; error?: string; results: UsernameHit[];
-  summary: { found: number; not_found: number; blocked: number; unknown: number; checked: number; via_api: number };
+  summary: {
+    found: number; not_found: number; blocked: number; unknown: number;
+    checked: number; via_api: number; via_sweep?: number;
+    /** The site sweep's own tally. `unreliable` is sites that answered the same
+     *  for an invented handle, so their hit was discarded rather than shown. */
+    sherlock?: { checked: number; found: number; manifest: number; skipped: number; timed_out: number; unreliable: number; excluded?: number };
+  };
   related?: RelatedAccount[];
   identity?: {
     display_name: string; display_names: string[]; locations: string[]; links: string[];
@@ -873,6 +894,8 @@ export const api = {
   post: (id: string) => http<Post>(`/api/feed/${id}`),
   factCheckPost: (id: string) =>
     http<NonNullable<Post["fact_check"]>>(`/api/feed/${id}/fact-check`, { method: "POST" }),
+  translatePost: (id: string) =>
+    http<{ translation: string; cached: boolean }>(`/api/feed/${id}/translate`, { method: "POST" }),
   evidenceReport: (id: string) =>
     http<EvidenceReport>(`/api/feed/${id}/evidence-report`, { method: "POST" }),
   trends: (hours = 24) => http<Trends>(`/api/trends?hours=${hours}`),
@@ -976,8 +999,10 @@ export const api = {
     http<PostImageReport>("/api/investigate/image-from-url", { method: "POST", body: JSON.stringify({ url }) }),
   investigatePostMedia: (postId: string) =>
     http<PostImageReport>(`/api/investigate/post-media/${encodeURIComponent(postId)}`),
-  investigateUsername: (u: string, similar = true) =>
-    http<UsernameReport>(`/api/investigate/username?u=${encodeURIComponent(u)}&similar=${similar}`),
+  /** `deep` runs the ~480-site sweep as well as the platform APIs. It is the
+   *  slower half of the lookup (roughly 20s), which is why it is switchable. */
+  investigateUsername: (u: string, similar = true, deep = true) =>
+    http<UsernameReport>(`/api/investigate/username?u=${encodeURIComponent(u)}&similar=${similar}&deep=${deep}`),
   /** Model commentary on a report already on screen. The report is posted back
    *  rather than recomputed, so the explanation describes what the officer is
    *  actually looking at. */

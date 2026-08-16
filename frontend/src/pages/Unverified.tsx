@@ -15,9 +15,12 @@ import { safeHref } from "../lib/safeUrl";
 const WINDOWS = [6, 24, 72, 168];
 const PAGE_SIZE = 24;
 
-function spreadColor(v: number): string {
-  if (v >= 70) return "#EF4444";
-  if (v >= 55) return "#F59E0B";
+/** Priority bands. Lower than the old spread bands on purpose: priority is
+ *  dominated by how alarming the claim is, and a post has to be genuinely
+ *  hostile *and* rumour-shaped *and* travelling to clear 50. */
+function priorityColor(v: number): string {
+  if (v >= 50) return "#EF4444";
+  if (v >= 35) return "#F59E0B";
   return "#A855F7";
 }
 
@@ -31,7 +34,7 @@ function timeAgo(iso: string): string {
 
 function Row({ it }: { it: EmergingItem }) {
   const { openPostId } = usePostDetail();
-  const color = spreadColor(it.spread_score);
+  const color = priorityColor(it.priority_score);
   return (
     <div
       role="button"
@@ -46,9 +49,9 @@ function Row({ it }: { it: EmergingItem }) {
         <div className="grid shrink-0 place-items-center rounded-xl border px-2.5 py-1.5"
           style={{ borderColor: `${color}55`, backgroundColor: `${color}14` }}>
           <span className="font-mono text-lg font-black leading-none" style={{ color }}>
-            {Math.round(it.spread_score)}
+            {Math.round(it.priority_score)}
           </span>
-          <span className="mt-0.5 text-[8.5px] uppercase tracking-wider text-slate-500">spread</span>
+          <span className="mt-0.5 text-[8.5px] uppercase tracking-wider text-slate-500">priority</span>
         </div>
 
         <div className="min-w-0 flex-1">
@@ -111,7 +114,7 @@ export default function Unverified() {
   const platform = get("platform", "");
   const location = get("location", "");
   const sentiment = get("sentiment", "");
-  const minSpread = getNumber("min_spread", 0);
+  const minPriority = getNumber("min_priority", 0);
   const page = getNumber("page", 0);
 
   const [data, setData] = useState<EmergingData | null>(null);
@@ -124,23 +127,23 @@ export default function Unverified() {
     setErr(null);
     api.emerging({
       hours, platform, location, sentiment,
-      min_spread: minSpread, limit: PAGE_SIZE, offset: page * PAGE_SIZE,
+      min_priority: minPriority, limit: PAGE_SIZE, offset: page * PAGE_SIZE,
     })
       .then((d) => { if (alive) setData(d); })
       .catch((e) => { if (alive) setErr((e as Error).message); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [hours, platform, location, sentiment, minSpread, page]);
+  }, [hours, platform, location, sentiment, minPriority, page]);
 
   const total = data?.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const filtered = Boolean(platform || location || sentiment || minSpread);
+  const filtered = Boolean(platform || location || sentiment || minPriority);
 
   const stats = useMemo(() => {
     const items = data?.items ?? [];
     return {
-      critical: items.filter((i) => i.spread_score >= 70).length,
-      negative: items.filter((i) => i.sentiment_label === "negative").length,
+      critical: items.filter((i) => i.priority_score >= 50).length,
+      rumourShaped: items.filter((i) => i.intent === "rumor" || i.intent === "call_to_action").length,
     };
   }, [data]);
 
@@ -159,10 +162,10 @@ export default function Unverified() {
           </div>
           <div>
             <h1 className="text-sm font-black uppercase tracking-wider text-white sm:text-base">
-              Unverified Claims · Rumour Triage Queue
+              Unverified Claims · Check Before They Spread
             </h1>
             <p className="text-xs text-slate-400">
-              Posts travelling fast that no second source has corroborated — the window to check before one goes viral
+              Posts spreading fast that no other source has confirmed — check these before a rumour goes viral
             </p>
           </div>
         </div>
@@ -181,8 +184,8 @@ export default function Unverified() {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
           ["In queue", total, "#F59E0B"],
-          ["High spread (≥70)", stats.critical, "#EF4444"],
-          ["Negative on this page", stats.negative, "#A855F7"],
+          ["High priority (≥50)", stats.critical, "#EF4444"],
+          ["Rumour-shaped on this page", stats.rumourShaped, "#A855F7"],
           ["Posts scanned", data?.scanned ?? 0, "#64748B"],
         ].map(([label, n, color]) => (
           <GlassCard key={label as string} className="p-3.5">
@@ -221,18 +224,18 @@ export default function Unverified() {
           </select>
 
           <label className="flex items-center gap-2 text-[11px] text-slate-400">
-            <TrendingUp size={12} /> min spread
-            <input type="range" min={0} max={90} step={5} value={minSpread}
-              onChange={(e) => setFilter("min_spread", Number(e.target.value))}
+            <TrendingUp size={12} /> min priority
+            <input type="range" min={0} max={80} step={5} value={minPriority}
+              onChange={(e) => setFilter("min_priority", Number(e.target.value))}
               className="w-24 accent-[#14B8C4]" />
-            <span className="w-6 font-mono text-slate-200">{minSpread}</span>
+            <span className="w-6 font-mono text-slate-200">{minPriority}</span>
           </label>
 
           {filtered && (
             <button
               onClick={() => {
                 set("platform", ""); set("location", ""); set("sentiment", "");
-                set("min_spread", 0); set("page", 0);
+                set("min_priority", 0); set("page", 0);
               }}
               className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-slate-300 hover:text-accent">
               <RotateCcw size={12} /> Clear
@@ -277,9 +280,13 @@ export default function Unverified() {
             <p className="px-1 pt-1 text-[11px] leading-relaxed text-slate-600">
               Of {data.scanned.toLocaleString()} posts scanned:{" "}
               {(data.dropped.established ?? 0).toLocaleString()} came from established channels
-              (verified or 100k+ followers — they corroborate claims rather than start them),{" "}
+              (verified, 100k+ followers, or posting at news-desk volume — they corroborate claims
+              rather than start them),{" "}
+              {(data.dropped.not_a_claim ?? 0).toLocaleString()} asserted nothing checkable
+              (praise, reel captions, walls of hashtags),{" "}
               {(data.dropped.low_concern ?? 0).toLocaleString()} were not alarming enough to triage,
-              and {(data.dropped.not_spreading ?? 0).toLocaleString()} were not actually travelling.
+              and {(data.dropped.corroborated ?? 0).toLocaleString()} were already corroborated
+              by another account or by the news index.
             </p>
           )}
 

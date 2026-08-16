@@ -16,22 +16,22 @@ interface Tool {
 const TOOLS: Tool[] = [
   {
     id: "image",
-    label: "Image & Reverse Forensics",
-    desc: "EXIF metadata, tampering heatmaps, deepfake probability & web reverse search",
+    label: "Photo & Video Check",
+    desc: "Check whether a photo or video was edited or AI-made, and find where else it has been posted",
     icon: Image,
     el: <ImageTool />,
   },
   {
     id: "username",
-    label: "Cross-Platform Username",
-    desc: "Read the handle's profile on every platform with an API, then correlate them into one identity",
+    label: "Username Search",
+    desc: "Search one username across the big platforms and ~480 other websites, then see which accounts are the same person",
     icon: AtSign,
     el: <UsernameTool />,
   },
   {
     id: "pr",
-    label: "Coordinated Narrative PR",
-    desc: "Detect astroturfed law-and-order narratives and manufactured outrage",
+    label: "Coordinated Campaigns",
+    desc: "Find many accounts pushing the same message at the same time — an organised or paid campaign",
     icon: Megaphone,
     el: <PrTool />,
   },
@@ -81,7 +81,7 @@ export default function Investigate() {
           <strong className="text-slate-200">{tool.label}</strong>: {tool.desc}
         </span>
         <span className="hidden md:inline-flex items-center gap-1 font-mono text-[11px] text-accent">
-          <ShieldCheck size={13} /> Active Cyber Forensic Module
+          <ShieldCheck size={13} /> Tool in use
         </span>
       </div>
 

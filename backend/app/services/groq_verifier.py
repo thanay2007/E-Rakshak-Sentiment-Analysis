@@ -30,10 +30,10 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 
 from app.config import SENTIMENT_LABELS, settings
 from app.ml import ensemble
+from app.ml.language import has_indic_content
 from app.ml.score import concern_score
 
 log = logging.getLogger("sentinel.groq")
@@ -215,26 +215,37 @@ _TRANSLATE_SYSTEM = (
 
 TRANSLATE_MAX_PER_TICK = 40
 
-# Devanagari + Gujarati script ranges: posts mixing scripts are often
-# language-detected as "English" but still need a gloss for the analyst.
-_INDIC_RE = re.compile("[ऀ-ॿ઀-૿]")
-
 
 def needs_translation(text: str, nlp: dict) -> bool:
+    """Should this post carry an English gloss?
+
+    Not the same question as "is this post non-English". A post can be labeled
+    English by the detector — because it is English, apart from the two words
+    that carry the grievance — and still be unreadable to the officer it is
+    escalated to. `has_indic_content` is the loose test: any Devanagari or
+    Gujarati character, or any single unambiguous romanized marker, qualifies.
+    """
     if nlp.get("translation"):
         return False
     lang = nlp.get("language")
-    return bool((lang and lang != "English") or _INDIC_RE.search(text))
+    return bool((lang and lang != "English") or has_indic_content(text))
 
 
-async def translate_enriched(texts: list[str], enriched: list[dict]) -> int:
-    """Fill in an English translation for every post that needs one (non-English
-    or containing Indic script) in a freshly enriched batch (mutates
-    nlp["translation"]). Returns how many were done."""
+async def translate_enriched(texts: list[str], enriched: list[dict],
+                             *, force: bool = False) -> int:
+    """Fill in an English translation for every post that needs one (see
+    `needs_translation`) in a freshly enriched batch (mutates
+    nlp["translation"]). Returns how many were done.
+
+    `force` translates the whole batch regardless of the detected language —
+    for the analyst-triggered single-post route, where a human has already
+    decided the post needs a gloss.
+    """
     if not enabled():
         return 0
     candidates = [
-        i for i, n in enumerate(enriched) if needs_translation(texts[i], n)
+        i for i, n in enumerate(enriched)
+        if force or needs_translation(texts[i], n)
     ][:TRANSLATE_MAX_PER_TICK]
     if not candidates:
         return 0

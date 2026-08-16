@@ -1,5 +1,6 @@
-import { HelpCircle, TrendingDown, TrendingUp } from "lucide-react";
+import { ArrowUpRight, HelpCircle, TrendingDown, TrendingUp } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { Link } from "react-router-dom";
 import { useCountUp } from "../hooks/useCountUp";
 import GlassCard from "./GlassCard";
 import Sparkline from "./Sparkline";
@@ -14,6 +15,10 @@ interface Props {
   icon: LucideIcon;
   invertDelta?: boolean; // for metrics where "up" is bad (threats)
   tooltip?: string;
+  /** Where this number can be worked on. A KPI an officer cannot open is a
+   *  number to look at rather than a place to start, so every tile that has a
+   *  page behind it links to it. */
+  to?: string;
 }
 
 /** Animated KPI tile with balanced proportions and uniform height. */
@@ -27,15 +32,18 @@ export default function StatTile({
   icon: Icon,
   invertDelta = false,
   tooltip,
+  to,
 }: Props) {
   const ref = useCountUp(value);
   const up = (delta ?? 0) >= 0;
   const good = invertDelta ? !up : up;
 
-  return (
+  const body = (
     <GlassCard
       hover
-      className="reveal-item group relative flex h-[126px] flex-col justify-between overflow-hidden rounded-2xl border border-white/[0.08] bg-base-950/70 p-3.5 backdrop-blur-xl transition-all duration-200 hover:border-white/20 hover:shadow-lg"
+      className={`reveal-item group relative flex h-[126px] flex-col justify-between overflow-hidden rounded-2xl border border-white/[0.08] bg-base-950/70 p-3.5 backdrop-blur-xl transition-all duration-200 hover:border-white/20 hover:shadow-lg${
+        to ? " cursor-pointer hover:border-accent/40" : ""
+      }`}
     >
       <div
         className="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full blur-2xl transition-opacity duration-300 group-hover:opacity-100 opacity-40"
@@ -79,9 +87,15 @@ export default function StatTile({
           <div className="mt-0.5 flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
             <span className="truncate">{label}</span>
             {tooltip && (
-              <span title={tooltip} className="cursor-help text-slate-500 hover:text-slate-300">
+              <span title={tooltip} className="shrink-0 cursor-help text-slate-500 hover:text-slate-300">
                 <HelpCircle size={11} />
               </span>
+            )}
+            {to && (
+              <ArrowUpRight
+                size={12}
+                className="shrink-0 text-slate-600 transition-colors group-hover:text-accent"
+              />
             )}
           </div>
         </div>
@@ -94,6 +108,15 @@ export default function StatTile({
       </div>
     </GlassCard>
   );
+
+  // `block` matters: without it the anchor is inline and the tile no longer
+  // fills its grid cell, so a linked tile sits shorter than its neighbours.
+  return to ? (
+    <Link to={to} className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 rounded-2xl"
+      aria-label={`${label}: ${value}${suffix}`}>
+      {body}
+    </Link>
+  ) : body;
 }
 
 

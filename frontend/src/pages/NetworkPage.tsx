@@ -173,10 +173,10 @@ export default function NetworkPage() {
           </div>
           <div>
             <h1 className="text-sm font-black uppercase tracking-wider text-white sm:text-base">
-              Social Network & Influence Centrality Topology
+              Social Network Map & Key Accounts
             </h1>
             <p className="text-xs text-slate-400">
-              Cross-platform link analysis · Coordinated bot swarms · Astroturfed narrative detection
+              Who is connected to whom · Which accounts drive the conversation · Which groups post together
             </p>
           </div>
         </div>
@@ -460,8 +460,8 @@ export default function NetworkPage() {
           {/* Influence roster */}
           <GlassCard className="p-4 border border-white/[0.08]">
             <SectionTitle
-              title="Top Influential Nodes"
-              sub="Ranked by degree centrality"
+              title="Most Influential Accounts"
+              sub="Most connected accounts first"
               right={<Radar size={15} className="text-accent" />}
             />
             {loading && !data ? (
@@ -496,8 +496,8 @@ export default function NetworkPage() {
       {/* Coordinated Clusters */}
       <GlassCard className="p-4 border border-white/[0.08]">
         <SectionTitle
-          title="Coordinated Narrative Clusters"
-          sub={data ? `${data.clusters.length} synchronized bot / astroturf clusters detected` : undefined}
+          title="Groups Posting Together"
+          sub={data ? `${data.clusters.length} groups of accounts posting the same thing at the same time` : undefined}
           right={<Bot size={16} className="text-threat-critical" />}
         />
         {loading && !data ? (

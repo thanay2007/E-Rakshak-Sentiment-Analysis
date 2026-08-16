@@ -85,6 +85,47 @@ def get_post(post_id: str, session: Session = Depends(get_session)) -> dict:
     return post_to_dict(post, full=True)
 
 
+@router.post("/feed/{post_id}/translate")
+async def translate_post(post_id: str) -> dict:
+    """Translate one post to English on demand, from the detail drawer.
+
+    The ingest pipeline translates what it detects, and detection is a
+    heuristic: a post carrying one Gujarati word inside English prose, or a
+    transliteration the marker list has never seen, can still reach an analyst
+    with no gloss. This is the manual override for exactly that — the analyst
+    can always ask, whatever the detector concluded, and the answer is stored
+    on the post so nobody pays for it twice.
+    """
+    from app.services.groq_verifier import enabled, translate_enriched
+
+    with session_scope() as s:
+        post = s.get(Post, post_id)
+        if not post:
+            raise HTTPException(404, "Post not found")
+        if post.translation:
+            return {"translation": post.translation, "cached": True}
+        text, language = post.text, post.language
+    if not text.strip():
+        raise HTTPException(422, "Post has no text to translate")
+    if not enabled():
+        raise HTTPException(503, "Translation is unavailable — no LLM key is "
+                                 "configured on this deployment")
+    # Forced: the batch helper skips anything it considers already-English, and
+    # an analyst asking for a translation has overruled that judgement.
+    enriched = [{"language": language, "translation": ""}]
+    await translate_enriched([text], enriched, force=True)
+    translation = enriched[0].get("translation", "")
+    if not translation:
+        raise HTTPException(502, "The translator did not answer — try again")
+    with session_scope() as s:
+        post = s.get(Post, post_id)
+        if post:
+            post.translation = translation
+            s.add(post)
+            s.commit()
+    return {"translation": translation, "cached": False}
+
+
 @router.post("/feed/{post_id}/fact-check")
 async def fact_check_post(post_id: str) -> dict:
     """Analyst-triggered cross-source corroboration from the detail drawer:

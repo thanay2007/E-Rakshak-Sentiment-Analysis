@@ -227,10 +227,10 @@ export default function Reports() {
           </div>
           <div>
             <h1 className="text-sm font-black uppercase tracking-wider text-white sm:text-base">
-              Intelligence Dossiers & Incident Reports
+              Reports & Case Files
             </h1>
             <p className="text-xs text-slate-400">
-              Automated briefing generator · Formal PDF escalation packets · Evidence timeline exports
+              Make a briefing, a PDF to send up the chain, or an evidence timeline for the case file
             </p>
           </div>
         </div>

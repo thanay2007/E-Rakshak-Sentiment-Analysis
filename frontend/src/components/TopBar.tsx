@@ -56,15 +56,22 @@ export default function TopBar() {
 
   return (
     <>
-      <header className="sticky top-0 z-20 flex h-14 items-center gap-3.5 border-b border-white/[0.08] bg-base-900/80 px-5 sm:px-6 backdrop-blur-xl">
-        <form onSubmit={submit} className="relative w-full max-w-xs sm:max-w-sm md:max-w-md">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+      {/* Everything on this bar is sized to one 36px control height and
+          vertically centred against it. Before, the clock, the LIVE pill, the
+          icon buttons and the identity block each set their own padding, so
+          nothing shared a baseline — and the identity block's two lines,
+          having no width limit, wrapped a long unit name ("SURAT CITY POLICE
+          COMMISSIONERATE") onto a third line and pushed the sign-out button
+          off the end of the bar. */}
+      <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-white/[0.08] bg-base-900/80 px-5 backdrop-blur-xl sm:px-6">
+        <form onSubmit={submit} className="relative h-9 w-full max-w-xs sm:max-w-sm md:max-w-md">
+          <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             ref={searchInputRef}
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search posts, handles, hashtags… (press /)"
-            className="w-full rounded-xl border border-white/[0.1] bg-white/[0.05] py-2 pl-9 pr-8 text-xs text-slate-100 placeholder:text-slate-500 focus:border-accent/60 focus:bg-white/[0.07] focus:outline-none transition-all"
+            className="h-full w-full rounded-xl border border-white/[0.1] bg-white/[0.05] pl-9 pr-8 text-xs text-slate-100 transition-all placeholder:text-slate-500 focus:border-accent/60 focus:bg-white/[0.07] focus:outline-none"
             aria-label="Global search"
           />
           <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-white/10 bg-white/[0.06] px-1.5 py-0.5 font-mono text-[9px] text-slate-400">
@@ -77,7 +84,7 @@ export default function TopBar() {
             navigate(e.target.value ? `/app/feed?language=${encodeURIComponent(e.target.value)}` : "/app/feed")
           }
           defaultValue=""
-          className="rounded-xl border border-white/[0.1] bg-base-800 pl-2.5 pr-8 py-2 text-xs text-slate-300 hover:border-white/20 focus:border-accent/60 focus:outline-none"
+          className="hidden h-9 shrink-0 rounded-xl border border-white/[0.1] bg-base-800 pl-2.5 pr-8 text-xs text-slate-300 hover:border-white/20 focus:border-accent/60 focus:outline-none sm:block"
           aria-label="Language quick filter"
         >
           <option value="">All languages</option>
@@ -88,14 +95,16 @@ export default function TopBar() {
           ))}
         </select>
 
-        <div className="ml-auto flex items-center gap-3 sm:gap-4">
-          <span className="hidden font-mono text-[11px] text-slate-400 md:block">
+        <div className="ml-auto flex items-center gap-2.5">
+          {/* Fixed width and tabular figures: a clock that reflows the whole
+              bar once a second as digit widths change is its own bug. */}
+          <span className="hidden w-[5.75rem] shrink-0 text-right font-mono text-[11px] tabular-nums leading-none text-slate-400 lg:block">
             {clock.toLocaleTimeString("en-IN", { hour12: false })} IST
           </span>
 
-          <span className="flex items-center gap-2 text-[11px] font-bold tracking-widest">
+          <span className="hidden h-9 shrink-0 items-center gap-1.5 rounded-xl border border-white/[0.08] bg-white/[0.03] px-2.5 text-[11px] font-bold tracking-widest md:inline-flex">
             <span
-              className={`pulse-dot inline-block h-2 w-2 rounded-full ${
+              className={`pulse-dot inline-block h-2 w-2 shrink-0 rounded-full ${
                 connected ? "bg-threat-neutral text-threat-neutral" : "bg-slate-500 text-slate-500"
               }`}
             />
@@ -106,7 +115,7 @@ export default function TopBar() {
 
           <button
             onClick={() => setGuideOpen(true)}
-            className="flex items-center gap-1.5 rounded-xl border border-accent/30 bg-accent/10 px-2.5 py-1.5 text-xs font-semibold text-accent transition-colors hover:bg-accent/20"
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-accent/30 bg-accent/10 px-2.5 text-xs font-semibold text-accent transition-colors hover:bg-accent/20"
             aria-label="Open Guide"
             title="Operations Guide"
           >
@@ -116,7 +125,7 @@ export default function TopBar() {
 
           <button
             onClick={toggleTheme}
-            className="relative rounded-xl border border-white/[0.08] p-2 text-slate-300 hover:bg-white/[0.08]"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-white/[0.08] text-slate-300 hover:bg-white/[0.08]"
             aria-label="Toggle theme"
             title="Toggle Day/Night Mode"
           >
@@ -128,7 +137,7 @@ export default function TopBar() {
               setSeen(liveAlerts.length);
               navigate("/app/alerts");
             }}
-            className="relative rounded-xl border border-white/[0.08] p-2 text-slate-300 hover:bg-white/[0.08]"
+            className="relative grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-white/[0.08] text-slate-300 hover:bg-white/[0.08]"
             aria-label={`Alerts (${unread} unread)`}
             title="Incidents & Alerts"
           >
@@ -140,15 +149,24 @@ export default function TopBar() {
             )}
           </button>
 
-          <div className="flex items-center gap-2.5 border-l border-white/[0.08] pl-3">
-            <span className="flex h-8 w-8 items-center justify-center rounded-full border border-accent/40 bg-accent/15 text-accent shadow-sm">
+          <div className="flex h-9 shrink-0 items-center gap-2.5 border-l border-white/[0.08] pl-3">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-accent/40 bg-accent/15 text-accent shadow-sm">
               <UserRound size={15} />
             </span>
-            <div className="hidden leading-tight lg:block">
-              <div className="text-xs font-semibold text-slate-200">
+            {/* Capped and truncated on both lines. The full name and unit stay
+                available on hover, which is the right trade for a bar that has
+                to keep the sign-out button reachable. */}
+            <div className="hidden max-w-[13rem] min-w-0 leading-tight xl:block">
+              <div
+                className="truncate text-xs font-semibold text-slate-200"
+                title={user?.full_name || user?.username || ""}
+              >
                 {user?.full_name || user?.username || "—"}
               </div>
-              <div className="font-mono text-[10px] uppercase text-slate-400">
+              <div
+                className="truncate font-mono text-[10px] uppercase text-slate-400"
+                title={[user?.role, user?.badge_number || user?.unit].filter(Boolean).join(" · ")}
+              >
                 {[user?.role, user?.badge_number || user?.unit].filter(Boolean).join(" · ") || "—"}
               </div>
             </div>
@@ -157,7 +175,7 @@ export default function TopBar() {
                 await signOut();
                 navigate("/login", { replace: true });
               }}
-              className="rounded-xl border border-white/[0.08] p-2 text-slate-400 hover:bg-red-500/10 hover:border-red-500/30 hover:text-red-300"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-white/[0.08] text-slate-400 hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-300"
               aria-label="Sign out"
               title="Sign out"
             >

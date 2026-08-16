@@ -138,10 +138,10 @@ export default function Trends() {
           </div>
           <div>
             <h1 className="text-sm font-black uppercase tracking-wider text-white sm:text-base">
-              Sentiment Trends & Spike Radar
+              Sentiment Trends & Sudden Spikes
             </h1>
             <p className="text-xs text-slate-400">
-              Sentiment over time · term velocity with z-score spikes · platform, language and district breakdown
+              How the mood has changed, which words are suddenly rising, and where — by platform, language and district
             </p>
           </div>
         </div>
@@ -213,7 +213,7 @@ export default function Trends() {
       <GlassCard className="p-4">
         <SectionTitle
           title="Sentiment Over Time"
-          sub={`Post volume split by sentiment across the last ${hours < 72 ? `${hours} hours` : `${hours / 24} days`}`}
+          sub={`How many posts were positive, negative or neutral in the last ${hours < 72 ? `${hours} hours` : `${hours / 24} days`}`}
           right={<Activity size={15} className="text-accent" />}
         />
         {loading && !data ? <SkeletonChart h={260} /> : (
@@ -239,7 +239,7 @@ export default function Trends() {
         <GlassCard className="p-4">
           <SectionTitle
             title="Trending Hashtags"
-            sub="Fastest accelerating tags — click one to open the feed filtered to it"
+            sub="Tags rising fastest right now — click one to read those posts"
             right={
               <div className="relative">
                 <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
@@ -267,7 +267,7 @@ export default function Trends() {
         <GlassCard className="p-4">
           <SectionTitle
             title="Trending Keywords"
-            sub="Evidence terms extracted from analysed posts"
+            sub="Words appearing most often in the posts we checked"
             right={<Hash size={15} className="text-threat-inflammatory" />}
           />
           {loading && !data ? <SkeletonRow n={6} /> : (
@@ -287,7 +287,7 @@ export default function Trends() {
       <GlassCard className="p-4">
         <SectionTitle
           title="Where It Is Being Said"
-          sub="Volume and hostility per platform — click to open the feed for that platform"
+          sub="How many posts on each platform and how angry they are — click to read them"
           right={<Globe2 size={15} className="text-accent" />}
         />
         {loading && !data ? <SkeletonRow n={3} /> : (
@@ -326,7 +326,7 @@ export default function Trends() {
         <GlassCard className="p-4 xl:col-span-2">
           <SectionTitle
             title="District Heatmap"
-            sub="Circle size = post volume, colour = average concern score"
+            sub="Bigger circle = more posts · Redder colour = higher concern"
             right={<MapPinned size={15} className="text-accent" />}
           />
           {loading && !data ? <SkeletonChart h={240} /> : (
@@ -368,7 +368,7 @@ export default function Trends() {
         <GlassCard className="p-4">
           <SectionTitle
             title="Language Distribution"
-            sub="Detected scripts & code-mixed dialects"
+            sub="Which languages the posts are written in, including mixed ones"
             right={<Globe2 size={15} className="text-accent" />}
           />
           {loading && !data ? <SkeletonChart h={200} /> : (

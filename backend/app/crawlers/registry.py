@@ -56,6 +56,30 @@ def get_active_collectors() -> list[Collector]:
     return collectors
 
 
+def instagram_session_collector() -> InstagrapiCollector | None:
+    """The one live instagrapi adapter, for callers outside collection.
+
+    The username lookup reads profiles through this same instance on purpose:
+    it caches an authenticated client, so a lookup rides the session collection
+    has already established rather than logging in again. A second login from
+    the same address is what gets an Instagram account challenged.
+    """
+    for _, adapters in _PLATFORMS:
+        for adapter in adapters:
+            if isinstance(adapter, InstagrapiCollector):
+                return adapter
+    return None
+
+
+def x_session_collector() -> TwikitXCollector | None:
+    """Same idea for X — the twikit adapter's cookie session, shared."""
+    for _, adapters in _PLATFORMS:
+        for adapter in adapters:
+            if isinstance(adapter, TwikitXCollector):
+                return adapter
+    return None
+
+
 def platform_status() -> list[dict]:
     """One row per platform. `adapter` names the route actually in use, so an
     analyst can tell official-API traffic from the keyless fallback."""

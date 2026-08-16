@@ -105,8 +105,8 @@ export default function ImageTool() {
   return (
     <div className="space-y-4">
       <GlassCard className="p-4">
-        <SectionTitle title="Image & Video Forensics"
-          sub="Upload an image or video, pull it straight from a post URL, or grab a flagged post from the live feed — then trace where else it appears." />
+        <SectionTitle title="Photo & Video Check"
+          sub="Upload a photo or video, paste a post link, or pick a flagged post from the feed. We check whether it was edited or AI-made, and find where else it has been posted." />
 
         <div className="mb-3 flex gap-1.5">
           {MODES.map(({ id, label, icon: Icon }) => (

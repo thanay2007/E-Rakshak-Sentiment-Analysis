@@ -375,3 +375,66 @@ def test_the_original_language_is_restored_before_reading():
 def test_the_translation_affordance_is_not_part_of_the_message():
     post = _one_post("રસ્તો બંધ છે See original")
     assert post.text == "રસ્તો બંધ છે"
+
+
+# ── auth: the session handshake ─────────────────────────────────────────────
+#
+# Not the parsing half, but the half that decides whether there is anything to
+# parse. Both cases below were live failures where a *working* credential was
+# reported as expired, and neither is visible from the outside: the adapter
+# just says Facebook is offline and stops.
+
+class _RecordingDriver:
+    """The four driver calls `_apply_cookies` makes, in the order it makes
+    them. Enough to assert the handshake's shape without starting Chrome."""
+
+    def __init__(self):
+        self.calls: list[str] = []
+        self.cookies: list[dict] = [
+            # what the persistent profile is holding: a session Facebook has
+            # already refused, which is the state that triggers the bug
+            {"name": "c_user", "value": "old"}, {"name": "xs", "value": "dead"},
+            {"name": "datr", "value": "device"},
+        ]
+
+    def get(self, url):
+        self.calls.append(f"get:{url}")
+
+    def delete_all_cookies(self):
+        self.calls.append("clear")
+        self.cookies = []
+
+    def add_cookie(self, cookie):
+        self.calls.append(f"add:{cookie['name']}")
+        self.cookies.append(cookie)
+
+    def get_cookies(self):
+        return self.cookies
+
+
+def test_a_stale_session_is_cleared_before_a_new_one_is_applied():
+    """Adding a fresh c_user/xs on top of the profile's dead pair does not
+    replace the session — Facebook drops both and serves the login page, so a
+    correctly-copied cookie is reported as "expired or revoked" and whoever is
+    debugging goes back to the browser to copy it again."""
+    driver = _RecordingDriver()
+    FacebookScrapeCollector()._apply_cookies(
+        driver, [{"name": "c_user", "value": "fresh"},
+                 {"name": "xs", "value": "fresh"}])
+
+    assert "clear" in driver.calls, "the profile's dead session was left in place"
+    # Clearing has to happen after the domain is loaded (add_cookie needs it)
+    # and before anything is added, or it wipes what we just applied.
+    assert driver.calls.index("clear") > driver.calls.index("get:https://www.facebook.com/")
+    assert driver.calls.index("clear") < driver.calls.index("add:c_user")
+    assert {c["value"] for c in driver.get_cookies()} == {"fresh"}
+
+
+def test_pages_are_opened_without_waiting_for_a_load_event():
+    """A Facebook feed with a live connection never fires `load`, so a
+    normal-strategy `driver.get` burns the full page-load timeout and then
+    raises a renderer timeout — against credentials that were working."""
+    import inspect
+
+    signature = inspect.signature(FacebookScrapeCollector._build_driver)
+    assert signature.parameters["page_load_strategy"].default == "eager"

@@ -467,6 +467,41 @@ class Settings(BaseSettings):
     # construction, so it grants nothing beyond the rate limit.
     GITHUB_TOKEN: str = ""
 
+    # Sherlock's site manifest. Only the JSON is used — for each of ~480 sites
+    # it records the profile URL and, crucially, how that host says "no such
+    # user", which is the part a naive 200/404 probe gets wrong. The checking
+    # itself is this console's own async client; nothing shells out to the
+    # sherlock CLI, so nothing else from that project is vendored.
+    #
+    # A copy ships at app/osint/resources/sherlock_data.json and is what the
+    # console normally reads. This path is an optional override: unpack a newer
+    # `sherlock-master/` next to the repo and it wins, no release needed.
+    SHERLOCK_DIR: Path = BASE_DIR.parent / "sherlock-master"
+    SHERLOCK_ENABLED: bool = True
+    # Per-site timeout. Deliberately short: one slow forum must not hold up a
+    # sweep of hundreds of sites, and "no answer in 6s" is reported as unknown
+    # rather than guessed either way.
+    SHERLOCK_TIMEOUT: float = 6.0
+    # Whole-sweep budget. Whatever has not answered by then is abandoned and
+    # counted as timed-out, so the officer always gets an answer on screen.
+    SHERLOCK_BUDGET: float = 35.0
+    SHERLOCK_CONCURRENCY: int = 40
+    # Adult sites in the manifest are skipped by default — same default as the
+    # sherlock CLI. `?nsfw=true` on the lookup endpoint includes them.
+    SHERLOCK_INCLUDE_NSFW: bool = False
+    # Sherlock's upstream list of sites whose "no such user" fingerprint has
+    # drifted into reporting a hit for everyone. Its CLI honours it by default.
+    SHERLOCK_HONOR_EXCLUSIONS: bool = True
+
+    # X closed its logged-out profile page, so with no X_BEARER_TOKEN and no
+    # crawler session the only remaining read is an open-source relay of X's
+    # own profile data (api.fxtwitter.com / api.vxtwitter.com). It is a third
+    # party: it learns which handle was looked up, though nothing about who
+    # asked. Findings that come through it are labelled `source: "mirror"` in
+    # the response so an officer can weigh them accordingly. Set false to keep
+    # every lookup first-hand and accept "blocked" for X instead.
+    X_PUBLIC_MIRRORS: bool = True
+
     # Reddit official OAuth API (script app: client id + secret)
     REDDIT_CLIENT_ID: str = ""
     REDDIT_CLIENT_SECRET: str = ""

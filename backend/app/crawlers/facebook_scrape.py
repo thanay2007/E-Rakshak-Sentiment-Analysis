@@ -638,16 +638,27 @@ class FacebookScrapeCollector(Collector):
 
     # ---- browser ----------------------------------------------------------
 
-    def _build_driver(self, page_load_strategy: str = "normal"):
+    def _build_driver(self, page_load_strategy: str = "eager"):
         """A Chrome in the persistent profile.
 
-        `page_load_strategy` is "eager" for the discovery command, and the
-        reason is measured rather than theoretical: Facebook's search results
-        page never fires the load event — a feed with a live connection never
-        finishes loading — so a normal-strategy `driver.get` sits there until
-        PAGE_LOAD_TIMEOUT expires, turning a 25-second search into 70. Eager
-        returns at DOMContentLoaded, which loses nothing here because every
-        caller waits for the JS-rendered content explicitly afterwards.
+        "eager" is the default, and the reason is measured rather than
+        theoretical: a Facebook feed with a live connection never fires the
+        load event, so a normal-strategy `driver.get` sits there until
+        PAGE_LOAD_TIMEOUT expires and then raises. That is every page this
+        adapter opens once it is actually logged in — the home feed the cookie
+        routes land on, every seed page `_scrape_page` reads, and the search
+        results page discovery uses.
+
+        It was previously "normal" everywhere except discovery, which made a
+        *successful* login indistinguishable from a broken one: the cookies
+        would be accepted, the feed would render, the load event would never
+        arrive, and the route would fail 45 seconds later with "timeout:
+        Timed out receiving message from renderer" — a network-shaped error
+        that says nothing about auth, reported against credentials that were
+        working.
+
+        Eager returns at DOMContentLoaded and loses nothing, because every
+        caller here waits for the JS-rendered content explicitly afterwards.
         """
         from selenium import webdriver
         from selenium.webdriver.chrome.options import Options
@@ -696,6 +707,22 @@ class FacebookScrapeCollector(Collector):
         # add_cookie only accepts cookies for the domain currently loaded, so
         # the (logged-out) shell has to be fetched first.
         driver.get("https://www.facebook.com/")
+        # Then clear what the profile is already holding, and this is the whole
+        # ballgame: the persistent profile keeps the *previous* session, and by
+        # the time this route runs that session has already been refused (the
+        # profile route is tried first and is why we are here). Adding a fresh
+        # c_user/xs alongside a dead one does not replace the session, it
+        # presents Facebook with a contradictory pair — and Facebook's answer
+        # is to drop `c_user` and `xs` entirely and serve the login page. What
+        # that looks like from here is a brand-new, correctly-copied cookie
+        # being "expired or revoked", which sends whoever is debugging it back
+        # to the browser to copy it again.
+        #
+        # Clearing takes `datr` with it. That is acceptable and tested: the jar
+        # carries FB_DATR when it is configured, and where it is not, Facebook
+        # issues a new device cookie and accepts the session rather than
+        # refusing an unknown device outright.
+        driver.delete_all_cookies()
         for cookie in cookies:
             entry = {"name": cookie["name"], "value": cookie["value"],
                      "domain": cookie.get("domain", ".facebook.com"),

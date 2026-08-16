@@ -19,7 +19,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import String, cast
+from sqlalchemy import String, cast, or_
 from sqlmodel import Session, col, func, select
 
 from app.config import BASE_DIR, settings
@@ -52,9 +52,14 @@ def system_status(session: Session = Depends(get_session)) -> dict:
     }
     newest = session.exec(select(func.max(Post.created_at))).one()
     oldest = session.exec(select(func.min(Post.created_at))).one()
+    # A code-mixed post labeled English still needs a gloss — detect_language
+    # sets that flag precisely for the English-with-one-Gujarati-word case.
+    # (History predating the flag is picked up by /admin/relabel-languages;
+    # the backfill itself re-checks every candidate's text regardless.)
     untranslated = session.exec(
         select(func.count()).select_from(Post)
-        .where(Post.language != "English").where(Post.translation == "")
+        .where(Post.translation == "")
+        .where(or_(Post.language != "English", col(Post.code_mixed).is_(True)))
     ).one()
     return {
         "uptime_seconds": round(time.time() - _STARTED_AT),
@@ -103,24 +108,40 @@ async def test_llm() -> dict:
     return {"ok": True, "model": model, "latency_ms": ms}
 
 
+#: How many untranslated posts the backfill reads before picking its batch.
+#: Candidacy is decided by `needs_translation` on the text, which SQL cannot
+#: express — so rows are scanned newest-first and filtered here. Bounded so the
+#: endpoint stays a request rather than a table walk.
+_TRANSLATE_SCAN = 2000
+
+
 @router.post("/admin/translate-missing")
 async def translate_missing(limit: int = Query(40, ge=1, le=200)) -> dict:
-    """Backfill English translations for stored non-English posts that never
-    got one (e.g. because the LLM budget was drained at ingest time)."""
-    from app.services.groq_verifier import translate_enriched
+    """Backfill English translations for stored posts that never got one (e.g.
+    because the LLM budget was drained at ingest time).
+
+    Candidates are *not* selected as `language != 'English'`. That misses the
+    posts this most needs to catch: the ones written in English apart from the
+    Gujarati clause in the middle, which the detector labels English and an
+    officer still cannot read. The same `needs_translation` rule the ingest
+    pipeline uses decides here, so the two can never disagree.
+    """
+    from app.services.groq_verifier import needs_translation, translate_enriched
 
     with session_scope() as s:
-        posts = s.exec(
-            select(Post).where(Post.language != "English")
+        rows = s.exec(
+            select(Post.id, Post.text, Post.language)
             .where(Post.translation == "")
-            .order_by(col(Post.created_at).desc()).limit(limit)
+            .order_by(col(Post.created_at).desc()).limit(_TRANSLATE_SCAN)
         ).all()
-        ids = [p.id for p in posts]
-        texts = [p.text for p in posts]
-        langs = [p.language for p in posts]
-    if not posts:
+    candidates = [r for r in rows
+                  if needs_translation(r.text, {"language": r.language})]
+    batch = candidates[:limit]
+    if not batch:
         return {"translated": 0, "remaining_candidates": 0}
-    enriched = [{"language": lang, "translation": ""} for lang in langs]
+    ids = [r.id for r in batch]
+    texts = [r.text for r in batch]
+    enriched = [{"language": r.language, "translation": ""} for r in batch]
     n = await translate_enriched(texts, enriched)
     with session_scope() as s:
         for pid, e in zip(ids, enriched):
@@ -130,11 +151,7 @@ async def translate_missing(limit: int = Query(40, ge=1, le=200)) -> dict:
                     post.translation = e["translation"]
                     s.add(post)
         s.commit()
-        remaining = s.exec(
-            select(func.count()).select_from(Post)
-            .where(Post.language != "English").where(Post.translation == "")
-        ).one()
-    return {"translated": n, "remaining_candidates": remaining}
+    return {"translated": n, "remaining_candidates": max(0, len(candidates) - n)}
 
 
 @router.post("/admin/relabel-languages")

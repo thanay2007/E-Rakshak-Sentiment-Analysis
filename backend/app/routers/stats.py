@@ -1,5 +1,6 @@
 """GET /api/stats — every number the dashboard KPIs and overview charts need,
 including LIVE classification accuracy against simulated ground truth."""
+import logging
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 
@@ -10,7 +11,10 @@ from app.config import SENTIMENT_LABELS, settings
 from app.crawlers.registry import platform_status
 from app.database import get_session
 from app.models import Alert, Post
+from app.osint.pr_analysis import campaign_count
+from app.services.emerging import detect_emerging
 
+log = logging.getLogger("sentinel.stats")
 router = APIRouter()
 
 
@@ -37,8 +41,7 @@ def get_stats(session: Session = Depends(get_session)) -> dict:
     # downstream is unchanged.
     posts24 = session.exec(
         select(Post.created_at, Post.platform, Post.sentiment_label,
-               Post.sentiment_label, Post.concern_score, Post.cluster_id,
-               Post.true_label)
+               Post.concern_score, Post.true_label)
         .where(Post.created_at >= since24)
     ).all()
     alerts24 = session.exec(
@@ -52,12 +55,27 @@ def get_stats(session: Session = Depends(get_session)) -> dict:
 
     # "Flagged" = negative sentiment that is also getting traction. The score
     # already weights negativity, but the tag check keeps the KPI honest:
-    # this number is what the label on the dashboard says it is.
+    # this number is what the label on the dashboard says it is. Still used by
+    # the per-platform bar chart, which shows flagged volume per source.
     flagged24 = [p for p in posts24
                  if p.sentiment_label == "negative"
                  and p.concern_score >= settings.ALERT_THRESHOLD]
-    campaigns = len({p.cluster_id for p in posts24 if p.cluster_id})
     platforms = platform_status()
+
+    # The three tiles an officer can act on, each the headline number of a page
+    # they can open. A KPI with no page behind it is decoration: "Bot Swarm
+    # Campaigns: 3" named a cluster count with nothing to click through to,
+    # while the actual coordinated-campaign detector sat unlinked on another
+    # screen. Both of these come from caches primed by the ingestion tick — the
+    # dashboard polls this endpoint every fifteen seconds and neither scan is
+    # anywhere near that cheap to run on demand.
+    alert_posts = len(alerts24)
+    fake_pr_campaigns = campaign_count()
+    try:
+        unverified_rumours = detect_emerging(24, limit=1)["total"]
+    except Exception:                       # a cold/failed scan is not a stats outage
+        log.warning("unverified-rumour count failed", exc_info=True)
+        unverified_rumours = 0
 
     # KPI deltas: last 12h vs previous 12h
     def _delta(items, ts=lambda p: p.created_at):
@@ -95,13 +113,16 @@ def get_stats(session: Session = Depends(get_session)) -> dict:
         "kpis": {
             "posts_monitored": total_posts,
             "posts_monitored_delta": _delta(posts24),
-            "active_threats": len(flagged24),
-            "active_threats_delta": _delta(flagged24),
-            "critical_alerts": open_critical,
-            "critical_alerts_delta": _delta([a for a in alerts24 if a.severity == "critical"]),
+            # Alerts raised in the last 24h, and how many of those are critical
+            # and still unhandled — the tile shows the first and the tooltip
+            # the second, so "12 alerts" never hides "and 4 are untouched".
+            "alert_posts": alert_posts,
+            "alert_posts_delta": _delta(alerts24),
+            "critical_alerts_open": open_critical,
+            "fake_pr_campaigns": fake_pr_campaigns,
+            "unverified_rumours": unverified_rumours,
             "platforms_online": sum(1 for p in platforms if p["online"]),
             "platforms_total": len(platforms),
-            "campaigns": campaigns,
         },
         "sparklines": {
             "posts": _hour_buckets(posts24, 24),
@@ -134,18 +155,20 @@ def models() -> dict:
 @router.get("/emerging")
 def emerging(hours: int = 24, limit: int = 40, offset: int = 0,
              platform: str = "", location: str = "", sentiment: str = "",
-             min_spread: float = 0.0) -> dict:
-    """Posts spreading fast from a single, uncorroborated source — flagged for
-    police to check before a possible rumour goes viral.
+             min_priority: float = 0.0, min_spread: float = 0.0) -> dict:
+    """Alarming claims from a single, uncorroborated source — flagged for police
+    to check before a possible rumour goes viral.
 
     Paged and filterable so the dashboard can show the top few while the
     dedicated review page walks the whole set.
-    """
-    from app.services.emerging import detect_emerging
 
+    `min_spread` is the old name for `min_priority` and is still accepted: the
+    triage page writes its filters into the URL precisely so a view can be
+    handed to the next shift as a link, and those links outlive a rename.
+    """
     return detect_emerging(
         hours=max(1, min(hours, 168)),
         limit=max(1, min(limit, 200)), offset=max(0, offset),
         platform=platform, location=location, sentiment=sentiment,
-        min_spread=max(0.0, min(min_spread, 100.0)),
+        min_priority=max(0.0, min(min_priority or min_spread, 100.0)),
     )

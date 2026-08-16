@@ -130,6 +130,9 @@ export default function PostDetail({
   const [faceReport, setFaceReport] = useState<PostImageReport | null>(null);
   const [faceChecking, setFaceChecking] = useState(false);
   const [facePreviewUrl, setFacePreviewUrl] = useState<string | null>(null);
+  const [translation, setTranslation] = useState<string | null>(null);
+  const [translating, setTranslating] = useState(false);
+  const [translateError, setTranslateError] = useState<string | null>(null);
 
   useEffect(() => {
     setFactCheck(null);
@@ -137,6 +140,8 @@ export default function PostDetail({
     setDossier(null);
     setDossierError(false);
     setFaceReport(null);
+    setTranslation(null);
+    setTranslateError(null);
   }, [post?.id]);
 
   // Automatic — no button to press. Any post with attached media gets its
@@ -221,6 +226,20 @@ export default function PostDetail({
   const consensus = post?.sentiment_consensus;
   const fc = post ? factCheck ?? post.fact_check : undefined;
   const faceOutcomes = buildFaceOutcomes(faceReport?.analysis?.forensics?.face_matches, faceReport?.identification);
+  const englishGloss = translation ?? post?.translation ?? "";
+
+  const runTranslate = async () => {
+    if (!post || translating) return;
+    setTranslating(true);
+    setTranslateError(null);
+    try {
+      setTranslation((await api.translatePost(post.id)).translation);
+    } catch (e) {
+      setTranslateError((e as Error).message || "Translation failed — try again.");
+    } finally {
+      setTranslating(false);
+    }
+  };
 
   const generateDossier = async () => {
     if (!post || dossierBusy) return;
@@ -428,22 +447,35 @@ export default function PostDetail({
                     </div>
                     <p className="glass p-3 text-[13.5px] leading-relaxed text-slate-200">{post.text}</p>
                   </div>
-                  {post.translation && post.translation !== post.text ? (
+                  {/* Every post gets the option, whatever the detector
+                      concluded — one Gujarati word inside English prose is
+                      below every language threshold and is still the clause an
+                      officer cannot read. */}
+                  {englishGloss && englishGloss !== post.text ? (
                     <div>
                       <div className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                         <Languages size={11} /> English translation
                       </div>
                       <p className="glass p-3 text-[13px] italic leading-relaxed text-slate-400">
-                        {post.translation}
+                        {englishGloss}
                       </p>
                     </div>
                   ) : (
-                    post.language !== "English" && (
-                      <p className="text-[10.5px] italic text-slate-600">
-                        No English translation on record for this post yet — run
-                        “Backfill translations” from Settings to fill the gap.
-                      </p>
-                    )
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={runTranslate}
+                        disabled={translating}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-accent/30 bg-accent/10 px-2.5 py-1.5 text-[11px] font-semibold text-accent transition-colors hover:bg-accent/20 disabled:opacity-50"
+                      >
+                        <Languages size={12} />
+                        {translating ? "Translating…" : "Translate to English"}
+                      </button>
+                      <span className="text-[10.5px] italic text-slate-600">
+                        {translateError
+                          ? translateError
+                          : "No English translation on record for this post yet."}
+                      </span>
+                    </div>
                   )}
                   {(post.media_urls?.length ?? 0) > 0 && (
                     <div>
