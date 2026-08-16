@@ -10,12 +10,14 @@ Rate limits: 10,000 quota units per day (shared quota for all operations).
 """
 import logging
 import random
+import re
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from app.config import settings
 from app.crawlers.base import Collector
-from app.ml.geo import CITIES, infer_city
+from app.ml.geo import dominant_city, infer_city
 from app.schemas import RawPost
 
 log = logging.getLogger("sentinel.crawlers")
@@ -26,6 +28,60 @@ _COST_LIST = 1        # videos.list / channels.list / commentThreads.list
 
 # YouTube resets project quota at midnight Pacific, not UTC.
 _QUOTA_TZ = ZoneInfo("America/Los_Angeles")
+
+# Rotated across cycles, one per search call. `relevanceLanguage` takes a single
+# ISO-639-1 code — a list is a hard 400 — and it *biases* ranking rather than
+# filtering, so highly relevant results in other languages still come back.
+# Rotating covers the languages these cities actually post in (English, Hindi,
+# Gujarati, and the romanized Hinglish/Gujlish that ride on the first) without
+# any of the three crowding out the others.
+_RELEVANCE_LANGUAGES = ("en", "hi", "gu")
+
+
+def _norm(s: str) -> str:
+    """Lowercase + NFC, so Indic text typed on two keyboards still matches
+    (the same reason app/ml/geo.py normalises before it looks for a city)."""
+    return unicodedata.normalize("NFC", s or "").lower()
+
+
+def _mentions(term: str, blob: str) -> bool:
+    """Does `blob` actually contain the searched term?
+
+    Multi-word terms are matched word by word rather than as a phrase: YouTube
+    ranks "rasta roko" against a title that says "roko" in one line and "rasta"
+    in another, and that is a genuine match. Words shorter than four characters
+    are ignored on their own — "ho", "jam" and "an" hit everything.
+    """
+    needle = _norm(term).strip()
+    if not needle:
+        return False
+    if needle in blob:
+        return True
+    words = [w for w in re.split(r"\s+", needle) if len(w) >= 4]
+    return bool(words) and all(w in blob for w in words)
+
+
+def _is_relevant(term: str, blob: str) -> bool:
+    """Is this search result actually about the thing that was searched for?
+
+    Deliberately a *relevance* test and never a language one. This console's
+    rule is that nothing is dropped for the script it is written in — that is
+    an evasion route, and a Gujarati or Urdu post about Surat has to reach an
+    officer exactly like an English one does. What is dropped here is a video
+    that has nothing to do with the query or the city, in any language.
+
+    The gap this closes is real and was measured on the live corpus: 51 Chinese
+    and Korean short-drama videos were stored as posts from Surat, because the
+    search term was pushed into the query, YouTube ranked whatever it liked,
+    and the adapter then stamped the city onto every result it got back. They
+    are not quiet noise — they inflate Surat's volume on the district heatmap
+    and are sentiment-scored as if a resident wrote them.
+
+    The channel's country was tried as a third signal and dropped: measured
+    over four live queries, `country == IN` was true of nearly every result
+    including the recipe videos and the cartoons, so it separates nothing.
+    """
+    return _mentions(term, blob) or bool(infer_city(blob))
 
 
 class YouTubeCollector(Collector):
@@ -116,6 +172,8 @@ class YouTubeCollector(Collector):
 
         self._roll_day()
         posts: list[RawPost] = []
+        searches = 0
+        dropped = 0
         # Search for recent videos (published in last 7 days)
         search_after = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
 
@@ -125,7 +183,12 @@ class YouTubeCollector(Collector):
                          self._spent)
                 break
             query = term if infer_city(term) else f"{term} {city}"
-            lat, lon = CITIES.get(city, (0.0, 0.0))
+            # No coordinates are taken from the query any more: the city a
+            # result is filed under now comes from the result's own text.
+            # One code per call, rotated per search, so a cycle covers all three
+            # rather than three cycles each covering one.
+            language = _RELEVANCE_LANGUAGES[searches % len(_RELEVANCE_LANGUAGES)]
+            searches += 1
             try:
                 # Search for videos
                 search_response = self.youtube.search().list(
@@ -135,10 +198,7 @@ class YouTubeCollector(Collector):
                     maxResults=10,
                     order="relevance",
                     publishedAfter=search_after,
-                    # No relevanceLanguage: the API takes a single ISO-639-1 code,
-                    # and a list is a hard 400. Pinning one of en/hi/gu would bias
-                    # results away from the other two — the multilingual mix is the
-                    # point here. The city in the query anchors the geography.
+                    relevanceLanguage=language,
                     regionCode="IN",
                 ).execute()
 
@@ -146,7 +206,7 @@ class YouTubeCollector(Collector):
                 # videos.list and channels.list both accept up to 50 comma-joined
                 # ids for the same 1 unit, so fetch the whole result page at once
                 # rather than paying per video.
-                stats_by_video = self._batch_stats(
+                videos = self._batch_videos(
                     [i["id"]["videoId"] for i in items]
                 )
                 channels = self._batch_channels(
@@ -157,13 +217,40 @@ class YouTubeCollector(Collector):
                     video_id = item["id"]["videoId"]
                     snippet = item["snippet"]
 
-                    stats = stats_by_video.get(video_id, {})
+                    video = videos.get(video_id, {})
+                    stats = video.get("statistics", {})
                     view_count = int(stats.get("viewCount", 0))
                     like_count = int(stats.get("likeCount", 0))
                     comment_count = int(stats.get("commentCount", 0))
 
                     channel_id = snippet["channelId"]
                     channel_name, channel_subs = channels.get(channel_id, ("", 0))
+
+                    # The *full* snippet, not the search result's: search
+                    # truncates the description to about 160 characters and
+                    # carries no tags at all, and both are where a video says
+                    # which city it is about. Same 1 quota unit either way.
+                    full = video.get("snippet", snippet)
+                    blob = _norm(" ".join((
+                        full.get("title", "") or snippet.get("title", ""),
+                        full.get("description", "") or snippet.get("description", ""),
+                        " ".join(full.get("tags", []) or []),
+                        snippet.get("channelTitle", ""), channel_name)))
+                    if not _is_relevant(term, blob):
+                        # Nothing ties it to the query or to any city we watch,
+                        # so it is not a post from here — and neither are its
+                        # comments, which is why this drops the whole video.
+                        dropped += 1
+                        continue
+
+                    # Geography from the text, not from the query. Searching
+                    # "बच्चा चोर Ahmedabad" returns child-lifting news from
+                    # Moradabad and Begusarai; stamping those Ahmedabad is what
+                    # put other states' incidents on Gujarat's heatmap. When
+                    # the video names no city we watch, its location is left
+                    # empty — unknown, rather than wrong.
+                    hit = dominant_city(blob)
+                    v_city, v_lat, v_lon = hit if hit else ("", 0.0, 0.0)
 
                     # Create a post for the video itself
                     url = f"https://www.youtube.com/watch?v={video_id}"
@@ -175,11 +262,22 @@ class YouTubeCollector(Collector):
                         RawPost(
                             platform="YouTube",
                             author_handle=snippet["channelTitle"],
+                            # The channel id, which survives a rename — the
+                            # field RawPost actually keeps. The `metadata=` this
+                            # adapter used to pass was silently dropped by the
+                            # model (it declares no such field), so the video
+                            # and channel ids never reached the database at all.
+                            author_id=channel_id,
                             author_name=channel_name or snippet["channelTitle"],
                             author_followers=channel_subs,
                             author_verified=False,
                             author_account_age_days=0,
-                            text=snippet["title"] + "\n\n" + snippet["description"],
+                            # The full description, not the search result's
+                            # ~160-character truncation — the sentiment models
+                            # score this text, and half a sentence is not what
+                            # the channel published.
+                            text=(full.get("title", "") or snippet["title"]) + "\n\n"
+                                 + (full.get("description", "") or snippet["description"]),
                             hashtags=[],
                             engagement={
                                 "likes": like_count,
@@ -188,10 +286,9 @@ class YouTubeCollector(Collector):
                             },
                             url=url,
                             created_at=created,
-                            location=city,
-                            latitude=lat,
-                            longitude=lon,
-                            metadata={"video_id": video_id, "channel_id": channel_id},
+                            location=v_city,
+                            latitude=v_lat,
+                            longitude=v_lon,
                         )
                     )
 
@@ -214,25 +311,40 @@ class YouTubeCollector(Collector):
                         ).execute()
 
                         for comment_item in comments_response.get("items", []):
+                            # The thread id, which is also the top-level
+                            # comment's id. `snippet.parentId` exists only on
+                            # *replies* — reading it here raised KeyError on
+                            # every single video, and the except below logged
+                            # that as "comments disabled", so this adapter has
+                            # never collected a YouTube comment at all. On a
+                            # municipal page the caption is a press release and
+                            # the grievance is thirty comments down, so this one
+                            # key was costing the console the better half of the
+                            # platform.
+                            thread_id = comment_item["id"]
                             comment = comment_item["snippet"]["topLevelComment"]["snippet"]
                             author = comment["authorDisplayName"]
-                            author_url = comment.get("authorChannelUrl", "")
                             author_channel_id = (
                                 comment.get("authorChannelId", {}).get("value", "")
                             )
 
-                            # A comment inherits the city its video was found
-                            # under; if the text names a different one, that wins.
-                            # infer_city returns (city, lat, lon) or None — the
-                            # tuple must not reach RawPost.location, which is str.
-                            c_city, c_lat, c_lon = city, lat, lon
-                            if (hit := infer_city(comment["textDisplay"])):
-                                c_city, c_lat, c_lon = hit
+                            # A comment inherits the city resolved for its video
+                            # — which may be none — and if its own text names a
+                            # city, that wins. infer_city returns (city, lat,
+                            # lon) or None; the tuple must not reach
+                            # RawPost.location, which is a str.
+                            c_city, c_lat, c_lon = v_city, v_lat, v_lon
+                            if (where := infer_city(comment["textDisplay"])):
+                                c_city, c_lat, c_lon = where
 
                             posts.append(
                                 RawPost(
                                     platform="YouTube",
                                     author_handle=author,
+                                    # The commenter's own channel id — the one
+                                    # thing that still identifies them after a
+                                    # display-name change.
+                                    author_id=author_channel_id,
                                     author_name=author,
                                     author_followers=0,  # YT API doesn't expose subscriber count for commenters
                                     author_verified=False,
@@ -243,20 +355,13 @@ class YouTubeCollector(Collector):
                                         "likes": comment.get("likeCount", 0),
                                         "replies": comment_item["snippet"]["totalReplyCount"],
                                     },
-                                    url=f"{url}&lc={comment['parentId']}",
+                                    url=f"{url}&lc={thread_id}",
                                     created_at=datetime.fromisoformat(
                                         comment["publishedAt"].replace("Z", "+00:00")
                                     ).replace(tzinfo=None),
                                     location=c_city,
                                     latitude=c_lat,
                                     longitude=c_lon,
-                                    metadata={
-                                        "video_id": video_id,
-                                        "channel_id": channel_id,
-                                        "comment_id": comment["parentId"],
-                                        "author_channel_id": author_channel_id,
-                                        "is_comment": True,
-                                    },
                                 )
                             )
 
@@ -268,19 +373,28 @@ class YouTubeCollector(Collector):
                 log.warning("YouTube search for '%s' failed: %s", term, exc)
                 continue
 
+        if dropped:
+            log.info("YouTube: dropped %d search results unrelated to the query "
+                     "or the city (kept %d posts)", dropped, len(posts))
         return posts
 
-    def _batch_stats(self, video_ids: list[str]) -> dict[str, dict]:
-        """video_id -> statistics, in one call for the whole page."""
+    def _batch_videos(self, video_ids: list[str]) -> dict[str, dict]:
+        """video_id -> {"snippet", "statistics"}, in one call for the whole page.
+
+        `snippet` rides along for free — videos.list costs one unit however many
+        parts are asked for — and it is what makes the relevance test work: the
+        search result's description is truncated at ~160 characters and carries
+        no tags, which is where a video usually says which city it is about.
+        """
         if not video_ids or not self._afford(_COST_LIST):
             return {}
         try:
             resp = self.youtube.videos().list(
-                id=",".join(video_ids[:50]), part="statistics",
+                id=",".join(video_ids[:50]), part="snippet,statistics",
             ).execute()
-            return {i["id"]: i.get("statistics", {}) for i in resp.get("items", [])}
+            return {i["id"]: i for i in resp.get("items", [])}
         except Exception as exc:
-            log.warning("Could not fetch video stats: %s", exc)
+            log.warning("Could not fetch video details: %s", exc)
             return {}
 
     def _batch_channels(self, channel_ids: set[str]) -> dict[str, tuple[str, int]]:

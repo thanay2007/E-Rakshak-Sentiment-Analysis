@@ -48,7 +48,7 @@ export default function EmergingPanel() {
 
       {items.length === 0 ? (
         <div className="py-8 text-center text-xs text-slate-400">
-          No fast-spreading single-source posts detected in the last 24h window.
+          No single-source, uncorroborated claims in the last 24h window.
         </div>
       ) : (
         <div className="pr-1.5">
@@ -76,8 +76,11 @@ export default function EmergingPanel() {
                       </span>
                       {it.author_verified && <span className="text-[10px] text-sky-400 font-bold">✔</span>}
                     </div>
-                    <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 font-mono text-[10.5px] font-black text-amber-300">
-                      <TrendingUp size={11} /> spread {it.spread_score}
+                    <span
+                      title="Triage priority — how alarming the claim is, whether it uses rumour phrasing, and how far it has been passed on."
+                      className="inline-flex shrink-0 items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 font-mono text-[10.5px] font-black text-amber-300"
+                    >
+                      <TrendingUp size={11} /> priority {Math.round(it.priority_score)}
                     </span>
                   </div>
 

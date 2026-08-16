@@ -120,23 +120,41 @@ def _digest_username(report: dict) -> str:
     lines = [
         "TOOL: cross-platform username lookup with account correlation",
         f"handle searched: {report.get('username')}",
-        f"platforms checked: {summary.get('checked')}; accounts found: "
+        f"sites checked: {summary.get('checked')}; accounts found: "
         f"{summary.get('found')} ({summary.get('via_api')} read from a platform "
-        f"API, the rest inferred from a URL probe); blocked: "
+        f"API, {summary.get('via_sweep', 0)} confirmed by the site sweep, the rest "
+        f"inferred from a URL probe); blocked: "
         f"{summary.get('blocked')}; unknown: {summary.get('unknown')}",
         f"consensus display name: {_fence(identity.get('display_name', ''), 80)}",
         f"combined audience: {identity.get('total_reach')}",
     ]
+    sweep = summary.get("sherlock") or {}
+    if sweep:
+        lines.append(
+            f"site sweep: {sweep.get('checked')} of {sweep.get('manifest')} sites "
+            f"answered, {sweep.get('unreliable', 0)} discarded for answering the "
+            f"same to an invented handle")
+    # A sweep hit with no name, photo or following behind it is a link, not a
+    # profile. Listing eighty of them line by line would bury the handful the
+    # model can actually reason about, so they are named in one line instead.
+    bare: list[str] = []
     for hit in (report.get("results") or []):
         if hit.get("status") != "found":
             continue
         match = hit.get("match") or {}
+        if not (hit.get("display_name") or hit.get("bio") or hit.get("followers")):
+            bare.append(str(hit.get("site")))
+            continue
         lines.append(
             f"- {hit.get('site')} (@{hit.get('handle')}, source={hit.get('source')}, "
             f"followers={hit.get('followers')}, verified={hit.get('verified')}): "
             f"corroboration {match.get('confidence', 0)}%"
             + (f" because {'; '.join(match.get('why') or [])}" if match.get("why") else
                " — nothing else corroborates it"))
+    if bare:
+        lines.append(
+            f"handle also taken, with no readable profile behind it, on "
+            f"{len(bare)} site{'' if len(bare) == 1 else 's'}: {', '.join(bare[:40])}")
     related = report.get("related") or []
     lines.append(f"related accounts under different handles: {len(related)}")
     for acct in related[:6]:

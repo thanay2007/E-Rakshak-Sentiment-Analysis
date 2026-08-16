@@ -4,12 +4,12 @@ import {
   AlertOctagon,
   ArrowRight,
   ArrowUpRight,
-  Bot,
   CheckCircle2,
   Cpu,
+  Megaphone,
   Radio,
   RefreshCw,
-  Target,
+  ShieldQuestion,
   TrendingUp as TrendIcon,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -206,27 +206,31 @@ export default function Dashboard() {
             spark={stats.sparklines.posts}
             icon={Activity}
             color="#38BDF8"
-            tooltip="Total social media posts evaluated by NLP pipeline in the last 24h."
+            to="/app/feed"
+            tooltip="Every post the NLP pipeline has evaluated. Opens the full feed."
           />
           <StatTile
-            label="Negative Posts"
-            value={stats.kpis.active_threats}
-            delta={stats.kpis.active_threats_delta}
-            spark={stats.sparklines.threats}
-            color="#EF4444"
-            icon={Target}
-            invertDelta
-            tooltip="Posts tagged negative with a concern score of 50 or above — negative sentiment that is also getting traction."
-          />
-          <StatTile
-            label="Critical Incidents"
-            value={stats.kpis.critical_alerts}
-            delta={stats.kpis.critical_alerts_delta}
+            label="Alert Posts"
+            value={stats.kpis.alert_posts}
+            delta={stats.kpis.alert_posts_delta}
             spark={stats.sparklines.alerts}
-            color="#F59E0B"
+            color="#EF4444"
             icon={AlertOctagon}
             invertDelta
-            tooltip="Severe incidents escalated for law enforcement intervention."
+            to="/app/alerts"
+            tooltip={
+              `Posts that crossed the alert threshold in the last 24h — ${stats.kpis.critical_alerts_open} ` +
+              `critical alert${stats.kpis.critical_alerts_open === 1 ? " is" : "s are"} still unhandled. ` +
+              "Opens the Alerts queue."
+            }
+          />
+          <StatTile
+            label="Fake PR Campaigns"
+            value={stats.kpis.fake_pr_campaigns}
+            color="#A855F7"
+            icon={Megaphone}
+            to="/app/investigate?tab=pr"
+            tooltip="Clusters of accounts pushing near-identical copy in lock-step over the last 48h — manufactured narrative rather than organic opinion, filtered to the ones touching law and order. Opens the campaign detector."
           />
           <StatTile
             label="Platforms Online"
@@ -248,12 +252,13 @@ export default function Dashboard() {
             }
           />
           <StatTile
-            label="Bot Swarm Campaigns"
-            value={stats.kpis.campaigns}
-            color="#A855F7"
-            icon={Bot}
+            label="Unverified Rumours"
+            value={stats.kpis.unverified_rumours}
+            color="#F59E0B"
+            icon={ShieldQuestion}
             invertDelta
-            tooltip="Synchronized inauthentic account clusters spreading manufactured outrage."
+            to="/app/unverified"
+            tooltip="Alarming claims from a single account that no second source and no news index has corroborated — the window to check one before it goes viral. Opens the rumour triage queue."
           />
         </div>
       )}
@@ -262,21 +267,28 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         {/* Left 2 Cols: Live sentiment stream (fixed proportional height) */}
         <GlassCard className="flex flex-col p-4 xl:col-span-2 h-[620px]">
-          <div className="mb-3 flex flex-col gap-2.5 border-b border-white/[0.08] pb-3 sm:flex-row sm:items-center sm:justify-between shrink-0">
-            <div className="shrink-0 min-w-0">
+          {/* Title and controls are separate rows below `xl`, because four
+              filter pills plus the Full Feed button next to a two-line title
+              is what made this header wrap into a ragged stack. From `xl` up
+              the card is wide enough for one row, and the controls sit on a
+              single baseline with the title. */}
+          <div className="mb-3 flex flex-col gap-3 border-b border-white/[0.08] pb-3 shrink-0 xl:flex-row xl:items-start xl:justify-between">
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <Radio size={16} className="text-emerald-400 shrink-0" />
-                <h2 className="text-sm font-extrabold uppercase tracking-wider text-white whitespace-nowrap">
-                  Live OSINT Sentiment Stream
+                <h2 className="text-sm font-extrabold uppercase tracking-wider text-white">
+                  Live Social Media Feed
                 </h2>
               </div>
-              <p className="text-[11px] text-slate-400 mt-0.5">
-                Real-time multi-platform ingestion, sentiment tagging and concern scoring
+              <p className="mt-0.5 text-[11px] text-slate-400">
+                New posts as they arrive — each one marked positive, negative or neutral, with a concern score out of 100
               </p>
             </div>
 
-            {/* Quick Filter Pill Buttons */}
-            <div className="flex flex-wrap items-center gap-1.5">
+            {/* Quick filter pills. `shrink-0` on the row and fixed-width count
+                slots keep the four pills from resizing as their counts tick
+                over — a filter bar that jitters every poll is unusable. */}
+            <div className="flex shrink-0 flex-wrap items-center gap-1.5">
               {[
                 { id: "all", label: "All Feeds", color: "#38BDF8" },
                 { id: "negative", label: "Negative", color: SENTIMENT_COLORS.negative },
@@ -289,15 +301,20 @@ export default function Dashboard() {
                   <button
                     key={id}
                     onClick={() => setFeedThreatFilter(id)}
-                    className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-xs font-semibold transition-all ${
+                    aria-pressed={isSelected}
+                    className={`inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold leading-none transition-all ${
                       isSelected
                         ? "border-accent bg-accent/20 text-accent shadow-sm"
                         : "border-white/[0.08] bg-white/[0.02] text-slate-400 hover:border-white/20 hover:bg-white/[0.06] hover:text-slate-100"
                     }`}
                   >
-                    <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
                     <span>{label}</span>
-                    <span className={`font-mono text-[10px] ${isSelected ? "text-accent font-bold" : "text-slate-500"}`}>
+                    <span
+                      className={`min-w-[1.25rem] text-right font-mono text-[10px] tabular-nums ${
+                        isSelected ? "font-bold text-accent" : "text-slate-500"
+                      }`}
+                    >
                       {count}
                     </span>
                   </button>
@@ -306,7 +323,7 @@ export default function Dashboard() {
 
               <Link
                 to="/app/feed"
-                className="ml-0.5 inline-flex items-center gap-1 rounded-lg border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs font-bold text-accent hover:bg-accent/20 transition-all"
+                className="inline-flex h-7 items-center gap-1 rounded-lg border border-accent/40 bg-accent/10 px-2.5 text-xs font-bold leading-none text-accent transition-all hover:bg-accent/20"
               >
                 <span>Full Feed</span> <ArrowUpRight size={12} />
               </Link>

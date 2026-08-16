@@ -115,17 +115,22 @@ async def investigate_post_media(post_id: str, session: Session = Depends(get_se
 
 
 @router.get("/username", dependencies=[Expensive])
-async def investigate_username(u: str, similar: bool = True,
+async def investigate_username(u: str, similar: bool = True, deep: bool = True,
+                               nsfw: bool = False,
                                session: Session = Depends(get_session)) -> dict:
-    """Read the handle's profile on every platform that publishes one, then
-    correlate those profiles (and nearby handles) into one identity.
+    """Read the handle's profile on every platform that publishes one, sweep it
+    across the Sherlock site manifest, then correlate the lot into one identity.
 
     `similar=false` skips the variant/user-search pass, which is the expensive
     half — useful when an analyst only wants the direct footprint.
+    `deep=false` skips the ~480-site sweep, leaving only the platform reads.
+    `nsfw=true` includes the adult sites the manifest flags, which are skipped
+    by default.
     """
     from app.services.audit import log_action
-    log_action(session, "osint_username_lookup", u, {"similar": similar})
-    return await lookup_username(u, similar=similar)
+    log_action(session, "osint_username_lookup", u,
+               {"similar": similar, "deep": deep, "nsfw": nsfw})
+    return await lookup_username(u, similar=similar, deep=deep, nsfw=nsfw)
 
 
 @router.post("/explain", dependencies=[Expensive])

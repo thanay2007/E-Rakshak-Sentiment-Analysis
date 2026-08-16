@@ -128,8 +128,8 @@ export default function PrTool() {
     <div className="space-y-4">
       <GlassCard className="p-4">
         <SectionTitle
-          title="Coordinated Narrative Detection"
-          sub="Accounts pushing near-identical copy at the same time — outrage, whitewash or narrative push."
+          title="Coordinated Campaign Detection"
+          sub="Groups of accounts posting almost the same words at the same time — usually an organised or paid push."
           right={
             <div className="flex gap-1">
               {WINDOWS.map((w) => (

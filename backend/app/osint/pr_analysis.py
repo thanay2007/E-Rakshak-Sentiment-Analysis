@@ -19,6 +19,8 @@ Signals per candidate campaign (near-duplicate cluster across ≥3 accounts):
 """
 from __future__ import annotations
 
+import logging
+import time
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from statistics import mean
@@ -29,6 +31,9 @@ from app.database import session_scope
 from app.models import Post
 from app.ml.normalize import normalize
 from app.osint.bot_score import score_account
+
+log = logging.getLogger("sentinel.osint")
+
 
 def _shingles(text: str, n: int = 3) -> set:
     words = normalize(text).split()
@@ -263,3 +268,45 @@ def detect_pr_campaigns(hours: int = 48, min_accounts: int = 3) -> dict:
         "note": "A campaign here is ≥3 accounts posting near-identical copy. "
                 "Neutral clusters are ignored as ordinary syndication.",
     }
+
+
+# ── dashboard KPI ───────────────────────────────────────────────────────────
+#
+# The full detection is a shingle overlap plus a bot score per author over the
+# whole window — about five seconds on live data, which is why the endpoint
+# that serves it is marked Expensive. The dashboard polls its KPIs every
+# fifteen seconds, so the count gets its own small cache and is primed from the
+# ingestion tick, exactly as the emerging-rumour window is.
+
+_COUNT_CACHE: tuple[float, int] | None = None
+_COUNT_TTL = 600.0
+#: The window the dashboard tile reports on. Longer than the rumour queue's on
+#: purpose: a coordinated push is assembled over a day or two, and a 24h view
+#: cuts campaigns in half.
+KPI_WINDOW_HOURS = 48
+
+
+def campaign_count(*, refresh: bool = False) -> int:
+    """How many law-and-order fake-PR campaigns are live in the KPI window.
+
+    Returns the last known count on failure rather than raising: this feeds a
+    dashboard tile, and a detector that could not run is not the same thing as
+    zero campaigns — but neither is it a reason to fail the whole stats call.
+    """
+    global _COUNT_CACHE
+
+    if _COUNT_CACHE and not refresh and (time.monotonic() - _COUNT_CACHE[0]) < _COUNT_TTL:
+        return _COUNT_CACHE[1]
+    try:
+        found = detect_pr_campaigns(hours=KPI_WINDOW_HOURS)["campaigns_found"]
+    except Exception:
+        log.warning("fake-PR campaign count failed", exc_info=True)
+        return _COUNT_CACHE[1] if _COUNT_CACHE else 0
+    _COUNT_CACHE = (time.monotonic(), found)
+    return found
+
+
+def prime_count_cache() -> None:
+    """Recompute the KPI count ahead of anyone asking. Called off the event
+    loop from the ingestion tick; a cold cache is slow, not broken."""
+    campaign_count(refresh=True)

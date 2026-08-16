@@ -60,7 +60,12 @@ _NORM_CONFUSABLES = [_norm(c) for c in _CONFUSABLES]
 
 
 def infer_city(text: str) -> tuple[str, float, float] | None:
-    """Return (city, lat, lon) for the first known city mentioned, else None."""
+    """Return (city, lat, lon) for the first known city mentioned, else None.
+
+    "First" means first in the alias table, not first in the text — fine for a
+    short post, which usually names one place. Use `dominant_city` for anything
+    long enough to name several.
+    """
     low = _norm(text)
     for bad in _NORM_CONFUSABLES:  # drop look-alike place names before matching
         low = low.replace(bad, " ")
@@ -69,3 +74,32 @@ def infer_city(text: str) -> tuple[str, float, float] | None:
             lat, lon = CITIES.get(city, (0.0, 0.0))
             return city, lat, lon
     return None
+
+
+def dominant_city(text: str) -> tuple[str, float, float] | None:
+    """The city a longer text is actually *about*, not merely the first it names.
+
+    A YouTube description names several places — the incident's city, the
+    channel's own city, the other cities in its coverage list. `infer_city`
+    answers with whichever comes first in the alias table, so a bulletin
+    titled "Rajkot Bad Roads" was filed under Ahmedabad because the
+    description mentioned it further down. Most mentions wins; a tie goes to
+    whichever is named earliest in the text, which is nearly always the
+    headline.
+    """
+    low = _norm(text)
+    for bad in _NORM_CONFUSABLES:
+        low = low.replace(bad, " ")
+    scored: list[tuple[int, int, str]] = []
+    for city, aliases in _NORM_ALIASES.items():
+        hits = sum(low.count(a) for a in aliases)
+        if not hits:
+            continue
+        first = min((low.find(a) for a in aliases if a in low), default=len(low))
+        scored.append((-hits, first, city))
+    if not scored:
+        return None
+    scored.sort()
+    city = scored[0][2]
+    lat, lon = CITIES.get(city, (0.0, 0.0))
+    return city, lat, lon

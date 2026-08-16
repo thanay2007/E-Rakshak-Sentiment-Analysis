@@ -59,7 +59,7 @@ export default function AdminPanel() {
               Security Governance & Officer Registry
             </h1>
             <p className="text-xs text-slate-400">
-              Active Officer: <span className="font-mono font-bold text-accent">@{user?.username}</span> ({user?.role?.toUpperCase()}) · Strict append-only audit trail logging
+              Active Officer: <span className="font-mono font-bold text-accent">@{user?.username}</span> ({user?.role?.toUpperCase()}) · every action is recorded and cannot be edited or deleted
             </p>
           </div>
         </div>
@@ -139,7 +139,7 @@ function OfficersTab() {
       <GlassCard className="p-5">
         <SectionTitle
           title="Officer accounts"
-          sub="Rank decides what the server will allow, not what the UI shows."
+          sub="Rank decides what an officer is allowed to do — the server enforces it, not this screen."
           right={
             <button
               onClick={() => setShowCreate((s) => !s)}
@@ -464,7 +464,7 @@ function AuditTab() {
       <GlassCard className="p-5">
         <SectionTitle
           title="Chain of custody"
-          sub="Append-only — the database refuses UPDATE and DELETE on this table."
+          sub="Every action is written here permanently — nobody can edit or delete an entry."
           right={
             <button
               onClick={() => void load()}

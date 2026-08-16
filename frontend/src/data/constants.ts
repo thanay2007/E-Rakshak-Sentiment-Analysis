@@ -49,7 +49,11 @@ export function sentimentColor(label?: string): string {
   return SENTIMENT_COLORS[label ?? "neutral"] ?? "#64748B";
 }
 
-export const LANGUAGES = ["Gujarati", "Hindi", "Hinglish", "Gujlish", "English", "Mixed"];
+// "Other" is a post in a script none of the rest describe — Chinese, Korean,
+// Arabic. It is a filter, not a bin: those posts are collected and scored like
+// any other, and an officer needs to be able to pull them up (that is how a
+// batch of off-topic YouTube results was found).
+export const LANGUAGES = ["Gujarati", "Hindi", "Hinglish", "Gujlish", "English", "Mixed", "Other"];
 export const PLATFORMS = ["X", "Facebook", "Instagram", "Reddit", "Telegram", "YouTube"];
 
 export const ACCENT = "#F59E0B";

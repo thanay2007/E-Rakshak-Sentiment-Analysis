@@ -102,7 +102,7 @@ assistant_posts — one row per collected post
   id TEXT, platform TEXT ('X','Facebook','Instagram','Reddit','Telegram','YouTube')
   author_handle TEXT, author_followers INT, author_verified BOOL,
   author_account_age_days INT
-  language TEXT ('English','Hindi','Gujarati','Hinglish','Mixed'), code_mixed BOOL
+  language TEXT ('English','Hindi','Gujarati','Hinglish','Gujlish','Mixed','Other'), code_mixed BOOL
   sentiment_label TEXT ('positive','neutral','negative') — the post's only tag
   sentiment_score REAL (-1..1), sentiment_confidence REAL (0..1)
   intent TEXT ('informational','opinion','call_to_action','rumor')

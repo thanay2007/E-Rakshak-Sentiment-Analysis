@@ -75,14 +75,20 @@ async def _crawl_tick_inner() -> None:
         if n:
             log.debug("Ingested %d new posts", n)
 
-    # Rebuild the emerging-rumour window off the loop, so the first analyst to
-    # open the dashboard is served from a warm cache instead of waiting out a
-    # multi-second scan of every post's engagement and fact-check payload.
-    try:
-        from app.services.emerging import prime_cache
-        await asyncio.to_thread(prime_cache)
-    except Exception as exc:                      # noqa: BLE001 — never stall ingestion
-        log.debug("emerging cache prime skipped: %s", exc)
+    # Rebuild the dashboard's two expensive windows off the loop, so the first
+    # analyst to open it is served from a warm cache instead of waiting out a
+    # multi-second scan: the emerging-rumour queue (every post's engagement and
+    # fact-check payload) and the fake-PR campaign count (a shingle overlap
+    # plus a bot score per author).
+    from app.osint.pr_analysis import prime_count_cache
+    from app.services.emerging import prime_cache
+
+    for label, prime in (("emerging", prime_cache),
+                         ("fake-PR", prime_count_cache)):
+        try:
+            await asyncio.to_thread(prime)
+        except Exception as exc:                  # noqa: BLE001 — never stall ingestion
+            log.debug("%s cache prime skipped: %s", label, exc)
 
 
 def start_scheduler() -> None:

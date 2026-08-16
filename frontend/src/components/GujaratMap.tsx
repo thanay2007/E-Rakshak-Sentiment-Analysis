@@ -228,7 +228,7 @@ export default function GujaratMap({ regions }: { regions: Region[] }) {
 
       {/* Map Legend */}
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-1.5 font-mono text-[10.5px] text-slate-400">
-        <span>Click any district marker to pin geospatial metrics</span>
+        <span>Click a district to pin its numbers</span>
         <div className="flex items-center gap-3">
           {[["Calm (<18)", "#10B981"], ["Elevated (18-29)", "#A855F7"], ["High (30-44)", "#F59E0B"], ["Critical (45+)", "#EF4444"]].map(([label, c]) => (
             <span key={label} className="inline-flex items-center gap-1 font-medium">

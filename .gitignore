@@ -50,3 +50,9 @@ frontend/.env.local
 *.tsbuildinfo
 .DS_Store
 .playwright-mcp/
+
+# Optional local Sherlock checkout. Only its data.json is used and a copy is
+# bundled at backend/app/osint/resources/sherlock_data.json, so the 1.4 MB
+# upstream tree does not belong in this repo. Drop the folder here to override
+# the bundled manifest with a newer one.
+sherlock-master/

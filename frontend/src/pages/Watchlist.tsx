@@ -193,10 +193,10 @@ export default function Watchlist() {
           </div>
           <div>
             <h1 className="text-sm font-black uppercase tracking-wider text-white sm:text-base">
-              Autonomous Watchlist & Radar Rules
+              Watchlist · Words & Accounts We Track
             </h1>
             <p className="text-xs text-slate-400">
-              Steer crawler algorithms · Priority-ranked keywords, hashtags, handles & districts
+              Add a keyword, hashtag, handle or district and the system watches it for you, most important first
             </p>
           </div>
         </div>
@@ -242,7 +242,7 @@ export default function Watchlist() {
         <GlassCard className="border border-accent/25 bg-accent/[0.03] p-4">
           <SectionTitle
             title="Suggested Targets"
-            sub="Terms spiking negative in the last 24h that you are not watching yet"
+            sub="Words turning negative in the last 24 hours that you are not tracking yet"
             right={<Sparkles size={16} className="text-accent" />}
           />
           <div className="space-y-2">
@@ -312,8 +312,8 @@ export default function Watchlist() {
       {/* Preset Packs */}
       <GlassCard className="p-4 border border-white/[0.08]">
         <SectionTitle
-          title="Rapid-Deploy Threat Intelligence Packs"
-          sub="Curated term sets for emerging riots, scams, election rumors, and disaster misinformation"
+          title="Ready-Made Word Packs"
+          sub="Prepared word lists for riots, scams, election rumours and disaster fake news — add one in a click"
           right={<PackagePlus size={16} className="text-accent" />}
         />
         <div className="mt-3 flex flex-wrap gap-2">
@@ -435,7 +435,7 @@ export default function Watchlist() {
               <GlassCard key={k} className="reveal-item p-4 border border-white/[0.08]">
                 <SectionTitle
                   title={meta.label}
-                  sub={`${items.length} rules active · ${items.reduce((s, w) => s + (w.hits_7d ?? 0), 0)} hits in 7d window`}
+                  sub={`${items.length} being tracked · ${items.reduce((s, w) => s + (w.hits_7d ?? 0), 0)} matches in the last 7 days`}
                   right={<Icon size={16} style={{ color: meta.color }} />}
                 />
                 <div className="mt-3 max-h-96 space-y-2 overflow-y-auto pr-1">

@@ -101,7 +101,7 @@ export default function Settings() {
           <SettingsIcon size={18} className="text-accent" /> System
         </h1>
         <p className="text-xs text-slate-500">
-          operations console · collection health, analysis stack, evidence sources and corpus maintenance
+          is collection running, are the outside services working, and housekeeping for the stored posts
         </p>
       </div>
 
@@ -109,7 +109,7 @@ export default function Settings() {
       <GlassCard className="p-4">
         <SectionTitle
           title="Collection & Analysis"
-          sub="is the console actually watching anything right now"
+          sub="is the system collecting and analysing posts right now"
           right={<Activity size={15} className="text-slate-600" />}
         />
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -183,7 +183,7 @@ export default function Settings() {
       <GlassCard className="p-4">
         <SectionTitle
           title="External Services"
-          sub="what is reachable right now — keys are read from backend/.env and never shown here"
+          sub="which outside services are working — keys stay in backend/.env and are never shown here"
           right={<Bot size={15} className="text-slate-600" />}
         />
 
@@ -245,7 +245,7 @@ export default function Settings() {
       <GlassCard className="p-4">
         <SectionTitle
           title="Maintenance"
-          sub="actions that run against the live corpus"
+          sub="actions that change the stored posts"
           right={<RefreshCcw size={15} className="text-slate-600" />}
         />
         <div className="flex flex-wrap gap-2">
@@ -365,7 +365,7 @@ export default function Settings() {
       <GlassCard className="p-4">
         <SectionTitle
           title="Records & Retention"
-          sub="export for the case file · retention purge"
+          sub="download posts for a case file, or delete old ones"
           right={<Database size={15} className="text-slate-600" />}
         />
         <div className="flex flex-wrap items-center gap-2">

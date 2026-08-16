@@ -546,7 +546,7 @@ def _h_emerging(ctx: ToolContext, args: dict) -> ToolResult:
                     str(i.get("author_handle", "")), 40),
                 "sentiment_label": i.get("sentiment_label"),
                 "concern_score": i.get("concern_score"),
-                "spread_score": i.get("spread_score"),
+                "triage_priority": i.get("priority_score"),
                 "independent_sources": i.get("source_count")} for i in items]
 
     return ToolResult(
@@ -629,7 +629,11 @@ _PAGES = {
 # the assistant reach states the UI cannot represent or undo.
 
 _PLATFORMS = ("X", "Facebook", "Instagram", "Reddit", "Telegram", "YouTube")
-_LANGUAGES = ("Gujarati", "Hindi", "Hinglish", "Gujlish", "English", "Mixed")
+# "Other" is a real corpus value, not a placeholder: a post in a script none
+# of the labels above describe (Chinese, Korean, Arabic, …). An analyst has
+# to be able to filter for it — that is how the last batch of off-topic
+# YouTube results was found.
+_LANGUAGES = ("Gujarati", "Hindi", "Hinglish", "Gujlish", "English", "Mixed", "Other")
 _SENTIMENTS = ("negative", "neutral", "positive")
 _SORTS = ("recent", "score", "engagement")
 _SEVERITIES = ("critical", "high", "medium")
