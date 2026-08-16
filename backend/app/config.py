@@ -103,6 +103,39 @@ class Settings(BaseSettings):
     # refused when SIMULATION_ENABLED is false (i.e. a real deployment).
     BIOMETRIC_ENCRYPTION_KEY: str = ""
 
+    # Reference face gallery (osint/face_gallery.py) — a plain folder of known
+    # people, one sub-folder per person, matched alongside the suspect registry:
+    #
+    #   pics/Cristiano Ronaldo/*.jpg      pics/Lionel Messi/*.jpg
+    #
+    # Drop a photo in and the next lookup picks it up; no enrolment step and no
+    # restart. It is deliberately separate from the registry: a gallery hit says
+    # who is in the picture, a registry hit says they are on record, and those
+    # are not the same claim. Reference faces only — case biometrics belong in
+    # the registry, which is encrypted at rest.
+    FACE_GALLERY_DIR: Path = BASE_DIR.parent / "pics"
+
+    # ── automatic reverse-image search (osint/lens_search.py) ───────────────
+    # Runs Google Lens for the officer instead of handing them a link to it.
+    # Lens has no API and its results page needs JavaScript, so this drives the
+    # same headless Chrome the Facebook collector already depends on. Off means
+    # the tool falls back to the manual "continue on these engines" links.
+    LENS_ENABLED: bool = True
+    #: Chrome profile the search browses in. Persisting it is the single thing
+    #: that keeps Google serving results rather than its "unusual traffic"
+    #: challenge — a fresh profile per run is a brand-new browser per run.
+    LENS_PROFILE_DIR: Path = BASE_DIR / ".lens_profile"
+    #: False shows the window, which is how you find out what Google is actually
+    #: serving when a search starts coming back empty.
+    LENS_HEADLESS: bool = True
+    #: Ceiling on getting to a results page. A search that lands typically does
+    #: so in about eight seconds.
+    LENS_TIMEOUT: float = 45.0
+    #: Pause once the results URL settles, while the cards stream in. There is
+    #: no stable selector to wait on, so this is a real wait rather than a poll.
+    LENS_SETTLE_SECONDS: float = 5.0
+    LENS_MAX_RESULTS: int = 40
+
     # Trust X-Forwarded-For for client IPs in the audit log. Enable ONLY when a
     # reverse proxy you control sets that header, otherwise callers can forge it.
     TRUST_PROXY_HEADERS: bool = False

@@ -22,7 +22,7 @@ from sqlmodel import Session, col, or_, select
 from app.database import get_session
 from app.models import FaceSearchLog, Suspect, User
 from app.models.models import utcnow
-from app.osint import face_db
+from app.osint import face_db, face_gallery
 from app.osint.face_db import RECORD_TYPES, RISK_LEVELS, STATUSES
 from app.osint.face_detect import encode_reference, engine_status
 from app.osint.face_intel import build_identity_dossier, identify_faces
@@ -93,7 +93,63 @@ def face_engine(session: Session = Depends(get_session)) -> dict:
             "templates": sum(len(s.face_templates or []) for s in enrolled),
             "unenrolled_records": len(rows) - len(enrolled),
         },
+        "gallery": face_gallery.stats(session),
     }
+
+
+# ── reference gallery (known persons) ──────────────────────────────────────
+#
+# Separate from the registry above and reported separately everywhere: a
+# gallery hit says who is in a photo, a registry hit says they are on record.
+
+@router.get("/gallery")
+def list_gallery(with_photos: bool = False,
+                 session: Session = Depends(get_session)) -> dict:
+    """Everyone the console can put a name to, and the photos backing each.
+
+    Reading this also ingests anything new in the drop folder, so an operator
+    who has just added a photo sees it here without any further action.
+    """
+    return {"stats": face_gallery.stats(session),
+            "people": face_gallery.people(session, with_photos=with_photos)}
+
+
+@router.post("/gallery/sync", dependencies=[Expensive])
+def sync_gallery(session: Session = Depends(get_session)) -> dict:
+    """Force a re-read of the drop folder, including photos that failed before."""
+    report = face_gallery.sync(session, force=True)
+    log_action(session, "face_gallery_sync", str(report.get("enrolled", 0)))
+    return {"scan": report, "stats": face_gallery.stats(session)}
+
+
+@router.post("/gallery", status_code=201, dependencies=[Expensive])
+async def add_gallery_face(file: UploadFile = File(...), name: str = Form(...),
+                           session: Session = Depends(get_session)) -> dict:
+    """Enrol a reference photo directly, without going through the folder."""
+    person = (name or "").strip()
+    if not person:
+        raise HTTPException(400, "A person's name is required.")
+    data = await _read_upload(file)
+    result = face_gallery.enrol(session, data, name=person,
+                                source_file=file.filename or "", source="upload")
+    if not result.get("ok"):
+        raise HTTPException(400, result.get("error", "Could not enrol that photo."))
+    log_action(session, "face_gallery_enrol", person, {"file": file.filename})
+    return result
+
+
+@router.delete("/gallery/{face_id}", status_code=204)
+def delete_gallery_face(face_id: str, session: Session = Depends(get_session),
+                        _: User = Depends(require_supervisor)) -> None:
+    """Remove one reference photo.
+
+    Deleting the file from the drop folder deliberately does NOT do this — the
+    database is the record and the folder is only an inbox — so removal is an
+    explicit, audited action.
+    """
+    if not face_gallery.remove(session, face_id):
+        raise HTTPException(404, "No such reference photo.")
+    log_action(session, "face_gallery_delete", face_id)
 
 
 # ── search ─────────────────────────────────────────────────────────────────

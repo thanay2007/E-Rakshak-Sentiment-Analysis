@@ -56,3 +56,10 @@ frontend/.env.local
 # upstream tree does not belong in this repo. Drop the folder here to override
 # the bundled manifest with a newer one.
 sherlock-master/
+
+# Reference face gallery (osint/face_gallery.py). The photos an operator drops
+# in are their own material — often personal, always local — and the derived
+# embeddings are biometric data, so neither belongs in the repo. The README
+# stays so a fresh clone still explains what the folder is for.
+backend/.face_gallery.json
+backend/.lens_profile/

@@ -26,6 +26,7 @@ from datetime import datetime
 from sqlmodel import Session, col, select
 
 from app.models import Alert, FaceSearchLog, Post, Suspect
+from app.osint import face_gallery
 from app.osint.face_db import match_encoding
 from app.osint.face_db import to_dict as suspect_to_dict
 from app.osint.sleuth import build_dossier
@@ -256,12 +257,19 @@ async def build_identity_dossier(session: Session, suspect: Suspect, *,
 
 async def identify_faces(session: Session, analysis: dict, *,
                          deep: bool = True, filename: str = "") -> dict:
-    """Match every detected face against the registry and pull the dossiers.
+    """Match every detected face against the registry and the reference gallery.
+
+    Two searches, kept apart on purpose. The registry answers "is this person on
+    our records" and a hit there opens a dossier; the gallery (`face_gallery`,
+    the `pics/` folder) answers "do we know who this is at all" and a hit there
+    is only a name. Folding the second into the first would mean a footballer in
+    a viral photo arriving on screen dressed as a criminal record.
 
     Mutates `analysis["forensics"]["face_matches"]` in place: each face gains an
-    `identity` block and its raw 128-d `encoding` is REMOVED. That strip is the
-    point — the embedding is biometric data and has no business travelling to a
-    browser; it exists only long enough to run the comparison server-side.
+    `identity` block (with a `known_person` sub-block for the gallery result)
+    and its raw 128-d `encoding` is REMOVED. That strip is the point — the
+    embedding is biometric data and has no business travelling to a browser; it
+    exists only long enough to run the comparison server-side.
     """
     forensics = (analysis or {}).get("forensics") or {}
     faces = forensics.get("face_matches") or []
@@ -270,14 +278,17 @@ async def identify_faces(session: Session, analysis: dict, *,
             "faces_detected": 0,
             "identified": 0,
             "candidates": 0,
+            "known_people": 0,
             "identities": {},
             "registry": _registry_stats(session),
+            "gallery": _gallery_stats(session),
             "summary": (forensics.get("reason") or forensics.get("note")
                         or "No faces detected in this media."),
         }
 
     identified_ids: list[str] = []
     candidate_count = 0
+    known_names: list[str] = []
     log_rows: list[dict] = []
 
     for face in faces:
@@ -295,6 +306,22 @@ async def identify_faces(session: Session, analysis: dict, *,
 
         result = match_encoding(session, encoding)
         result["searched"] = True
+
+        # The reference gallery, searched for every face regardless of what the
+        # registry found: a record hit and a known name are complementary, and
+        # an analyst wants both ("this is Ronaldo" AND "he is not on record").
+        try:
+            known = face_gallery.match(session, encoding)
+        except Exception as exc:
+            log.warning("reference gallery search failed: %s", exc)
+            known = {"identified": False, "searched": False, "reason": str(exc),
+                     "candidates": []}
+        result["known_person"] = known
+        if known.get("identified") and known.get("match"):
+            face["known_person"] = known["match"]["name"]
+            if known["match"]["name"] not in known_names:
+                known_names.append(known["match"]["name"])
+
         face["identity"] = result
 
         top = result.get("match")
@@ -331,10 +358,14 @@ async def identify_faces(session: Session, analysis: dict, *,
         "faces_detected": len(faces),
         "identified": len(identified_ids),
         "candidates": candidate_count,
+        "known_people": len(known_names),
+        "known_names": known_names,
         "identities": identities,
         "registry": _registry_stats(session),
+        "gallery": _gallery_stats(session),
         "summary": _identification_summary(len(faces), identified_ids,
-                                           candidate_count, identities, session),
+                                           candidate_count, identities, session,
+                                           known_names),
     }
 
 
@@ -381,7 +412,16 @@ async def identify_media(session: Session, payload: dict, *, deep: bool = True,
 
 
 def _identification_summary(n_faces: int, ids: list[str], candidates: int,
-                            identities: dict, session: Session) -> str:
+                            identities: dict, session: Session,
+                            known_names: list[str] | None = None) -> str:
+    known = known_names or []
+    # The gallery result is stated first when there is no record hit, because
+    # "this is Lionel Messi, not on any record" is the useful sentence — not
+    # "nobody was identified", which is what this used to say about a face the
+    # system could in fact name.
+    known_bit = (f"Reference gallery names {'them' if len(known) == 1 else 'them'} as "
+                 + ", ".join(known) + "." if known else "")
+
     if ids:
         names = [identities.get(i, {}).get("suspect", {}).get("full_name", "?")
                  for i in ids]
@@ -389,17 +429,37 @@ def _identification_summary(n_faces: int, ids: list[str], candidates: int,
              + ", ".join(names) + ".")
         if candidates:
             s += f" {candidates} further face(s) returned a below-threshold lead."
+        if known:
+            s += " " + known_bit
+        return s
+    if known:
+        s = (f"{known_bit} No criminal record matched"
+             + (f", though {candidates} face(s) produced a below-threshold lead."
+                if candidates else "."))
         return s
     if candidates:
         return (f"No confirmed identification. {candidates} of {n_faces} face(s) "
                 "produced a below-threshold lead — treat as a direction to check, "
                 "not an identification.")
     stats = _registry_stats(session)
-    if not stats["enrolled_records"]:
-        return (f"{n_faces} face(s) detected. No reference photos are enrolled in "
-                "the registry, so no identification was possible.")
+    gallery = _gallery_stats(session)
+    if not stats["enrolled_records"] and not gallery.get("photos"):
+        return (f"{n_faces} face(s) detected, but nothing is enrolled to match them "
+                f"against — add reference photos to a registry record, or drop "
+                f"photos into {gallery.get('directory')}.")
     return (f"{n_faces} face(s) detected; none matched any of the "
-            f"{stats['enrolled_records']} enrolled record(s).")
+            f"{stats['enrolled_records']} enrolled record(s) or the "
+            f"{gallery.get('people', 0)} person(s) in the reference gallery.")
+
+
+def _gallery_stats(session: Session) -> dict:
+    """Never raises into a response: a missing/unreadable folder is a reported
+    state, not a failed identification request."""
+    try:
+        return face_gallery.stats(session)
+    except Exception as exc:
+        log.warning("reference gallery unavailable: %s", exc)
+        return {"people": 0, "photos": 0, "error": str(exc)}
 
 
 def _registry_stats(session: Session) -> dict:

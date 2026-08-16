@@ -49,6 +49,40 @@ Appearances are split into buckets — public figures, ordinary accounts, and
 suspected re-posters — because a public figure's photo naturally appears on
 hundreds of accounts, and an analyst drowned in that list learns nothing.
 
+That index covers the monitored sources. The open web is the other half:
+
+## Reverse image search, run rather than linked (`lens_search.py`)
+
+The question behind this tool is "where else has this photo been posted", and
+the honest answer needs the whole web, not one console's index. This used to
+end at four "continue your search here" buttons — which leaves the officer to
+answer it by hand, and puts their own IP address on every page the photo
+appears on.
+
+Google Lens has no API and its results page needs JavaScript, so the search runs
+in the same headless Chrome the Facebook collector already depends on: the image
+goes in through Google's own upload control, and the visual-match cards are read
+out of the rendered DOM. Results come back as pages — title, URL and domain —
+in about fifteen seconds, cached by image hash so re-opening the same evidence
+costs nothing.
+
+Two things are load-bearing and both were learned the hard way:
+
+- **The Chrome profile is persistent.** A fresh profile every run is a brand-new
+  browser every run, and Google answers that with its "unusual traffic"
+  interrogation page rather than results.
+- **One search at a time, process-wide.** A console firing parallel headless
+  browsers at Google would be blocked, permanently and deservedly.
+
+If the profile's standing lapses — a burst of searches from one network will do
+it — run `python -m app.osint.lens_login` once, which opens a visible Chrome so
+an operator can clear the challenge by hand. Same arrangement, and same reason,
+as `app.crawlers.facebook_login`.
+
+Everything degrades: with Selenium absent, Chrome missing, or Google serving a
+challenge, the panel reports why in plain language and the manual engine links
+are still there.
+
 ## Face identification
 
 Two halves, deliberately separated.
@@ -94,6 +128,46 @@ strength rather than a laundered percentage.
 Templates and mugshots are encrypted at rest — see
 [SECURITY.md](SECURITY.md#biometric-data).
 
+### The reference gallery (`face_gallery.py`)
+
+The registry answers "is this person on our records". The gallery answers the
+other half: "do we know who this is at all".
+
+Teaching it a face is one action — drop a photo into `pics/`, in a folder named
+after the person:
+
+```
+pics/Cristiano Ronaldo/celebration.jpg
+pics/Lionel Messi/messi.jpg
+pics/narendra-modi.jpg          # a loose file works too
+```
+
+The photo is then **stored in the database**, not the checkout: the embedding,
+a face crop and a downscaled copy go into `referenceface`, sealed with the same
+key as the registry's templates. So a reference survives the file being deleted,
+the repo being re-cloned, or a second console running against the same Supabase
+project — and no biometric material sits in the source tree. Ingestion
+deduplicates on file content, so a scan that finds nothing new writes nothing;
+and because the database is the record, deleting the file does **not** delete
+the person (removal is an explicit, audited action).
+
+Same thresholds as the registry, so "confirmed" means the same evidence either
+way. Measured on eight reference photos of two people:
+
+| | distance |
+|---|---|
+| same person, different photo | 0.28 – 0.52 |
+| different people | 0.65 and up |
+
+which clears the 0.45/0.52 identification band with room either side. The margin
+comes from holding several photos per person, not from a looser threshold.
+
+**The two results are never merged.** A registry hit opens a criminal dossier; a
+gallery hit is a name and nothing more, and is rendered as its own card reading
+*known person / no criminal record*. Merging them would mean every recognised
+face — a footballer in a viral photo, an officer in a crowd shot — arriving on
+screen dressed as a police record.
+
 ### The dossier (`face_intel.py`)
 
 A match is only a key. The dossier opens every drawer it unlocks: the record
@@ -131,13 +205,41 @@ or avatar), posting cadence. No platform API required.
 
 ## Coordinated-campaign detection
 
-`pr_analysis.py` finds near-duplicate clusters across three or more accounts and
-scores them on message uniformity, synchronised bursts, account authenticity and
-amplification.
+`pr_analysis.py` finds near-duplicate clusters and reports the ones that are
+actually organised. Both halves matter, and the second is where the work is:
+duplication on its own proves nothing.
 
-Scope is explicit and narrow: only campaigns that touch **public order** are
-surfaced. Ordinary marketing spam is filtered out — the tool exists to find
-manufactured outrage, whitewashes and boycott pushes, not to police advertising.
+Four things routinely produce identical copy across "several accounts" with no
+campaign anywhere in sight — one organisation posting to its own several
+platforms, a press release syndicated by the desks it was sent to, the same post
+collected twice, and a stock phrase everyone reaches for on the same day. Every
+one of them used to be reported as *"coordinated whitewash / paid praise"*,
+which on live data meant accusing the Surat City Police of running a paid
+influence operation because its Instagram, Facebook and X accounts had each
+carried the same arrest notice.
+
+So a cluster now has to get past four gates:
+
+| Gate | What it establishes |
+|---|---|
+| **Identity** | Handles fold to an *actor* — case and punctuation ignored — so `@amdavadamc` and `@AmdavadAMC` are one municipal corporation, not two accounts |
+| **Authenticity** | Verified accounts, this deployment's own seed desks, and accounts with a large established audience are authentic public voices. A cluster made only of those is **syndication**, reported as syndication |
+| **Corroboration** | At least one signal of organisation beyond the shared text: a synchronised burst, a bot-heavy roster, throwaway accounts, or the copy crossing platforms under genuinely different actors |
+| **A floor** | Below `MIN_CONFIDENCE` nothing is reported, because a weak flag on this screen reads exactly like a strong one |
+
+Every cluster the detector saw is accounted for on screen — as a campaign, as
+neutral, as syndication, or as having no coordination signal — so an empty
+result cannot be confused with a detector that did not run.
+
+On the live corpus this took a 168-hour window from **46 "campaigns", mostly
+police and civic desks**, down to 3 — while the one genuine astroturf cluster in
+that window (eight throwaway accounts, identical 52-word copy, inside twenty
+minutes) survives every gate at 80% confidence. `tests/test_pr_campaigns.py`
+pins each of those cases.
+
+Scope stays explicit and narrow: only clusters that touch **public order** are
+surfaced, and no label asserts that anyone was paid — nothing measured here
+could establish that.
 
 ## Explaining a report
 

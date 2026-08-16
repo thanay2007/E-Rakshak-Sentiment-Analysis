@@ -182,6 +182,48 @@ class FaceSearchLog(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow, index=True)
 
 
+class ReferenceFace(SQLModel, table=True):
+    """One enrolled reference photo in the known-persons gallery
+    (osint/face_gallery.py).
+
+    Deliberately its own table rather than more `Suspect` rows. A Suspect is an
+    assertion — record type, risk level, charges — and a hit against one opens a
+    criminal dossier. A row here asserts only "this is what this person looks
+    like", which is what lets the console name a footballer in a viral photo
+    without dressing the answer up as a police record.
+
+    The photo lives HERE, not in the repository: the `pics/` folder is only a
+    drop point that gets ingested, so a reference survives the file being
+    deleted, the checkout being re-cloned, or the console running on another
+    machine against the same database.
+
+    `encoding_enc`, `thumb_enc` and `image_enc` are sealed with the same key as
+    the registry's templates (security/crypto.py) — a face embedding is
+    biometric data wherever it is stored, and this database is shared.
+    """
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    person_name: str = Field(index=True)
+    #: Case/punctuation-folded name, so "Cristiano Ronaldo", "cristiano-ronaldo"
+    #: and "CristianoRonaldo" are one person rather than three.
+    person_key: str = Field(default="", index=True)
+
+    #: SHA-256 of the original file. The dedupe key for ingestion: re-dropping
+    #: the same photo, or re-running a scan, must not enrol it twice.
+    image_sha256: str = Field(default="", index=True)
+    source_file: str = ""                              # what it was called when ingested
+    source: str = "gallery_folder"                     # gallery_folder | upload
+
+    encoding_enc: str = ""                             # sealed 128-d embedding
+    thumb_enc: str = ""                                # sealed face crop, data-URI
+    image_enc: str = ""                                # sealed downscaled photo, data-URI
+    quality: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    other_faces_ignored: int = 0
+
+    active: bool = True
+    created_at: datetime = Field(default_factory=utcnow, index=True)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
 class AuditLog(SQLModel, table=True):
     """Append-only log of analyst actions for chain-of-custody compliance.
 

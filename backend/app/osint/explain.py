@@ -109,6 +109,26 @@ def _digest_image(report: dict) -> str:
             f"face identification: {ident.get('faces_detected')} faces detected, "
             f"{ident.get('identified')} matched to the suspect registry, "
             f"{ident.get('candidates')} candidates")
+        # Spelled out because the model has no other way to know what the
+        # gallery is, and without this it has read a name it was handed as
+        # unsourced and warned the officer off its own console's finding.
+        gallery = ident.get("gallery") or {}
+        names = ident.get("known_names") or []
+        if names:
+            lines.append(
+                f"reference-gallery identification: this console holds "
+                f"{gallery.get('photos', 0)} reference photo(s) of "
+                f"{gallery.get('people', 0)} known person/people, enrolled by an "
+                f"officer, and biometric matching named the face(s) in this image "
+                f"as: {', '.join(names)}. This is a first-hand measurement made "
+                f"by this system — not a claim from an external source — and it "
+                f"means only that the console can put a name to the face. It "
+                f"carries NO implication of a criminal record: the registry "
+                f"search is the separate result reported above.")
+        elif gallery:
+            lines.append(
+                f"reference gallery: {gallery.get('people', 0)} known person/people "
+                f"enrolled; none of them matched this image")
         if ident.get("summary"):
             lines.append(f"identification summary: {_fence(ident['summary'], 200)}")
     return "\n".join(lines)
@@ -170,14 +190,20 @@ def _digest_pr(report: dict) -> str:
         "TOOL: coordinated narrative / astroturf detection",
         f"window: last {report.get('window_hours')}h; posts scanned: "
         f"{report.get('posts_scanned')}; near-duplicate clusters found: "
-        f"{report.get('clusters_found')}; neutral clusters ignored as ordinary "
-        f"syndication: {report.get('neutral_clusters_ignored')}; campaigns "
-        f"reported: {report.get('campaigns_found')}",
+        f"{report.get('clusters_found')}; of those, ignored as neutral "
+        f"announcements: {report.get('neutral_clusters_ignored')}, set aside as "
+        f"official/verified syndication: {report.get('syndication_ignored')}, "
+        f"dropped for having no coordination signal beyond shared wording: "
+        f"{report.get('weak_clusters_ignored')}; campaigns reported: "
+        f"{report.get('campaigns_found')}",
+        "note: account counts below are INDEPENDENT actors — one organisation's "
+        "handles across platforms are folded into one — and every account with "
+        "an established audience has already been excluded from the roster.",
     ]
     for c in (report.get("campaigns") or [])[:4]:
         lines.append(
             f"- {c.get('id')} {c.get('type_label')}: confidence "
-            f"{c.get('confidence')}, {c.get('account_count')} accounts, "
+            f"{c.get('confidence')}, {c.get('account_count')} independent accounts, "
             f"{c.get('posts')} posts, {c.get('sentiment_lean')} lean at "
             f"{c.get('sentiment_uniformity')} uniformity, bot ratio "
             f"{c.get('bot_ratio')}, posted over {c.get('spread_minutes')} minutes, "

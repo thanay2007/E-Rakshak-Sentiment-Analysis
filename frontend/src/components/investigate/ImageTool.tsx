@@ -1,11 +1,11 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Camera, ExternalLink, Fingerprint, ImageUp, Link2, MapPin, Radar, ScanSearch,
+  Camera, ExternalLink, Fingerprint, Globe, ImageUp, Link2, MapPin, Radar, ScanSearch,
   ShieldCheck, Upload, Users,
 } from "lucide-react";
 import GlassCard, { SectionTitle } from "../GlassCard";
 import { api } from "../../services/api";
-import type { Appearance, ImageAnalysis, ImageSource, Identification, PersonFind, ReverseImage } from "../../services/api";
+import type { Appearance, ImageAnalysis, ImageSource, Identification, LensSearch, PersonFind, ReverseImage } from "../../services/api";
 import { AccountChip, AiExplanation, EmptyHint, FindingRow, KV, Meter, Pill, RunButton, Spinner, TextInput } from "./shared";
 import { safeHref } from "../../lib/safeUrl";
 import IdentifiedPersonsPanel, { buildFaceOutcomes } from "./PersonIdentification";
@@ -42,6 +42,90 @@ function Bucket({ title, icon, accounts, tone }: {
   );
 }
 
+/** Where else on the open web this exact picture appears — the answer, not a
+ *  link to go and find it. Falls back to the manual engine buttons whenever the
+ *  automatic search could not run, and says why. */
+function WebTrace({ lens, loading, engines }: {
+  lens: LensSearch | null; loading: boolean;
+  engines: { name: string; url: string }[] | undefined;
+}) {
+  const matches = lens?.matches ?? [];
+  const domains = lens?.domains ?? [];
+
+  return (
+    <GlassCard className="space-y-3 p-4">
+      <div className="flex items-center gap-2 text-sm font-semibold text-slate-200">
+        <Globe size={15} className="text-accent" /> Where else this appears on the web
+        {lens?.ok && (
+          <span className="ml-auto text-[11px] font-normal text-slate-500">
+            Google Lens · {matches.length} result{matches.length === 1 ? "" : "s"}
+            {lens.cached ? " · cached" : lens.took_seconds ? ` · ${lens.took_seconds}s` : ""}
+          </span>
+        )}
+      </div>
+
+      {loading && <Spinner label="Searching Google Lens for this image…" />}
+
+      {!loading && lens?.ok && matches.length > 0 && (
+        <>
+          <div className="flex flex-wrap gap-1.5">
+            {domains.slice(0, 10).map((d) => <Pill key={d} color="#64748B">{d}</Pill>)}
+          </div>
+          <div className="max-h-[420px] space-y-1 overflow-y-auto pr-1">
+            {matches.map((m, i) => (
+              <a key={m.url + i} href={safeHref(m.url)} target="_blank" rel="noreferrer"
+                className="flex items-start gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-2.5 py-1.5 transition-colors hover:border-accent/40">
+                <ExternalLink size={12} className="mt-0.5 shrink-0 text-slate-600" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[12.5px] text-slate-200">{m.title}</span>
+                  <span className="block truncate font-mono text-[10.5px] text-slate-500">{m.domain}</span>
+                </span>
+              </a>
+            ))}
+          </div>
+          <p className="text-[11px] text-slate-600">
+            Pages Google Lens found carrying this image or a near-identical one. An old photo appearing on news sites
+            years before the post being investigated is the clearest sign of a recycled image.
+          </p>
+        </>
+      )}
+
+      {!loading && lens?.ok && matches.length === 0 && (
+        <EmptyHint>
+          Google Lens found no pages carrying this image. For a photo circulating in a rumour that is meaningful — it
+          suggests the image is original or too new to be indexed, not recycled from an older story.
+        </EmptyHint>
+      )}
+
+      {!loading && lens && !lens.ok && (
+        <div className="space-y-2">
+          <EmptyHint>{lens.reason || "The automatic search could not run."}</EmptyHint>
+          {lens.challenged && (
+            <p className="text-[11px] text-slate-600">
+              Re-authorise the search browser once with{" "}
+              <span className="font-mono text-slate-400">python -m app.osint.lens_login</span> if this keeps happening.
+            </p>
+          )}
+        </div>
+      )}
+
+      {!loading && (!lens?.ok || matches.length === 0) && engines && engines.length > 0 && (
+        <div>
+          <div className="mb-1.5 text-[11px] uppercase tracking-wide text-slate-500">Search by hand</div>
+          <div className="flex flex-wrap gap-2">
+            {engines.map((e) => (
+              <a key={e.name} href={safeHref(e.url)} target="_blank" rel="noreferrer"
+                className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1.5 text-[12px] text-slate-300 hover:border-accent/40 hover:text-accent">
+                {e.name} <ExternalLink size={11} />
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+    </GlassCard>
+  );
+}
+
 export default function ImageTool() {
   const [mode, setMode] = useState<Mode>("upload");
   const [url, setUrl] = useState("");
@@ -51,7 +135,24 @@ export default function ImageTool() {
   const [err, setErr] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  function reset() { setErr(null); setResult(null); }
+  // The web-wide trace runs on its own clock. Driving a real browser through
+  // Google Lens takes ten to fifteen seconds where the metadata forensics take
+  // under one, so it is fired alongside them and fills its panel in when it
+  // lands, rather than holding the whole report back.
+  const [lens, setLens] = useState<LensSearch | null>(null);
+  const [lensLoading, setLensLoading] = useState(false);
+  const lensRun = useRef(0);
+
+  function reset() { setErr(null); setResult(null); setLens(null); setLensLoading(false); lensRun.current += 1; }
+
+  function runLens(run: () => Promise<LensSearch>) {
+    const id = ++lensRun.current;
+    setLens(null); setLensLoading(true);
+    run()
+      .then((r) => { if (lensRun.current === id) setLens(r); })
+      .catch((e) => { if (lensRun.current === id) setLens({ ok: false, reason: (e as Error).message }); })
+      .finally(() => { if (lensRun.current === id) setLensLoading(false); });
+  }
 
   async function fromFile(file: File) {
     reset(); setLoading(true);
@@ -59,6 +160,7 @@ export default function ImageTool() {
     try {
       const r = await api.investigateImage(file);
       setResult({ ...r, preview });
+      if (r.analysis?.media_type === "image") runLens(() => api.reverseImageSearch(file));
     } catch (e) { setErr((e as Error).message); }
     finally { setLoading(false); }
   }
@@ -69,7 +171,11 @@ export default function ImageTool() {
     try {
       const r = await api.investigateImageFromUrl(url.trim());
       if (!r.ok || !r.analysis) { setErr(r.error || "Could not resolve media from that URL."); }
-      else setResult({ analysis: r.analysis, reverse_image: r.reverse_image!, person: r.person!, source: r.source, preview: r.analysis.media_type === "video" ? null : r.source?.image_url, thumbnail: r.thumbnail, identification: r.identification });
+      else {
+        setResult({ analysis: r.analysis, reverse_image: r.reverse_image!, person: r.person!, source: r.source, preview: r.analysis.media_type === "video" ? null : r.source?.image_url, thumbnail: r.thumbnail, identification: r.identification });
+        const img = r.source?.image_url;
+        if (img) runLens(() => api.reverseImageSearchUrl(img));
+      }
     } catch (e) { setErr((e as Error).message); }
     finally { setLoading(false); }
   }
@@ -79,10 +185,16 @@ export default function ImageTool() {
     try {
       const r = await api.investigatePostMedia(postId.trim() || "top");
       if (!r.ok || !r.analysis) { setErr(r.error || "That post has no attached media."); }
-      else setResult({ analysis: r.analysis, reverse_image: r.reverse_image!, person: r.person!, source: r.source, preview: r.analysis.media_type === "video" ? null : r.source?.image_url, thumbnail: r.thumbnail, identification: r.identification });
+      else {
+        setResult({ analysis: r.analysis, reverse_image: r.reverse_image!, person: r.person!, source: r.source, preview: r.analysis.media_type === "video" ? null : r.source?.image_url, thumbnail: r.thumbnail, identification: r.identification });
+        const img = r.source?.image_url;
+        if (img) runLens(() => api.reverseImageSearchUrl(img));
+      }
     } catch (e) { setErr((e as Error).message); }
     finally { setLoading(false); }
   }
+
+  useEffect(() => () => { lensRun.current += 1; }, []);
 
   const a = result?.analysis;
   const rev = result?.reverse_image;
@@ -236,7 +348,21 @@ export default function ImageTool() {
                     </div>
                     <div className="text-[12px] text-slate-400">
                       Detected {a.forensics.faces_detected} face{a.forensics.faces_detected > 1 ? 's' : ''}.
+                      {identification?.summary && <> {identification.summary}</>}
                     </div>
+                    {identification?.gallery && (
+                      <div className="text-[11px] text-slate-600">
+                        Reference gallery: {identification.gallery.people} known
+                        {" "}{identification.gallery.people === 1 ? "person" : "people"},
+                        {" "}{identification.gallery.photos} photo{identification.gallery.photos === 1 ? "" : "s"} in the database.
+                        {identification.gallery.photos === 0 && (
+                          <> Add photos to <span className="font-mono">{identification.gallery.directory}</span> — one folder per person — and they are picked up automatically.</>
+                        )}
+                        {!!identification.gallery.skipped?.length && (
+                          <> {identification.gallery.skipped.length} file{identification.gallery.skipped.length === 1 ? "" : "s"} skipped (no usable face): {identification.gallery.skipped.slice(0, 3).map((s) => s.file).join(", ")}.</>
+                        )}
+                      </div>
+                    )}
                     {result?.preview && a.width && a.height && (
                       <div className="relative mt-2 overflow-hidden rounded border border-white/10" style={{ maxWidth: '300px' }}>
                         <img src={result.preview} alt="analyzed" className="w-full h-auto block" />
@@ -247,9 +373,11 @@ export default function ImageTool() {
                           const heightPct = ((f.bounding_box.bottom - f.bounding_box.top) / a.height!) * 100;
                           const outcome = faceOutcomes[i];
                           const label = outcome?.kind === "confirmed" ? outcome.identity.name
+                            : outcome?.kind === "known" ? outcome.name
                             : outcome?.kind === "lead" ? `${outcome.name}?`
                             : "Not identified";
-                          const color = outcome?.kind === "confirmed" ? "#14B8C4"
+                          const color = outcome?.kind === "confirmed" ? "#EF4444"
+                            : outcome?.kind === "known" ? "#14B8C4"
                             : outcome?.kind === "lead" ? "#F59E0B" : "#64748B";
                           return (
                             <div key={i} className="absolute border-2" style={{ borderColor: color, backgroundColor: `${color}33`, top: `${topPct}%`, left: `${leftPct}%`, width: `${widthPct}%`, height: `${heightPct}%` }}>
@@ -325,21 +453,22 @@ export default function ImageTool() {
                 {rev?.nearest_reference && (
                   <div className="text-[12px] text-slate-500">Nearest reference: {rev.nearest_reference.subject} (distance {rev.nearest_reference.hamming_distance})</div>
                 )}
-                <div>
-                  <div className="mb-1.5 text-[11px] uppercase tracking-wide text-slate-500">Continue on external engines</div>
-                  <div className="flex flex-wrap gap-2">
-                    {rev?.external_engines.map((e) => (
-                      <a key={e.name} href={safeHref(e.url)} target="_blank" rel="noreferrer"
-                        className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1.5 text-[12px] text-slate-300 hover:border-accent/40 hover:text-accent">
-                        {e.name} <ExternalLink size={11} />
-                      </a>
-                    ))}
-                  </div>
-                </div>
+                {/* The open-web trace used to live here as four "go and search
+                    it yourself" buttons. It is now run for the officer, in the
+                    panel below — these links survive only as the fallback when
+                    that search cannot run. */}
+                <p className="text-[11px] text-slate-600">
+                  This is the index of media SENTINEL has seen circulating on the monitored sources. The open-web trace
+                  is below.
+                </p>
               </div>
             )}
           </GlassCard>
         </div>
+
+        {a.media_type === "image" && (
+          <WebTrace lens={lens} loading={lensLoading} engines={rev?.external_engines} />
+        )}
 
         {faceOutcomes.length > 0 && (
           <IdentifiedPersonsPanel

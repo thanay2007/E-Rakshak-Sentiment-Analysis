@@ -81,9 +81,14 @@ def login() -> None:
                          verification_code=code)
 
     client.dump_settings(SESSION_FILE)
+    # `account_info()` returns an Account (the signed-in user's own settings
+    # page), not a User — it carries no follower count, and reading one here
+    # raised AttributeError *after* the session had already been written, so a
+    # successful login looked like a crash.
     me = client.account_info()
-    print(f"\nLogged in as @{me.username} ({me.full_name}) — "
-          f"{me.follower_count} followers.")
+    print(f"\nLogged in as @{me.username} ({me.full_name or 'no display name'})"
+          + (" — private account" if me.is_private else "")
+          + (" — verified" if me.is_verified else ""))
     print(f"Session written to {SESSION_FILE}. It was not printed: it is full "
           "account access. Revoke it any time from Instagram > Settings > "
           "Security > Login activity, then re-run this.")
@@ -91,8 +96,21 @@ def login() -> None:
           "API start — no further configuration needed.")
 
 
-def verify() -> None:
-    """A small live read across all four legs: users, posts, hashtags, comments."""
+def verify(*, all_legs: bool = False) -> None:
+    """A small live read across the legs this deployment actually uses.
+
+    Legs parked at 0 in .env are SKIPPED, and that is the whole point rather
+    than a shortcut. A leg is parked at 0 precisely because Instagram refuses it
+    for this account — hashtag search answers `login_required` on a gated
+    burner — and a refused private-API call is not a harmless no-op: it is the
+    single most reliable way to get the session invalidated. So the tool you run
+    to prove a fresh session works was exercising the one call most likely to
+    destroy it, and could report "0 media" for a leg it had just killed the
+    session over.
+
+    `--all-legs` restores the old behaviour, for deliberately re-testing whether
+    a gate has lifted. Expect to re-run the login afterwards if it has not.
+    """
     if not SESSION_FILE.exists() and not settings.IG_SESSIONID:
         raise SystemExit("No session yet — run without --verify first.")
 
@@ -111,11 +129,19 @@ def verify() -> None:
     else:
         username, harvest = "", []
 
-    # hashtags: one real watchlist tag.
-    from app.services.watch_targets import watch_terms
-    terms = [t for t in watch_terms() if t.replace("#", "").isalnum()] or ["surat"]
-    tagged = collector._enrich_authors_sync(
-        client, collector._hashtags_sync(client, terms[:1]))
+    # hashtags: one real watchlist tag — only if this deployment uses the leg.
+    want_hashtags = all_legs or settings.IG_HASHTAGS_PER_CYCLE > 0
+    tagged = []
+    terms = ["surat"]
+    if want_hashtags:
+        from app.services.watch_targets import watch_terms
+        terms = [t for t in watch_terms() if t.replace("#", "").isalnum()] or ["surat"]
+        tagged = collector._enrich_authors_sync(
+            client, collector._hashtags_sync(client, terms[:1]))
+    else:
+        print("hashtags: skipped — IG_HASHTAGS_PER_CYCLE=0, so this deployment "
+              "does not use the leg. Testing it costs a refused call that can "
+              "invalidate the session (--all-legs to try anyway).")
 
     # Map every media exactly once — the adapter's seen-set means a second
     # _media_to_post on the same media returns None by design.
@@ -135,9 +161,14 @@ def verify() -> None:
                       f" tags={post.hashtags}")
 
     _show(f"users/posts @{username}" if username else "users/posts (no seeds)", harvest)
-    _show(f"hashtags #{terms[0].lstrip('#')}", tagged)
+    if want_hashtags:
+        _show(f"hashtags #{terms[0].lstrip('#')}", tagged)
 
-    # comments: the loudest media of whatever the two legs above found.
+    # comments: the loudest media of whatever the legs above found — again, only
+    # when this deployment actually collects them.
+    if not (all_legs or settings.IG_COMMENTS_MAX_MEDIA_PER_CYCLE > 0):
+        print("\ncomments: skipped — IG_COMMENTS_MAX_MEDIA_PER_CYCLE=0.")
+        return
     comments = collector._comments_sync(client, pool, by_media)
     print(f"\ncomments: {len(comments)} fetched")
     for c in comments[:5]:
@@ -146,6 +177,6 @@ def verify() -> None:
 
 if __name__ == "__main__":
     if "--verify" in sys.argv:
-        verify()
+        verify(all_legs="--all-legs" in sys.argv)
     else:
         login()
