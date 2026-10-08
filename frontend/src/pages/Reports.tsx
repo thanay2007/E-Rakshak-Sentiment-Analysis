@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowUpRight, Download, FilePlus2, FileSpreadsheet, FileText, ShieldAlert, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { SentimentBadge } from "../components/Badges";
 import { usePostDetail } from "../components/PostDetailProvider";
 import GlassCard from "../components/GlassCard";
@@ -216,6 +217,34 @@ export default function Reports() {
   const openFull = async (r: Report) => {
     setOpen(await api.report(r.id));
   };
+
+  // `?open=<id>` opens that report — how the voice assistant shows one it has
+  // just generated or been asked for. The id is consumed so closing the modal
+  // and reloading doesn't reopen it.
+  const [params, setParams] = useSearchParams();
+  const openParam = params.get("open");
+  useEffect(() => {
+    if (!openParam || !/^[0-9a-fA-F-]{8,40}$/.test(openParam)) return;
+    let live = true;
+    api
+      .report(openParam)
+      .then((r) => {
+        if (live) setOpen(r);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!live) return;
+        refresh();
+        setParams((p) => {
+          p.delete("open");
+          return p;
+        }, { replace: true });
+      });
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openParam]);
 
   return (
     <div className="space-y-4">

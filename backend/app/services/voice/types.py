@@ -94,6 +94,7 @@ class PacketName(str, Enum):
     LLM_TOOL_INVOKED = "LLMToolInvokedPacket"
     LLM_INTERRUPT = "LLMInterruptPacket"
     LLM_NAVIGATE = "LLMNavigatePacket"
+    LLM_CLIENT_ACTION = "LLMClientActionPacket"
 
     # text to speech
     TEXT_TO_SPEECH_TEXT = "TextToSpeechTextPacket"
@@ -334,6 +335,16 @@ class LLMNavigatePacket(Packet):
     """Only ever produced by the assistant's `navigate` tool resolving a fixed
     label against a fixed table. A path never originates in model prose."""
     path: str = ""
+
+
+@_packet(PacketName.LLM_CLIENT_ACTION)
+@dataclass
+class LLMClientActionPacket(Packet):
+    """A browser effect a tool asked for: download a file, open a post, show
+    or clear a confirmation card. Built by the tool layer from typed fields
+    (`ToolResult.client_actions`), never parsed from model prose — and the
+    browser re-validates each one before acting on it."""
+    action: dict = field(default_factory=dict)
 
 
 # ── text to speech ──────────────────────────────────────────────────────────

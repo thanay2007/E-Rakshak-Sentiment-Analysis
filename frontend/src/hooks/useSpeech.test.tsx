@@ -1,6 +1,6 @@
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useListener } from "./useSpeech";
+import { scriptLang, useListener } from "./useSpeech";
 
 class FakeRecognition extends EventTarget {
   static latest: FakeRecognition | null = null;
@@ -54,5 +54,22 @@ describe("useListener", () => {
 
     act(() => FakeRecognition.latest?.emitFinal("Brief me on current threats"));
     expect(onUtterance).toHaveBeenCalledWith("Brief me on current threats");
+  });
+});
+
+describe("scriptLang", () => {
+  it("reads English, Hinglish and Gujlish with an Indian-English voice", () => {
+    expect(scriptLang("How many alerts in Surat today?")).toBe("en");
+    expect(scriptLang("Aaj Surat mein kitne alerts aaye?")).toBe("en");
+    expect(scriptLang("Aaje Rajkot ma ketla posts aavya?")).toBe("en");
+  });
+
+  it("reads Devanagari with a Hindi voice and Gujarati script with a Gujarati one", () => {
+    expect(scriptLang("आज सूरत में कितने अलर्ट आए?")).toBe("hi");
+    expect(scriptLang("આજે રાજકોટમાં કેટલી પોસ્ટ આવી?")).toBe("gu");
+  });
+
+  it("goes by the dominant script when a sentence mixes them", () => {
+    expect(scriptLang("Threat score सूरत के लिए बहुत ज़्यादा है")).toBe("hi");
   });
 });

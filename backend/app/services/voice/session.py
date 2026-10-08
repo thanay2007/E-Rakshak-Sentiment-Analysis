@@ -60,6 +60,7 @@ from app.services.voice.types import (DenoiseAudioPacket, DenoisedAudioPacket,
                                       InjectMessagePacket,
                                       InterimEndOfSpeechPacket,
                                       InterruptionDetectedPacket,
+                                      LLMClientActionPacket,
                                       LLMNavigatePacket, LLMResponseDeltaPacket,
                                       LLMResponseDonePacket, LLMToolInvokedPacket,
                                       Packet, PipelineErrorPacket,
@@ -312,7 +313,8 @@ class VoiceSession:
             await self.aggregator.aggregate(packet)
             return
 
-        if isinstance(packet, (LLMToolInvokedPacket, LLMNavigatePacket)):
+        if isinstance(packet, (LLMToolInvokedPacket, LLMNavigatePacket,
+                               LLMClientActionPacket)):
             if not self.state.is_stale(packet.context_id):
                 await self._emit(packet)
             return
@@ -531,7 +533,8 @@ class VoiceSession:
             return
 
         ctx = assistant_tools.ToolContext(session=self.db, user=self.user,
-                                          page=self.config.page)
+                                          page=self.config.page, utterance=text,
+                                          turn_started=time.monotonic())
         try:
             intent, answer = await agent.answer(text, ctx)
         except asyncio.CancelledError:
@@ -560,6 +563,9 @@ class VoiceSession:
         if answer.navigate:
             await self.on_packet(LLMNavigatePacket(context_id=packet.context_id,
                                                    path=answer.navigate))
+        for effect in answer.client_actions:
+            await self.on_packet(LLMClientActionPacket(context_id=packet.context_id,
+                                                       action=effect))
 
         log_action(self.db, "assistant_query", "",
                    {"query": text[:200], "intent": intent, "channel": "voice",

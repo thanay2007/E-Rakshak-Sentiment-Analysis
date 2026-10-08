@@ -89,12 +89,24 @@ def ig_defaults(monkeypatch):
 
 @pytest.fixture
 def ig_env(monkeypatch):
-    """Neutral Instagram credentials; each test opts into the keys it needs."""
+    """Neutral Instagram credentials; each test opts into the keys it needs.
+
+    The instagram-user-feed adapter is switched off: it needs no credential
+    and so would win every routing test here, which are about the Graph API
+    versus instagrapi choice behind it.
+    """
     for key, value in (("IG_SESSIONID", ""), ("IG_USERNAME", ""), ("IG_PASSWORD", ""),
                        ("IG_ACCESS_TOKEN", ""), ("IG_BUSINESS_ACCOUNT_ID", ""),
-                       ("IG_SEED_USERNAMES_RAW", [])):
+                       ("IG_SEED_USERNAMES_RAW", []), ("IG_USERFEED_ENABLED", False)):
         monkeypatch.setattr(settings, key, value)
     return monkeypatch
+
+
+def test_user_feed_is_preferred_when_enabled(ig_env):
+    ig_env.setattr(settings, "IG_USERFEED_ENABLED", True)
+    ig_env.setattr(settings, "IG_ACCESS_TOKEN", "tok")
+    ig_env.setattr(settings, "IG_BUSINESS_ACCOUNT_ID", "17841")
+    assert _instagram_row()["adapter"] == "Instagram (user feed)"
 
 
 def _profile(pk="7788", followers=5000, verified=False, full_name="Seed Page"):

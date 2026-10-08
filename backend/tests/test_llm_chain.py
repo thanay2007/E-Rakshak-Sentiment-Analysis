@@ -94,6 +94,9 @@ def llm_env(monkeypatch):
     monkeypatch.setattr(settings, "GEMINI_MODEL", "gemini-flash-latest")
     monkeypatch.setattr(settings, "GEMINI_FALLBACK_MODELS", ["gemini-3.5-flash"])
     monkeypatch.setattr(settings, "GEMINI_TOOL_MODELS", ["gemini-flash-latest"])
+    # This file is about Groq and Gemini; a real OpenAI key in .env must not
+    # turn a "both down" case into "answered by OpenAI".
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "")
     monkeypatch.setattr(groq_client, "_cooldown", {})
     monkeypatch.setattr(groq_client, "_last_error", {})
     monkeypatch.setattr(groq_client, "_last_ok", {})

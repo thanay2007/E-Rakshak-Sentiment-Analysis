@@ -73,7 +73,7 @@ def enabled() -> bool:
     on Gemini and must not report itself unavailable just because the pipeline's
     provider is unconfigured.
     """
-    return groq_enabled() or gemini_enabled()
+    return groq_enabled() or gemini_enabled() or bool(settings.OPENAI_API_KEY)
 
 
 def _parse_retry_seconds(message: str) -> float | None:
@@ -183,6 +183,77 @@ async def _complete_gemini(messages: list[dict], *, temperature: float,
     return None, None
 
 
+OPENAI_PREFIX = "openai-api/"
+
+
+def openai_enabled() -> bool:
+    return bool(settings.OPENAI_API_KEY)
+
+
+async def _complete_openai(messages: list[dict], *, temperature: float,
+                           json_mode: bool, tools: list[dict] | None,
+                           client: httpx.AsyncClient) -> tuple[dict | None, str | None]:
+    """OpenAI chat completions — the request and response shape `_body()`
+    already builds and the caller already parses. Assistant workloads only:
+    it is a paid key, so the background post pipeline never reaches it.
+
+    An exhausted balance answers 429 `insufficient_quota`, which no retry
+    within the hour will fix, so it gets the long cooldown rather than the
+    short rate-limit one.
+    """
+    if not openai_enabled():
+        return None, None
+    url = settings.OPENAI_BASE_URL.rstrip("/") + "/chat/completions"
+    now = time.time()
+    chain = [m for m in dict.fromkeys(settings.OPENAI_TOOL_MODELS)
+             if _cooldown.get(f"{OPENAI_PREFIX}{m}", 0) <= now]
+    for model in chain:
+        label = f"{OPENAI_PREFIX}{model}"
+        try:
+            resp = await client.post(
+                url, json=_body(model, messages, temperature, json_mode, tools),
+                headers={"Authorization": f"Bearer {settings.OPENAI_API_KEY}",
+                         "Content-Type": "application/json"},
+                timeout=settings.OPENAI_TIMEOUT_SECONDS)
+        except Exception as exc:
+            _last_error[label] = f"network error: {exc}"
+            log.warning("OpenAI %s network error (%s)", model, exc)
+            continue
+        if resp.status_code == 200:
+            _last_ok[label] = datetime.now(timezone.utc).isoformat()
+            _last_error.pop(label, None)
+            return resp.json()["choices"][0]["message"], label
+        detail = resp.text[:300]
+        _last_error[label] = f"HTTP {resp.status_code}: {detail}"
+        if resp.status_code in (401, 403) or "insufficient_quota" in detail \
+                or "credit_balance" in detail:
+            # Key refused or account out of credit: the whole provider is out,
+            # not this model — park every OpenAI model.
+            for m in settings.OPENAI_TOOL_MODELS:
+                _cooldown[f"{OPENAI_PREFIX}{m}"] = time.time() + _MAX_COOLDOWN_S
+            log.warning("OpenAI unavailable (%s) — parked for %ds", detail[:120],
+                        _MAX_COOLDOWN_S)
+            return None, None
+        if resp.status_code == 429:
+            wait = _parse_retry_seconds(detail) or _DEFAULT_COOLDOWN_S
+            _cooldown[label] = time.time() + min(wait, _MAX_COOLDOWN_S)
+        log.warning("OpenAI %s failed: HTTP %s %s", model, resp.status_code, detail[:160])
+    return None, None
+
+
+async def _complete_assistant_providers(messages, *, temperature, json_mode, tools,
+                                        client, prefer: str):
+    """Gemini and OpenAI in the assistant's preferred order."""
+    legs = {"gemini": _complete_gemini, "openai": _complete_openai}
+    order = [prefer] + [p for p in legs if p != prefer]
+    for name in order:
+        message, used = await legs[name](messages, temperature=temperature,
+                                         json_mode=json_mode, tools=tools, client=client)
+        if message is not None:
+            return message, used
+    return None, None
+
+
 async def _complete(messages: list[dict], *, temperature: float, json_mode: bool,
                     model: str | None, client: httpx.AsyncClient | None,
                     tools: list[dict] | None = None,
@@ -207,13 +278,13 @@ async def _complete(messages: list[dict], *, temperature: float, json_mode: bool
         client = httpx.AsyncClient(timeout=settings.GROQ_TIMEOUT_SECONDS,
                                    follow_redirects=True)
     try:
-        if prefer == "gemini" and gemini_enabled():
-            message, used = await _complete_gemini(
+        if prefer in ("gemini", "openai"):
+            message, used = await _complete_assistant_providers(
                 messages, temperature=temperature, json_mode=json_mode,
-                tools=tools, client=client)
+                tools=tools, client=client, prefer=prefer)
             if message is not None:
                 return message, used
-            log.warning("every Gemini model failed — falling back to Groq")
+            log.warning("Gemini and OpenAI both failed — falling back to Groq")
         groq_chain = (chain if chain is not None else _chain(model)) if groq_enabled() else []
         for m in groq_chain:
             try:
@@ -242,7 +313,7 @@ async def _complete(messages: list[dict], *, temperature: float, json_mode: bool
         # Groq is exhausted. If this request did not already start on Gemini,
         # try it now — the two providers have independent quotas, which is the
         # whole reason for keeping both.
-        if prefer != "gemini" and gemini_enabled():
+        if prefer not in ("gemini", "openai") and gemini_enabled():
             if groq_chain:
                 log.warning("every Groq model failed — falling back to Gemini")
             return await _complete_gemini(

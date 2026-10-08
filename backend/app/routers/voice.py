@@ -37,7 +37,7 @@ from fastapi import (APIRouter, HTTPException, WebSocket, WebSocketDisconnect,
 from app.config import settings
 from app.database import session_scope
 from app.security.deps import authenticate
-from app.services.voice import realtime
+from app.services.voice import openai_realtime, realtime
 from app.services.voice import types as voice_types
 from app.services.voice.session import SessionConfig, VoiceSession
 from app.services.voice.transformer import stt as stt_module
@@ -45,6 +45,20 @@ from app.services.voice.transformer import tts as tts_module
 
 log = logging.getLogger("sentinel.voice.channel")
 router = APIRouter()
+
+#: provider name → (module with available()/cooldown_remaining(), engine class,
+#: label, model setting). Order of use comes from VOICE_REALTIME_PROVIDERS.
+_ENGINES = {
+    "gemini": (realtime, realtime.GeminiLiveSession, "gemini_live", "GEMINI_LIVE_MODEL"),
+    "openai": (openai_realtime, openai_realtime.OpenAIRealtimeSession,
+               "openai_realtime", "OPENAI_REALTIME_MODEL"),
+}
+
+
+def _realtime_engines() -> list[tuple]:
+    """The realtime engines in preference order, unknown names skipped."""
+    order = [p.strip().lower() for p in settings.VOICE_REALTIME_PROVIDERS]
+    return [_ENGINES[p][:3] for p in dict.fromkeys(order) if p in _ENGINES]
 
 _AUTH_TIMEOUT_SECONDS = 10
 
@@ -163,24 +177,29 @@ async def voice_channel(ws: WebSocket) -> None:
         session = None
         connected = False
         failure: str = ""
-        if realtime.available():
-            candidate = realtime.GeminiLiveSession(
-                user=user, db=db, config=config, emit=emit)
+        # Realtime engines in VOICE_REALTIME_PROVIDERS order: the first that is
+        # configured, not cooling down and actually connects gets the session,
+        # and the next one is its fallback — then the cascade, if allowed.
+        for provider in _realtime_engines():
+            module, engine_cls, label = provider
+            if not module.available():
+                continue
+            candidate = engine_cls(user=user, db=db, config=config, emit=emit)
             try:
                 await candidate.connect()
             except Exception as exc:
-                failure = f"{type(exc).__name__}: {exc}"
-                log.warning("realtime engine failed to start (%s) — this "
-                            "session falls back to the cascade for %s",
-                            failure, user.username)
+                failure = f"{label}: {type(exc).__name__}: {exc}"
+                log.warning("realtime engine %s failed to start (%s) — trying the "
+                            "next one for %s", label, failure, user.username)
                 await candidate.close("connect_failed")
-            else:
-                session, connected = candidate, True
-                log.info("voice session open user=%s engine=gemini_live rate=%d",
-                         user.username, config.input_sample_rate)
-        elif settings.VOICE_REALTIME_REQUIRED:
-            failure = ("realtime is unavailable: no Gemini key, the SDK is "
-                       "missing, or it is in its post-failure cooldown")
+                continue
+            session, connected = candidate, True
+            log.info("voice session open user=%s engine=%s rate=%d",
+                     user.username, label, config.input_sample_rate)
+            break
+        if session is None and not failure and settings.VOICE_REALTIME_REQUIRED:
+            failure = ("realtime is unavailable: no Gemini or OpenAI key, the SDK "
+                       "is missing, or every engine is in its post-failure cooldown")
             log.warning("realtime unavailable and the cascade is disabled (%s)",
                         failure)
 
@@ -280,6 +299,11 @@ async def _talk(ws: WebSocket, session: VoiceSession) -> None:
             if state is not None:
                 state.touch()
             await ws.send_json({"type": "pong"})
+        elif kind == "page":
+            # The officer moved. Tools read the page per call ("what am I
+            # looking at", "explain this post"), so they follow along; it is
+            # advisory context and never widens what may be read.
+            session.config.page = str(command.get("page") or "")[:80]
         elif kind == "close":
             return
 
@@ -292,7 +316,11 @@ def voice_status() -> dict:
     provider availability and aggregate latency, never a transcript, a
     username or anything an officer said.
     """
-    live = realtime.available()
+    engines = [(name, *_ENGINES[name]) for name in
+               dict.fromkeys(p.strip().lower() for p in settings.VOICE_REALTIME_PROVIDERS)
+               if name in _ENGINES]
+    first = next((e for e in engines if e[1].available()), None)
+    live = first is not None
     return {
         "enabled": settings.VOICE_ENABLED,
         "active_sessions": len(_sessions),
@@ -300,9 +328,16 @@ def voice_status() -> dict:
         # Which engine a new connection would get, and on what. The two have
         # very different latency, so a console that reports "voice is on"
         # without saying which one is hiding the thing worth knowing.
-        "engine": "gemini_live" if live else "cascade",
+        "engine": first[3] if first else "cascade",
+        # Every realtime engine in preference order, so a fallback that is
+        # parked (no credit, outage) is visible rather than inferred.
+        "engines": [{"provider": name, "engine": label,
+                     "model": getattr(settings, model_key),
+                     "available": module.available(),
+                     "cooldown_seconds": round(module.cooldown_remaining(), 1)}
+                    for name, module, _cls, label, model_key in engines],
         "realtime": {"available": live,
-                     "model": settings.GEMINI_LIVE_MODEL if live else "",
+                     "model": getattr(settings, first[4]) if first else "",
                      # When true there is no second engine: a failed Live
                      # connect is a refused voice session, not a downgrade.
                      "required": settings.VOICE_REALTIME_REQUIRED,
@@ -311,7 +346,8 @@ def voice_status() -> dict:
                      # on the cascade. Worth reporting rather than inferring
                      # from `available: false`, which otherwise looks
                      # identical to "no Gemini key configured".
-                     "cooldown_seconds": round(realtime.cooldown_remaining(), 1)},
+                     "cooldown_seconds": round(first[1].cooldown_remaining(), 1)
+                     if first else round(realtime.cooldown_remaining(), 1)},
         "configured": {
             "stt": settings.VOICE_STT_PROVIDER,
             "tts": settings.VOICE_TTS_PROVIDER,

@@ -32,7 +32,7 @@ from app.database import get_session
 from app.models import User
 from app.security.deps import current_user
 from app.security.ratelimit import rate_limit
-from app.services.assistant import agent, guard, knowledge, rules, sandbox, tools
+from app.services.assistant import actions, agent, guard, knowledge, rules, sandbox, tools
 from app.services.audit import log_action
 
 log = logging.getLogger("sentinel.assistant")
@@ -61,6 +61,9 @@ class AskResponse(BaseModel):
     # only — never results, which are already in `data`.
     trace: list[dict] = []
     model: str | None = None
+    # Effects for the browser: a file to download, a post to open, a
+    # confirmation card to show or clear. Each is re-validated client-side.
+    client_actions: list[dict] = []
 
 
 # ── endpoints ───────────────────────────────────────────────────────────────
@@ -77,7 +80,10 @@ def capabilities(user: User = Depends(current_user)) -> dict:
         "enabled": settings.ASSISTANT_ENABLED,
         "name": "Sentinel",
         "wake_words": ["hey sentinel", "sentinel"],
-        "read_only": True,
+        # Reads freely; changes only the short list in `actions`, and only
+        # after the officer confirms on a later turn or clicks Confirm.
+        "read_only": False,
+        "actions": actions.describe_capabilities(),
         "role": user.role,
         "agent_enabled": settings.ASSISTANT_LLM_FALLBACK,
         "sql_enabled": (settings.ASSISTANT_SQL_ENABLED
@@ -89,7 +95,8 @@ def capabilities(user: User = Depends(current_user)) -> dict:
             "officer accounts and credentials",
             "the audit trail",
             "biometric and suspect-registry lookups",
-            "any action that changes, actions, exports or deletes data",
+            "deleting, purging, retraining or sending anything",
+            "any change the officer has not confirmed",
             "configuration and secrets",
         ],
         "cities": settings.TARGET_CITIES,
@@ -132,7 +139,42 @@ async def ask(body: AskRequest, session: Session = Depends(get_session),
         navigate=result.navigate, data=result.data,
         source="agent" if intent == "agent" else
                ("unknown" if intent == "unknown" else "rules"),
-        trace=result.trace, model=result.model)
+        trace=result.trace, model=result.model,
+        client_actions=result.client_actions)
+
+
+# ── confirming by hand ──────────────────────────────────────────────────────
+
+@router.get("/assistant/actions/pending")
+def pending_action(user: User = Depends(current_user)) -> dict:
+    """The action waiting for this officer's confirmation, if any — so a
+    reloaded page can show the card again."""
+    item = actions.pending_for(str(user.id))
+    return {"pending": item.card() if item else None}
+
+
+@router.post("/assistant/actions/{action_id}/confirm",
+             dependencies=[Depends(_assistant_rate_limit)])
+async def confirm_action(action_id: str, session: Session = Depends(get_session),
+                         user: User = Depends(current_user)) -> dict:
+    """The Confirm button. A click by the signed-in officer is its own
+    deliberate act, so the spoken-yes check does not apply — everything else
+    (the rank check, the expiry, the single pending slot) does."""
+    ctx = tools.ToolContext(session=session, user=user)
+    outcome = await actions.confirm(ctx, action_id, clicked=True)
+    if not outcome.payload.get("done"):
+        raise HTTPException(409, outcome.payload.get("error") or "Not confirmed.")
+    return {"result": outcome.payload, "navigate": outcome.navigate,
+            "client_actions": outcome.client_actions}
+
+
+@router.post("/assistant/actions/{action_id}/cancel")
+def cancel_action(action_id: str, session: Session = Depends(get_session),
+                  user: User = Depends(current_user)) -> dict:
+    item = actions.pending_for(str(user.id))
+    if item is None or item.id != action_id:
+        return {"cancelled": False}
+    return actions.cancel(tools.ToolContext(session=session, user=user))
 
 
 @router.get("/assistant/schema")

@@ -231,6 +231,24 @@ class Settings(BaseSettings):
     #: `GEMINI_LIVE_MODEL` is a *preview* alias and those do get retired — where
     #: a degraded assistant beats a dead panel.
     VOICE_REALTIME_REQUIRED: bool = True
+    #: Realtime engines in preference order: the first one that is configured,
+    #: not cooling down and connects gets the session; the next is the
+    #: fallback. "gemini" = Gemini Live (realtime.py), "openai" = OpenAI
+    #: Realtime (openai_realtime.py, dormant: it needs OPENAI_API_KEY and
+    #: "openai" added here). Gemini only by choice; to compare the two, run
+    #: `python -m app.services.voice.benchmark`.
+    VOICE_REALTIME_PROVIDERS: list[str] = ["gemini"]
+
+    # OpenAI Realtime — the second realtime engine. Same tools, same guard,
+    # same confirmation rule as Gemini Live; only the socket differs.
+    OPENAI_REALTIME_MODEL: str = "gpt-realtime-2.1-mini"
+    OPENAI_REALTIME_VOICE: str = "marin"
+    #: Transcribes the officer for the console, the audit log, the denylist and
+    #: the spoken-yes check. The answer itself does not wait for it.
+    OPENAI_TRANSCRIBE_MODEL: str = "gpt-4o-mini-transcribe"
+    #: semantic_vad judges "finished" from the words (no answering half a
+    #: question); eagerness trades that against speed: low | medium | high | auto.
+    OPENAI_REALTIME_EAGERNESS: str = "auto"
 
     VOICE_STT_PROVIDER: str = "auto"
     VOICE_STT_MODEL: str = "whisper-large-v3-turbo"
@@ -244,6 +262,11 @@ class Settings(BaseSettings):
     # transliterate Gujarati into nonsense English rather than transcribing it,
     # and officers switch language mid-sentence.
     VOICE_LANGUAGE: str = "auto"
+    #: BCP-47 hints for Gemini Live's transcription of the officer, comma-
+    #: separated. Hints, not a pin — detection stays automatic, so Hinglish and
+    #: Gujlish (which ride on these three) and mid-sentence switches still
+    #: transcribe. Empty disables them.
+    VOICE_LANGUAGE_HINTS: str = "en-IN,hi-IN,gu-IN"
 
     # Synthesis. "auto" takes the best voice this deployment has a key for —
     # elevenlabs, then sarvam, then the browser's own — rather than failing
@@ -375,6 +398,42 @@ class Settings(BaseSettings):
     YOUTUBE_TERMS_PER_CYCLE: int = 2
     YOUTUBE_MIN_INTERVAL_SECONDS: int = 2400
 
+    # YouTube via ScrapingBee's YouTube scraper API
+    # (github.com/ScrapingBee/youtube-scraper-api) — the preferred YouTube
+    # adapter whenever SCRAPINGBEE_API_KEY is set; the Data API key above is
+    # the fallback. Paid per call in credits (search 5; a free account starts
+    # with 1,000 in total), so spending is capped per day. It has no comments
+    # endpoint: comments, replies and video details come free from YouTube's
+    # own web routes (see YOUTUBE_WEB_* below), and paid metadata is bought only
+    # when a watch page could not be read. The same rotation as above applies:
+    # YOUTUBE_TERMS_PER_CYCLE searches every YOUTUBE_MIN_INTERVAL_SECONDS.
+    SCRAPINGBEE_API_KEY: str = ""
+    SCRAPINGBEE_DAILY_CREDITS: int = 150
+    SCRAPINGBEE_YT_SEARCH_CREDITS: int = 5
+    SCRAPINGBEE_YT_METADATA_CREDITS: int = 5
+    # Results per search whose paid details may be bought (only when the free
+    # watch page failed). The rest are kept on their search result alone.
+    SCRAPINGBEE_YT_DETAILS_PER_SEARCH: int = 3
+
+    # YouTube's own web routes (crawlers/youtube_web.py), no key needed. They
+    # supply comments and replies to the ScrapingBee route, and are the last
+    # YouTube adapter when neither key above is set. False turns off both uses.
+    YOUTUBE_WEB_ENABLED: bool = True
+    # New videos read per search on the keyless route (each is ~2–5 requests:
+    # watch page, comments, replies).
+    YOUTUBE_WEB_VIDEOS_PER_SEARCH: int = 8
+    # Comment threads read per video, and replies under its busiest threads.
+    YOUTUBE_COMMENTS_PER_VIDEO: int = 20
+    YOUTUBE_REPLY_THREADS_PER_VIDEO: int = 3
+    YOUTUBE_REPLIES_PER_THREAD: int = 10
+    # Watchlist accounts tried as YouTube channels per cycle, and how many of
+    # each channel's uploads from the last week are read.
+    YOUTUBE_WATCHED_CHANNELS_PER_CYCLE: int = 2
+    YOUTUBE_WATCHED_UPLOADS_PER_CHANNEL: int = 3
+    # Videos from the last two days re-read per cycle for comments posted
+    # since the first read.
+    YOUTUBE_REVISITS_PER_CYCLE: int = 3
+
     # X via twikit (unofficial, key-free) — credentials of a real X account
     # (use a dedicated burner). Activates the "X (twikit)" adapter when
     # username + password are set; cookies persist in backend/x_cookies.json.
@@ -452,9 +511,19 @@ class Settings(BaseSettings):
         "gemini-3.5-flash",
     ]
     GEMINI_TIMEOUT_SECONDS: int = 30
-    #: Which provider the assistant tries FIRST. Groq remains behind it, so a
-    #: dead Gemini key degrades the assistant rather than switching it off.
+    #: Which provider the assistant tries FIRST: "gemini" or "openai". The other
+    #: one is next, then Groq, so a dead key degrades the assistant rather than
+    #: switching it off.
     ASSISTANT_LLM_PROVIDER: str = "gemini"
+
+    # OpenAI chat completions — a provider for the assistant's text answers
+    # (typed console and the voice cascade), alongside Gemini. Non-reasoning
+    # models on purpose: the assistant picks a tool and says what it returned,
+    # and reasoning tokens are latency an officer waits through.
+    OPENAI_API_KEY: str = ""
+    OPENAI_BASE_URL: str = "https://api.openai.com/v1"
+    OPENAI_TOOL_MODELS: list[str] = ["gpt-4.1-mini", "gpt-4.1-nano"]
+    OPENAI_TIMEOUT_SECONDS: int = 30
 
     # There is deliberately no local-model tier. An Ollama leg used to sit at
     # the end of the chain for air-gapped installs; this deployment is a hosted
@@ -694,6 +763,12 @@ class Settings(BaseSettings):
     # `sessionid` cookie from a logged-in browser and is preferred: it skips the
     # fresh-login handshake that usually triggers Instagram's checkpoint.
     IG_SESSIONID: str = ""
+    # Instagram posts via the instagram-user-feed port
+    # (crawlers/instagram_userfeed.py, from github.com/pgrimaud/instagram-user-feed).
+    # Preferred over instagrapi: it reads the public web profile/feed routes,
+    # with IG_SESSIONID as its cookie when set, so no private-API login can be
+    # challenged. Set false to hand Instagram back to instagrapi.
+    IG_USERFEED_ENABLED: bool = True
     IG_USERNAME: str = ""
     IG_PASSWORD: str = ""
     # Private-API reads get an account blocked far faster than Graph calls, so

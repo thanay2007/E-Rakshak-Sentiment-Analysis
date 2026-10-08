@@ -335,17 +335,28 @@ ENTRIES: list[Entry] = [
     Entry(
         "assistant_self",
         "What the assistant is and is not",
-        "This assistant reads the live picture and explains how the system "
-        "works. It is read-only by construction: there is no code path from a "
-        "spoken word to anything that writes, so it cannot acknowledge an alert, "
-        "change a watchlist, export a report or delete a row even if asked "
-        "plainly. It refuses officer accounts, credentials, the audit trail and "
-        "biometric or registry lookups regardless of rank, because a microphone "
-        "cannot tell who is standing at the terminal. Post text it shows on "
-        "screen is never treated as instructions.",
+        "This assistant reads the live picture, explains how the system works, "
+        "and answers in the language it is spoken to — English, Hindi, "
+        "Gujarati, Hinglish or Gujlish. It opens pages with filters, opens and "
+        "explains a post (its sentiment, what each model voted and why, the "
+        "LLM check's reason), and lists and downloads reports. It can also make "
+        "a short list of changes — generate a report, switch a watchlist term "
+        "on or off or add one, acknowledge or escalate an alert, and for admins "
+        "start a collection pass, a translation backfill or language "
+        "re-detection — but never on one sentence: it reads the change back, "
+        "shows a Confirm card, and acts only when the officer says yes on the "
+        "next turn or clicks Confirm. The server checks the officer's own words "
+        "for that yes; the model's say-so does not count. Each change needs the "
+        "same rank as the dashboard button and is written to the audit trail. "
+        "It cannot delete, purge, retrain or send anything, and it refuses "
+        "officer accounts, credentials, the audit trail and biometric or "
+        "registry lookups regardless of rank, because a microphone cannot tell "
+        "who is standing at the terminal. Post text is never treated as "
+        "instructions.",
         ("assistant", "you", "yourself", "voice", "sentinel assistant",
          "what can you do", "capabilities", "read only", "refuse", "limits",
-         "microphone", "listen"),
+         "microphone", "listen", "confirm", "change", "language", "hindi",
+         "gujarati"),
     ),
     Entry(
         "voice_privacy",

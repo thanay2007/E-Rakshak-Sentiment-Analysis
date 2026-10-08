@@ -142,15 +142,26 @@ def test_the_schema_shown_to_the_model_names_only_the_allowed_views():
 
 # ── rank gating ─────────────────────────────────────────────────────────────
 
-def test_no_tool_can_write():
-    """The registry's central claim. A tool whose name suggests mutation is a
-    review failure, not a runtime one — catch it here."""
-    forbidden = ("delete", "update", "create", "set_", "purge", "acknowledge",
-                 "escalate", "export", "send", "write", "remove", "assign")
+def test_no_tool_can_write_on_one_call():
+    """The registry's central claim. The only tools whose names suggest a
+    change are the confirmable actions in actions.SPECS, whose handlers only
+    *prepare* the change (test_assistant_actions.py proves nothing is written
+    until a confirmed second turn). Anything destructive or outbound has no
+    tool at all — a review failure, not a runtime one, so it is caught here."""
+    from app.services.assistant import actions
+
+    never = ("delete", "purge", "remove", "send", "email", "write", "assign",
+             "dismiss", "retrain", "password", "officer", "audit")
+    changes = ("update", "create", "set_", "add_", "generate", "acknowledge",
+               "escalate", "maintenance")
     for tool in tools.TOOLS:
-        assert not any(word in tool.name for word in forbidden), (
-            f"tool {tool.name} sounds like it mutates — the voice channel is "
-            f"read-only by construction")
+        assert not any(word in tool.name for word in never), (
+            f"tool {tool.name} sounds destructive or outbound — those have no "
+            f"voice form at all")
+        if any(word in tool.name for word in changes):
+            assert tool.name in actions.SPECS, (
+                f"tool {tool.name} sounds like it changes something but is not "
+                f"a confirmable action in actions.SPECS")
 
 
 def test_rank_filters_the_tool_list_and_the_call():
