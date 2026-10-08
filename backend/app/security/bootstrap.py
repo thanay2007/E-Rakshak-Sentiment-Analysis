@@ -22,7 +22,7 @@ import secrets
 
 from sqlmodel import col, func, select
 
-from app.config import settings
+from app.config import Settings, settings
 from app.database import session_scope
 from app.models import User
 from app.security import roles
@@ -80,20 +80,18 @@ def ensure_admin_exists() -> None:
 
 def _warn_if_default_password_still_set(user: User, password: str,
                                         generated: bool) -> None:
-    """Nag, every boot, for as long as the credential from config.py is live.
+    """Warn only while the public shipped credential matches the stored hash.
 
-    Checking by verifying the configured password against the stored hash is
-    the only honest test: the hash is one-way, so "has this been changed?"
-    cannot be answered any other way, and it stays correct if someone changes
-    the password and later changes it back.
+    Environment overrides provision new accounts; they do not reset existing
+    accounts, so compare against the shipped default independently of them.
     """
-    if generated or not password:
+    shipped_password = Settings.model_fields["BOOTSTRAP_ADMIN_PASSWORD"].default
+    if not shipped_password or not verify_password(shipped_password, user.password_hash):
         return
-    if not verify_password(password, user.password_hash):
-        return          # operator has replaced it — nothing to say
     log.warning(
         "\n%s\nSECURITY: administrator '%s' is still using the password shipped\n"
         "in config.py. That value is published with the source code, so it is\n"
-        "public. Set BOOTSTRAP_ADMIN_PASSWORD in backend/.env, or change the\n"
-        "password from Admin Panel → Officers, before this instance holds real\n"
-        "case data.\n%s", _BANNER, user.username, _BANNER)
+        "public. Change this account's password from Admin Panel → Officers\n"
+        "before this instance holds real case data. Changing backend/.env\n"
+        "does not reset an existing account's password.\n%s",
+        _BANNER, user.username, _BANNER)

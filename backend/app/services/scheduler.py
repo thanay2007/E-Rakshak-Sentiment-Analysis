@@ -1,5 +1,5 @@
 """Continuous crawl loop — APScheduler drives every configured collector on a
-fixed interval and hands results to the ingestion pipeline.
+completion-based interval and hands results to the ingestion pipeline.
 
 The tick itself can be fast (it feeds the simulator/UI); each live-platform
 adapter additionally has a per-collector politeness gap (min_interval_seconds)
@@ -49,27 +49,30 @@ async def _crawl_tick_inner() -> None:
     terms = await asyncio.to_thread(_watch_terms)
     raws = []
     now = time.monotonic()
+    due = []
     for collector in get_active_collectors():
         last = _last_run.get(collector.name)
         if last is not None and now - last < collector.min_interval_seconds:
-            continue  # politeness gap not elapsed yet
+            continue
         _last_run[collector.name] = now
+        due.append(collector)
+
+    async def collect_one(collector):
         try:
-            # Bounded, because the adapters run one after another: an adapter
-            # that blocks forever costs every platform after it in this tick
-            # *and* every tick that follows, since max_instances=1 means the
-            # next one is skipped rather than queued. A hung source must cost
-            # its own platform only.
-            raws.extend(await asyncio.wait_for(collector.collect(terms),
-                                               timeout=collector.timeout_seconds))
+            return await asyncio.wait_for(collector.collect(terms),
+                                          timeout=collector.timeout_seconds)
         except asyncio.TimeoutError:
-            # wait_for cancels the await; an adapter blocked inside a worker
-            # thread (asyncio.to_thread) keeps that thread until it returns on
-            # its own. The loop is what matters here — it moves on.
             log.warning("%s collector timed out after %ds — skipping it this tick",
                         collector.name, collector.timeout_seconds)
-        except Exception as exc:  # adapters shouldn't raise, but never stall the loop
+        except Exception as exc:
             log.warning("%s collector failed: %s", collector.name, exc)
+        return []
+
+    # A slow login or browser must not hold up starting the other sources.
+    # Each source keeps its own timeout and politeness gap; result order stays
+    # deterministic even when requests finish in a different order.
+    batches = await asyncio.gather(*(collect_one(collector) for collector in due))
+    raws = [post for batch in batches for post in batch]
     if raws:
         n = await ingest(raws)
         if n:
@@ -91,14 +94,28 @@ async def _crawl_tick_inner() -> None:
             log.debug("%s cache prime skipped: %s", label, exc)
 
 
+def _schedule_next(delay: float) -> None:
+    scheduler.add_job(_scheduled_crawl, "date", id="crawl_tick", name="crawl_tick",
+                      run_date=datetime.now(timezone.utc) + timedelta(seconds=max(0, delay)),
+                      replace_existing=True, misfire_grace_time=15)
+
+
+async def _scheduled_crawl() -> None:
+    try:
+        await crawl_tick()
+    except Exception:
+        log.exception("Collection cycle failed; the next cycle will retry")
+    finally:
+        # Schedule from completion rather than repeatedly queuing a long job.
+        # A shutdown must not bring the scheduler back to life.
+        if scheduler.running:
+            _schedule_next(settings.INGEST_INTERVAL_SECONDS)
+
+
 def start_scheduler() -> None:
-    scheduler.add_job(crawl_tick, "interval",
-                      seconds=settings.INGEST_INTERVAL_SECONDS,
-                      next_run_time=datetime.now(timezone.utc) + timedelta(
-                          seconds=max(0, settings.SCHEDULER_START_DELAY_SECONDS)),
-                      max_instances=1, coalesce=True, misfire_grace_time=15)
+    _schedule_next(settings.SCHEDULER_START_DELAY_SECONDS)
     scheduler.start()
-    log.info("Ingestion loop started (every %ss, first run in %ss)",
+    log.info("Ingestion loop started (pause %ss after each cycle, first run in %ss)",
              settings.INGEST_INTERVAL_SECONDS,
              settings.SCHEDULER_START_DELAY_SECONDS)
 

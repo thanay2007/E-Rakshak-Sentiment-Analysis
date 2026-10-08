@@ -68,7 +68,18 @@ def get_feed(
     if sort == "score":
         stmt = stmt.order_by(col(Post.concern_score).desc(), col(Post.created_at).desc())
     elif sort == "engagement":
-        stmt = stmt.order_by(func.json_extract(Post.engagement, "$.shares").desc())
+        # Indexed JSON access, not SQLite's json_extract() by name: that
+        # function does not exist on Postgres, so this ordering raised
+        # UndefinedFunction and 500'd the whole feed on a Supabase deployment
+        # while working fine on the local SQLite file. The indexed form
+        # compiles to json_extract on SQLite and ->> on Postgres.
+        #
+        # coalesced because a sizeable minority of rows carry no `shares` key
+        # (a Reddit post collected without engagement — see REDDIT_CLIENT_ID in
+        # config.py), and on Postgres a NULL sort key would order exactly those
+        # posts ahead of everything that actually travelled.
+        shares = func.coalesce(col(Post.engagement)["shares"].as_integer(), 0)
+        stmt = stmt.order_by(shares.desc(), col(Post.created_at).desc())
     else:
         stmt = stmt.order_by(col(Post.created_at).desc())
     rows = session.exec(stmt.offset((page - 1) * page_size).limit(page_size)).all()

@@ -17,6 +17,7 @@ searches additionally get a FaceSearchLog row carrying the probe's hash and the
 distances it returned, so a match can be defended after the fact.
 """
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy import String, cast
 from sqlmodel import Session, col, or_, select
 
 from app.database import get_session
@@ -206,9 +207,17 @@ def list_suspects(q: str = "", record_type: str = "", enrolled_only: bool = Fals
         stmt = stmt.where(Suspect.record_type == record_type)
     if q:
         needle = f"%{q.lower()}%"
+        # Aliases and social handles live in JSON columns and are matched on the
+        # column's text form — the same approach the feed uses for hashtags.
+        # They have to be in *this* filter and not only in the Python pass
+        # below: a record whose alias matched but whose name did not was
+        # excluded by the SQL here and could never be recovered downstream, so
+        # searching an alias or a handle silently returned nothing at all.
         stmt = stmt.where(or_(col(Suspect.full_name).ilike(needle),
                               col(Suspect.last_known_location).ilike(needle),
-                              col(Suspect.notes).ilike(needle)))
+                              col(Suspect.notes).ilike(needle),
+                              cast(col(Suspect.aliases), String).ilike(needle),
+                              cast(col(Suspect.social_handles), String).ilike(needle)))
     rows = session.exec(stmt.order_by(col(Suspect.created_at).desc())).all()
     out = [face_db.to_dict(s) for s in rows]
     if enrolled_only:

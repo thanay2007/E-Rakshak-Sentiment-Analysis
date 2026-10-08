@@ -243,16 +243,23 @@ export default function Sentinel() {
   const toggleMic = () => {
     clearError();
     voice.clearError();
+    if (micOn && (voice.micBlocked || voice.needsGesture || !voice.connected)) {
+      void voice.activate();
+      return;
+    }
     const next = !micOn;
     setMicOn(next);
     localStorage.setItem(MIC_KEY, next ? "1" : "0");
     if (!next) voice.endTurn();
+    else void voice.activate();
   };
 
   const title = !micOn
     ? "Microphone off — click to unmute. Critical alerts are still read out."
     : voice.micBlocked
       ? voice.micBlocked
+      : voice.needsGesture
+        ? "Click the microphone to enable audio."
       : error
         ? error
         : voice.speaking || speaking
@@ -265,6 +272,11 @@ export default function Sentinel() {
 
   return (
     <>
+    {micOn && (voice.micBlocked || voice.needsGesture || error) && (
+      <div role="status" className="fixed bottom-5 right-24 z-40 max-w-[min(20rem,calc(100vw-7rem))] rounded-xl border border-accent/30 bg-base-900/95 px-3 py-2 text-xs text-slate-200 shadow-xl">
+        {voice.micBlocked ?? (voice.needsGesture ? "Click the microphone to enable audio." : error)}
+      </div>
+    )}
     {(pending || actionNote) && (
       <div
         role="alertdialog"

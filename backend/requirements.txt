@@ -72,3 +72,7 @@ google-auth-httplib2>=0.2
 # the officer has stopped speaking. Without DEEPGRAM_API_KEY the adapter
 # reports itself unavailable and the ladder falls back to Groq Whisper.
 websockets>=12.0
+
+# Gemini Live needs the Google SDK in the same environment that runs uvicorn.
+# Without it realtime sessions are refused when VOICE_REALTIME_REQUIRED=true.
+google-genai>=2.29,<3

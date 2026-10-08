@@ -301,8 +301,8 @@ export default function IntelGuideModal({ open, onClose }: Props) {
                       <span>Finds where a shortened link leads and checks the destination for signs of fraud or harmful content.</span>
                     </div>
                     <div className="flex items-start gap-2">
-                      <span className="font-mono text-accent">4. Comment & Bot Check:</span>
-                      <span>Checks repeated comments and unusual posting speed for signs of automated accounts.</span>
+                      <span className="font-mono text-accent">4. Organized Online Campaigns:</span>
+                      <span>Looks for accounts posting together to influence public opinion on law-and-order issues.</span>
                     </div>
                   </div>
                 </div>

@@ -3,6 +3,8 @@ __pycache__/
 .venv/
 venv/
 backend/.env
+# Local backups of the env file — same secrets, same exposure.
+backend/.env.bak-*
 backend/sentinel.db
 # SQLite write-ahead log sidecars — regenerated next to the database itself
 backend/sentinel.db-shm
@@ -13,6 +15,9 @@ backend/*.session-journal
 backend/x_cookies.json
 backend/ig_session.json
 backend/fb_cookies.json
+# Generated portraits cached by app/data/face_demo_seed.py. Synthetic, but the
+# database is the record — the cache is only an inbox and is re-fetchable.
+backend/.demo_faces/
 # Accounts the crawlers found for themselves (crawlers/roster.py) — deployment
 # state, not source. Rebuilt by `python -m app.crawlers.facebook_discover` and
 # by the Instagram collector's own location/search legs.

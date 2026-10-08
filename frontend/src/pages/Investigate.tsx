@@ -1,12 +1,10 @@
 import { useUrlFilters } from "../hooks/useUrlFilters";
-import { Bot, Image, Link2, Megaphone, UserSearch, AtSign, ShieldCheck } from "lucide-react";
+import { Image, Link2, Megaphone, AtSign, ShieldCheck } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import ImageTool from "../components/investigate/ImageTool";
 import UsernameTool from "../components/investigate/UsernameTool";
 import UrlTool from "../components/investigate/UrlTool";
-import CommentsTool from "../components/investigate/CommentsTool";
 import PrTool from "../components/investigate/PrTool";
-import SleuthTool from "../components/investigate/SleuthTool";
 
 interface Tool {
   id: string;
@@ -39,25 +37,11 @@ const TOOLS: Tool[] = [
     el: <UrlTool />,
   },
   {
-    id: "comments",
-    label: "Comment & Bot Check",
-    desc: "Check the tone of comments and look for automated accounts posting together",
-    icon: Bot,
-    el: <CommentsTool />,
-  },
-  {
     id: "pr",
     label: "Organized Online Campaigns",
     desc: "Look for accounts working together to spread messages that may affect law and order",
     icon: Megaphone,
     el: <PrTool />,
-  },
-  {
-    id: "sleuth",
-    label: "Account Report",
-    desc: "Bring together an account’s posts, possible automated activity, and connections in one report",
-    icon: UserSearch,
-    el: <SleuthTool />,
   },
 ];
 
@@ -73,9 +57,9 @@ export default function Investigate() {
   return (
     <div className="space-y-4">
       {/* Tool Selector Tabs */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
         {TOOLS.map(({ id, label, icon: Icon }) => {
-          const isActive = active === id;
+          const isActive = tool.id === id;
           return (
             <button
               key={id}
@@ -113,4 +97,3 @@ export default function Investigate() {
     </div>
   );
 }
-

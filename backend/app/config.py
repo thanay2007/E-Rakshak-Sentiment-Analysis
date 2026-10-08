@@ -448,26 +448,24 @@ class Settings(BaseSettings):
     # Groq LLM second-opinion layer (services/groq_verifier.py). Free key from
     # console.groq.com — without it the layer simply stays off.
     GROQ_API_KEY: str = ""
-    GROQ_MODEL: str = "llama-3.3-70b-versatile"
+    GROQ_MODEL: str = "openai/gpt-oss-120b"
     # Cheaper model for high-volume background work (translation) so the big
     # model's daily token budget stays available for analyst-triggered work.
-    GROQ_MODEL_FAST: str = "llama-3.1-8b-instant"
+    GROQ_MODEL_FAST: str = "openai/gpt-oss-20b"
     # Groq rate limits are PER MODEL — when one model's daily budget drains,
     # the next in this chain still has quota. Every LLM call walks this list.
     GROQ_FALLBACK_MODELS: list[str] = [
-        "llama-3.1-8b-instant",
-        "openai/gpt-oss-120b",
         "openai/gpt-oss-20b",
-        "qwen/qwen3.6-27b",
+        "openai/gpt-oss-120b",
+        "qwen/qwen3.8-27b",
     ]
     # Models that support function calling, in preference order. The assistant
     # walks this chain instead of the general one: a model that ignores the
     # `tools` parameter answers from memory, and an assistant whose safety
     # rests on "it only sees what tools return" must never do that.
     GROQ_TOOL_MODELS: list[str] = [
-        "llama-3.3-70b-versatile",
         "openai/gpt-oss-120b",
-        "llama-3.1-8b-instant",
+        "openai/gpt-oss-20b",
     ]
     GROQ_VERIFY_MIN_SCORE: int = 55
     GROQ_MAX_PER_TICK: int = 8

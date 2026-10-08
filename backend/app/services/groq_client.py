@@ -44,6 +44,8 @@ _MAX_COOLDOWN_S = 1800
 
 # model -> unix timestamp until which it is considered drained
 _cooldown: dict[str, float] = {}
+# A 404 cannot recover through rate-limit retries. Recheck on process restart.
+_unavailable_models: set[str] = set()
 # model -> short human note about the last failure (for the Settings page)
 _last_error: dict[str, str] = {}
 # model -> iso timestamp of last successful completion
@@ -93,7 +95,8 @@ def _parse_retry_seconds(message: str) -> float | None:
 def _chain(model: str | None) -> list[str]:
     primary = model or settings.GROQ_MODEL
     # Dedupe while keeping order — the primary may also be in the fallback list.
-    chain = list(dict.fromkeys([primary] + list(settings.GROQ_FALLBACK_MODELS)))
+    chain = [m for m in dict.fromkeys([primary] + list(settings.GROQ_FALLBACK_MODELS))
+             if m not in _unavailable_models]
     now = time.time()
     live = [m for m in chain if _cooldown.get(m, 0) <= now]
     # if literally everything is cooling down, retry the chain anyway rather
@@ -106,6 +109,15 @@ def _body(model: str, messages: list[dict], temperature: float, json_mode: bool,
     body: dict = {"model": model, "temperature": temperature, "messages": messages}
     if json_mode:
         body["response_format"] = {"type": "json_object"}
+        # JSON mode still needs an explicit output instruction. Copy messages
+        # so a retry does not mutate the caller's conversation history.
+        instruction = "Return only one valid JSON object. Do not include Markdown or text outside the JSON."
+        copied = [dict(message) for message in messages]
+        if copied and copied[0].get("role") == "system" and isinstance(copied[0].get("content"), str):
+            copied[0]["content"] += "\n" + instruction
+        else:
+            copied.insert(0, {"role": "system", "content": instruction})
+        body["messages"] = copied
     if tools:
         # `auto` rather than `required`: the assistant's last step is a plain
         # spoken answer with no tool call in it, and forcing a call there makes
@@ -287,6 +299,8 @@ async def _complete(messages: list[dict], *, temperature: float, json_mode: bool
             log.warning("Gemini and OpenAI both failed — falling back to Groq")
         groq_chain = (chain if chain is not None else _chain(model)) if groq_enabled() else []
         for m in groq_chain:
+            if m in _unavailable_models:
+                continue
             try:
                 resp = await client.post(
                     GROQ_URL, json=_body(m, messages, temperature, json_mode, tools),
@@ -307,6 +321,9 @@ async def _complete(messages: list[dict], *, temperature: float, json_mode: bool
                 _cooldown[m] = time.time() + min(wait, _MAX_COOLDOWN_S)
                 log.warning("Groq %s rate-limited — cooling down %.0fs, trying next model",
                             m, min(wait, _MAX_COOLDOWN_S))
+            elif resp.status_code == 404:
+                _unavailable_models.add(m)
+                log.warning("Groq %s is unavailable for this account — skipping it until restart", m)
             else:
                 log.warning("Groq %s failed: HTTP %s %s", m, resp.status_code, detail[:160])
 
@@ -350,7 +367,7 @@ def _tool_chain(model: str | None) -> list[str]:
     "it can only see what the tools return", quietly ignoring the tools is the
     failure that matters, so the chain is an explicit allowlist.
     """
-    allowed = [m for m in settings.GROQ_TOOL_MODELS]
+    allowed = [m for m in settings.GROQ_TOOL_MODELS if m not in _unavailable_models]
     chain = [m for m in _chain(model) if m in allowed]
     return chain or allowed
 
@@ -424,7 +441,7 @@ def status() -> dict:
         models.append({
             "model": m,
             "role": "primary" if m == settings.GROQ_MODEL else "fallback",
-            "state": "cooling_down" if cd > now else "ready",
+            "state": "unavailable" if m in _unavailable_models else "cooling_down" if cd > now else "ready",
             "cooldown_seconds_left": max(0, round(cd - now)) if cd > now else 0,
             "last_ok": _last_ok.get(m),
             "last_error": _last_error.get(m),

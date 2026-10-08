@@ -643,6 +643,15 @@ export function useVoiceSession({
 
         case "PipelineErrorPacket":
           setError(String(packet.message ?? "Voice pipeline error"));
+          // The provider can drop while our browser socket is still open.
+          // Closing this side lets the existing reconnect path replace it.
+          if (packet.message === "The voice link dropped. Reconnecting.") {
+            socket.current?.close();
+          }
+          break;
+
+        case "error":
+          setError(String(packet.message ?? "Voice could not connect"));
           break;
 
         default:
@@ -718,7 +727,10 @@ export function useVoiceSession({
     if (context.state === "suspended") {
       setNeedsGesture(true);
       const resume = () => {
-        void context.resume().then(() => setNeedsGesture(false));
+        void context.resume().then(() => setNeedsGesture(false)).catch(() => {
+          setNeedsGesture(true);
+          setError("Click the microphone to enable audio.");
+        });
         window.removeEventListener("pointerdown", resume);
         window.removeEventListener("keydown", resume);
       };
@@ -854,7 +866,9 @@ export function useVoiceSession({
     };
 
     ws.onclose = () => {
+      if (socket.current !== ws) return;
       socket.current = null;
+      stopPlayback();
       speakersReported.current = false;
       setConnected(false);
       setState("idle");
@@ -866,10 +880,31 @@ export function useVoiceSession({
         RECONNECT_MIN_MS * 2 ** (retries.current - 1),
         RECONNECT_MAX_MS
       );
-      retryTimer.current = window.setTimeout(() => void connectRef.current(), wait);
+      retryTimer.current = window.setTimeout(() => {
+        retryTimer.current = null;
+        void connectRef.current();
+      }, wait);
     };
-  }, [ensureAudio, token]);
+  }, [ensureAudio, stopPlayback, token]);
   connectRef.current = connect;
+
+  /** Called by a click so the browser can permit audio and retry access. */
+  const activate = useCallback(async () => {
+    setError(null);
+    setMicBlocked(null);
+    // Resume before awaiting microphone access: keep the user gesture.
+    const context = audioContext.current;
+    if (context && context.state === "suspended") {
+      try {
+        await context.resume();
+        setNeedsGesture(false);
+      } catch {
+        setError("Audio could not start. Click the microphone to try again.");
+        return;
+      }
+    }
+    await connectRef.current();
+  }, []);
 
   const disconnect = useCallback(() => {
     if (retryTimer.current !== null) {
@@ -965,7 +1000,7 @@ export function useVoiceSession({
     /** True while the microphone is deliberately shut because the assistant is
      *  audible — the UI says "speaking", not "listening", and means it. */
     speaking: state === "speaking",
-    connect, disconnect, ask, interrupt, endTurn,
+    connect, activate, disconnect, ask, interrupt, endTurn,
     clearError: () => setError(null),
   };
 }
