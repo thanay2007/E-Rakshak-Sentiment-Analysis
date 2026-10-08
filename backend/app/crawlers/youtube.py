@@ -84,6 +84,41 @@ def _is_relevant(term: str, blob: str) -> bool:
     return _mentions(term, blob) or bool(infer_city(blob))
 
 
+def search_targets(watch_terms: list[str]) -> list[tuple[str, str]]:
+    """Every (term, city) pair this deployment cares about.
+
+    YouTube has no geo filter worth using — `location` only applies to videos
+    that carry coordinates, which almost none do, and regionCode=IN is the
+    whole country. So the city is pushed into the query text instead, the
+    same city-anchoring the Reddit and Telegram adapters get from their seed
+    subreddits and channels. A term that already names a city is searched as
+    it stands rather than doubled up into "Surat Ahmedabad".
+
+    Shared by both YouTube adapters (Data API and ScrapingBee), so switching
+    between them never changes *what* is searched.
+    """
+    pairs: list[tuple[str, str]] = []
+    for term in watch_terms:
+        hit = infer_city(term)
+        if hit:
+            pairs.append((term, hit[0]))   # term already names a city
+        else:
+            pairs.extend((term, city) for city in settings.TARGET_CITIES)
+    return pairs
+
+
+def next_targets(watch_terms: list[str], cursor: int) -> tuple[list[tuple[str, str]], int]:
+    """The rotating slice of (term, city) pairs for this cycle, and the cursor
+    the next cycle resumes from."""
+    pairs = search_targets(watch_terms)
+    if not pairs:
+        return [], cursor
+    n = min(settings.YOUTUBE_TERMS_PER_CYCLE, len(pairs))
+    start = cursor % len(pairs)
+    # wrap around the end of the list
+    return [pairs[(start + i) % len(pairs)] for i in range(n)], start + n
+
+
 class YouTubeCollector(Collector):
     name = "YouTube"
     min_interval_seconds = settings.YOUTUBE_MIN_INTERVAL_SECONDS
@@ -115,35 +150,10 @@ class YouTubeCollector(Collector):
         self._spent += units
         return True
 
-    def _targets(self, watch_terms: list[str]) -> list[tuple[str, str]]:
-        """Every (term, city) pair this deployment cares about.
-
-        YouTube has no geo filter worth using — `location` only applies to videos
-        that carry coordinates, which almost none do, and regionCode=IN is the
-        whole country. So the city is pushed into the query text instead, the
-        same city-anchoring the Reddit and Telegram adapters get from their seed
-        subreddits and channels. A term that already names a city is searched as
-        it stands rather than doubled up into "Surat Ahmedabad".
-        """
-        pairs: list[tuple[str, str]] = []
-        for term in watch_terms:
-            hit = infer_city(term)
-            if hit:
-                pairs.append((term, hit[0]))   # term already names a city
-            else:
-                pairs.extend((term, city) for city in settings.TARGET_CITIES)
-        return pairs
-
     def _next_targets(self, watch_terms: list[str]) -> list[tuple[str, str]]:
         """The rotating slice of (term, city) pairs to search this cycle."""
-        pairs = self._targets(watch_terms)
-        if not pairs:
-            return []
-        n = min(settings.YOUTUBE_TERMS_PER_CYCLE, len(pairs))
-        start = self._cursor % len(pairs)
-        self._cursor = start + n
-        # wrap around the end of the list
-        return [pairs[(start + i) % len(pairs)] for i in range(n)]
+        targets, self._cursor = next_targets(watch_terms, self._cursor)
+        return targets
 
     def quota_status(self) -> dict:
         self._roll_day()

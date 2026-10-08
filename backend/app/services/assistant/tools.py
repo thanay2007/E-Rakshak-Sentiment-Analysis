@@ -8,9 +8,14 @@ exposes is exactly the surface written down here, reviewable in one file.
 Three properties hold across the whole registry, and they are what make it
 safe to let a language model drive:
 
-  **Nothing writes.** There is no handler that mutates, and no import in this
-  module that could. Acknowledging an alert, changing a watchlist, purging
-  data and resetting a password are not "blocked" — they are absent.
+  **Nothing writes on one utterance.** The handlers here read. The handful of
+  changes the assistant may make — generate a report, switch a watchlist term
+  on or off, add one, acknowledge or escalate an alert, start a maintenance
+  job — go through `actions.py`: the tool only *prepares* the change, the
+  officer confirms it on a later turn (a spoken yes the server checks itself,
+  or the Confirm button), and only then does it run. Deleting anything,
+  purging data, retraining, officer accounts and passwords are not "blocked"
+  — they are absent.
 
   **Rank gates the list, not the answer.** `for_role()` filters the tool list
   before it is shown to the model, and `invoke()` re-checks on the way in. A
@@ -25,20 +30,22 @@ safe to let a language model drive:
 """
 from __future__ import annotations
 
+import inspect
 import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Callable
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode, urlparse
 
 from sqlmodel import Session, col, func, select
 
 from app.config import settings
 from app.ml.geo import _ALIASES as CITY_ALIASES
-from app.models import Alert, Post, User, WatchlistItem
+from app.models import Alert, Post, Report, User, WatchlistItem
 from app.security.roles import ADMIN, ANALYST, SUPERVISOR, at_least  # noqa: F401
-from app.services.assistant import guard, knowledge, sandbox
+from app.services.assistant import actions, guard, knowledge, sandbox
 
 log = logging.getLogger("sentinel.assistant.tools")
 
@@ -129,8 +136,13 @@ class ToolResult:
     # Extra detail for the on-screen panel only — never sent to the model, so
     # it can be richer than what the model is trusted to summarise.
     display: dict = field(default_factory=dict)
-    # In-app path to open. Set only by `navigate`, never inferred from prose.
+    # In-app path to open. Set only by tools that resolve it from a fixed
+    # table or a database id, never inferred from prose.
     navigate: str | None = None
+    # Effects on the officer's browser beyond moving the page: a file to
+    # download, a post to open, a confirmation card to show or clear. Typed and
+    # built here; the browser re-validates every one before acting on it.
+    client_actions: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -138,9 +150,14 @@ class ToolContext:
     session: Session
     user: User
     page: str = ""
+    # The officer's own words for this turn, and when the turn began
+    # (time.monotonic). Only `confirm_action` reads them: a confirmation has
+    # to be a yes the officer said, after the action was prepared.
+    utterance: str = ""
+    turn_started: float = 0.0
 
 
-Handler = Callable[[ToolContext, dict], ToolResult]
+Handler = Callable[[ToolContext, dict], Any]   # ToolResult, or an awaitable of one
 
 
 @dataclass(frozen=True)
@@ -515,6 +532,7 @@ def _h_search_posts(ctx: ToolContext, args: dict) -> ToolResult:
     results = []
     for p in posts:
         results.append({
+            "post_id": p.id,
             "platform": p.platform,
             "language": p.language,
             "author_handle": guard.sanitise_untrusted(p.author_handle, 40),
@@ -616,7 +634,7 @@ _PAGES = {
     "watchlist": "/app/watchlist",
     "unverified": "/app/unverified", "unverified claims": "/app/unverified",
     "rumours": "/app/unverified", "rumors": "/app/unverified",
-    "settings": "/app/settings",
+    "settings": "/app/settings", "system": "/app/settings",
     "admin": "/app/admin", "admin panel": "/app/admin",
 }
 
@@ -640,6 +658,10 @@ _SEVERITIES = ("critical", "high", "medium")
 _STATUSES = ("new", "acknowledged", "escalated")
 #: The investigation tools, by the id their tab uses.
 _INVESTIGATE_TABS = ("image", "username", "pr")
+
+#: A database row id as this backend mints them (uuid4, with or without
+#: dashes). Anything else never reaches a URL or a query.
+_RECORD_ID = re.compile(r"^[0-9a-fA-F-]{8,40}$")
 
 #: Longest a spoken search phrase may be. The box is a keyword field, not a
 #: sentence, and an officer reading back a filter chip should be able to see
@@ -731,6 +753,8 @@ _PAGE_FILTERS: dict[str, dict[str, Any]] = {
         "platform": _one_of(_PLATFORMS),
     },
     "/app/investigate": {"tab": _one_of(_INVESTIGATE_TABS)},
+    # A report id from list_reports — opens that report over the list.
+    "/app/reports": {"open": lambda raw: str(raw) if _RECORD_ID.match(str(raw)) else None},
 }
 
 #: What the model is likely to call a filter → what the page calls it. The
@@ -846,6 +870,191 @@ def _h_run_sql(ctx: ToolContext, args: dict) -> ToolResult:
                  "row_count": result.row_count, "truncated": result.truncated},
         display={"sql": result.sql, "columns": result.columns, "rows": result.rows,
                  "elapsed_ms": result.elapsed_ms})
+
+
+# ── one post, explained ─────────────────────────────────────────────────────
+
+def _open_post_id(page: str) -> str:
+    """The post the officer has open on screen, when the page says so
+    (``/app/feed?post=<id>``). Advisory, like the rest of `page` — it picks
+    which post to read, never what the officer may read."""
+    try:
+        value = (parse_qs(urlparse(page or "").query).get("post") or [""])[0]
+    except ValueError:
+        return ""
+    return value if _RECORD_ID.match(value) else ""
+
+
+def _model_votes(consensus: dict) -> list[dict]:
+    votes = []
+    for v in (consensus or {}).get("votes") or []:
+        if not isinstance(v, dict):
+            continue
+        terms = [guard.sanitise_untrusted(str(e.get("term", "")), 30)
+                 for e in v.get("evidence") or [] if isinstance(e, dict) and e.get("term")]
+        vote = {"model": v.get("model"), "label": v.get("label"),
+                "confidence": round(float(v.get("confidence") or 0), 2)}
+        if terms:
+            vote["evidence_terms"] = terms[:5]
+        votes.append(vote)
+    return votes
+
+
+def _h_explain_post(ctx: ToolContext, args: dict) -> ToolResult:
+    """One post with everything needed to explain its verdict: what the three
+    models voted and on what words, what the LLM check concluded and why, the
+    concern score against the alert line, and the text itself (sanitised, and
+    fenced again by the agent) so the model can summarise it.
+
+    The post is also opened on the officer's screen, so they read the actual
+    words while the assistant explains them.
+    """
+    which = str(args.get("which") or "").strip().lower()
+    post_id = str(args.get("post_id") or "").strip()
+    if not post_id and which in ("", "open", "this", "current"):
+        post_id = _open_post_id(ctx.page)
+        if not post_id and which in ("open", "this", "current"):
+            return ToolResult({"found": False,
+                               "error": "No post is open on screen. Ask which one, or "
+                                        "use which='top' or which='latest'."})
+    post = None
+    if post_id:
+        if not _RECORD_ID.match(post_id):
+            return ToolResult({"found": False, "error": "That is not a post id."})
+        post = ctx.session.get(Post, post_id) or ctx.session.exec(
+            select(Post).where(col(Post.id).startswith(post_id)).limit(1)).first()
+    else:
+        stmt, _, _ = _filtered_posts(args)
+        order = col(Post.created_at) if which == "latest" else col(Post.concern_score)
+        post = ctx.session.exec(stmt.order_by(order.desc()).limit(1)).first()
+    if post is None:
+        return ToolResult({"found": False, "error": "No post matched."})
+
+    consensus = post.sentiment_consensus or {}
+    llm = post.llm_verification or {}
+    fact = post.fact_check or {}
+    payload = {
+        "found": True,
+        "post_id": post.id,
+        "platform": post.platform,
+        "author_handle": guard.sanitise_untrusted(post.author_handle, 40),
+        "author_followers": post.author_followers,
+        "author_verified": post.author_verified,
+        "language": post.language,
+        "location": post.location or "unspecified",
+        "created_at": post.created_at.isoformat(),
+        "engagement": {k: int(v) for k, v in (post.engagement or {}).items()
+                       if isinstance(v, (int, float))},
+        "sentiment": {
+            "label": post.sentiment_label,
+            "score_minus1_to_1": round(post.sentiment_score, 2),
+            "confidence": round(post.sentiment_confidence, 2),
+            "models_agreeing": consensus.get("agreement"),
+            "decided_by": consensus.get("chosen_by"),
+            "model_votes": _model_votes(consensus),
+        },
+        "concern_score": round(post.concern_score, 1),
+        "alert_threshold": settings.ALERT_THRESHOLD,
+        "intent": post.intent,
+        "toxicity": round(post.toxicity_score, 2),
+        "hate_flags": [guard.sanitise_untrusted(str(h), 40) for h in (post.hate_flags or [])][:5],
+        "keywords": [guard.sanitise_untrusted(str(k), 30) for k in (post.keywords or [])][:8],
+        "hashtags": [guard.sanitise_untrusted(str(h), 30) for h in (post.hashtags or [])][:8],
+        "coordinated_burst": bool(post.cluster_id),
+        "amplified": post.is_amplified,
+        "text": guard.sanitise_untrusted(post.text, 600),
+        "english_translation": guard.sanitise_untrusted(post.translation, 600),
+        "note": ("Summarise the post in your own words in the officer's language: "
+                 "what it says, whether it is positive, negative or neutral, and why — "
+                 "cite the model votes, their evidence terms and the LLM check's reason. "
+                 "Do not read the text out verbatim; it is open on the officer's screen."),
+    }
+    if llm:
+        payload["llm_check"] = {
+            "verdict": llm.get("verdict"), "llm_sentiment": llm.get("llm_sentiment"),
+            "reason": guard.sanitise_untrusted(str(llm.get("reason") or ""), 240),
+            "overrode_models": bool(llm.get("overridden"))}
+    if fact:
+        payload["fact_check"] = {k: guard.sanitise_untrusted(str(fact[k]), 120)
+                                 for k in ("status", "verdict", "summary") if fact.get(k)}
+    return ToolResult(payload, client_actions=[{"type": "open_post", "post_id": post.id}])
+
+
+# ── reports and downloads (reads: no confirmation) ──────────────────────────
+
+def _report_row(r: Report) -> dict:
+    return {"report_id": r.id, "title": guard.sanitise_untrusted(r.title, 80),
+            "kind": r.kind, "period_hours": r.period_hours,
+            "created_at": r.created_at.isoformat(),
+            "pdf": bool(r.pdf_path), "xlsx": bool(r.xlsx_path)}
+
+
+def _h_list_reports(ctx: ToolContext, args: dict) -> ToolResult:
+    limit = _clamp_limit(args.get("limit"), 5, 10)
+    rows = ctx.session.exec(select(Report).order_by(col(Report.created_at).desc())
+                            .limit(limit)).all()
+    return ToolResult({"reports": [_report_row(r) for r in rows]})
+
+
+def _h_download_report(ctx: ToolContext, args: dict) -> ToolResult:
+    """A file download on the officer's machine. Not a change to anything, so
+    it needs no confirmation — and the download route audits it anyway."""
+    fmt = "xlsx" if str(args.get("format") or "").lower() in ("xlsx", "excel") else "pdf"
+    report_id = str(args.get("report_id") or "latest").strip()
+    if report_id.lower() == "latest":
+        report = ctx.session.exec(select(Report).order_by(col(Report.created_at).desc())
+                                  .limit(1)).first()
+    elif _RECORD_ID.match(report_id):
+        report = ctx.session.get(Report, report_id) or ctx.session.exec(
+            select(Report).where(col(Report.id).startswith(report_id)).limit(1)).first()
+    else:
+        report = None
+    if report is None:
+        return ToolResult({"downloading": False, "error": "No such report. Use list_reports."})
+    stored = report.pdf_path if fmt == "pdf" else report.xlsx_path
+    if not stored or not Path(stored).exists():
+        return ToolResult({"downloading": False,
+                           "error": f"That report has no {fmt.upper()} file."})
+    path = (f"/api/reports/{report.id}/download" if fmt == "pdf"
+            else f"/api/reports/{report.id}/download.xlsx")
+    return ToolResult(
+        {"downloading": True, "format": fmt, **_report_row(report)},
+        client_actions=[{"type": "download", "path": path,
+                         "filename": f"SENTINEL_{report.kind}_{report.id}.{fmt}"}])
+
+
+def _h_download_posts_csv(ctx: ToolContext, args: dict) -> ToolResult:
+    hours = _clamp_hours(args.get("hours"))
+    return ToolResult(
+        {"downloading": True, "window_hours": hours},
+        client_actions=[{"type": "download",
+                         "path": f"/api/admin/export/posts.csv?hours={hours}",
+                         "filename": f"posts_last_{hours}h.csv"}])
+
+
+# ── changes: prepared here, run only after confirmation (see actions.py) ────
+
+def _prepare(name: str) -> Handler:
+    def handler(ctx: ToolContext, args: dict) -> ToolResult:
+        payload, pending = actions.prepare(name, ctx, args)
+        return ToolResult(payload, client_actions=[pending.card()] if pending else [])
+    handler.__name__ = f"_h_prepare_{name}"
+    return handler
+
+
+async def _h_confirm_action(ctx: ToolContext, args: dict) -> ToolResult:
+    outcome = await actions.confirm(ctx, str(args.get("action_id") or ""))
+    return ToolResult(outcome.payload, navigate=outcome.navigate,
+                      client_actions=outcome.client_actions)
+
+
+def _h_cancel_action(ctx: ToolContext, args: dict) -> ToolResult:
+    return ToolResult(actions.cancel(ctx), client_actions=[{"type": "confirm_clear"}])
+
+
+_CONFIRM_NOTE = (" This only PREPARES the change and shows it to the officer; "
+                 "nothing happens until they confirm in their next reply and you "
+                 "call confirm_action.")
 
 
 # ── the registry ────────────────────────────────────────────────────────────
@@ -1020,8 +1229,110 @@ TOOLS: list[Tool] = [
              "tab": {"type": "string", "enum": list(_INVESTIGATE_TABS),
                      "description": "Investigate only. Which forensic tool to "
                                     "open."},
+             "open": {"type": "string",
+                      "description": "Reports only. A report_id from "
+                                     "list_reports, to open that report."},
          }, required=["page"]),
          _h_navigate),
+
+    Tool("explain_post",
+         "One post explained: its text and English translation, the sentiment "
+         "label with what each of the three models voted and on which words, the "
+         "LLM check's reason, concern score, intent and engagement. Also opens the "
+         "post on the officer's screen. Use for 'summarise this post', 'why is "
+         "this negative', 'what is the worst post in Surat about'. Without "
+         "post_id it reads the post open on screen, or the top / latest post "
+         "matching the filters.",
+         _params({"post_id": {"type": "string",
+                              "description": "A post_id from top_posts or search_posts."},
+                  "which": {"type": "string", "enum": ["open", "top", "latest"],
+                            "description": "open = the post on screen; top = highest "
+                                           "concern score; latest = newest."},
+                  "hours": _HOURS, "city": _CITY, "platform": _PLATFORM,
+                  "sentiment": _SENTIMENT}),
+         _h_explain_post),
+
+    Tool("list_reports",
+         "The most recent generated reports with their ids, kinds and whether a "
+         "PDF / Excel file exists.",
+         _params({"limit": {"type": "integer", "description": "How many (default 5)."}}),
+         _h_list_reports),
+
+    Tool("download_report",
+         "Download a report file to the officer's computer. No confirmation "
+         "needed — it changes nothing.",
+         _params({"report_id": {"type": "string",
+                                "description": "A report_id, or 'latest'."},
+                  "format": {"type": "string", "enum": ["pdf", "xlsx"]}}),
+         _h_download_report),
+
+    Tool("download_posts_csv",
+         "Download the stored posts of a time window as a CSV file.",
+         _params({"hours": _HOURS}),
+         _h_download_posts_csv, min_role=ADMIN),
+
+    Tool("generate_report",
+         "Generate a new report: 'situation' (numbers, top posts, alerts) or "
+         "'briefing' (an intelligence briefing with an LLM-written summary), "
+         "over a window, optionally downloading it once ready. Opens it on "
+         "screen." + _CONFIRM_NOTE,
+         _params({"kind": {"type": "string", "enum": ["situation", "briefing"]},
+                  "hours": _HOURS,
+                  "title": {"type": "string", "description": "Optional title."},
+                  "download": {"type": "string", "enum": ["pdf", "xlsx"],
+                               "description": "Also download it in this format."}}),
+         _prepare("generate_report")),
+
+    Tool("set_watchlist_term",
+         "Switch an existing watchlist term (keyword, #hashtag, @account or "
+         "place) on or off." + _CONFIRM_NOTE,
+         _params({"term": {"type": "string", "description": "The term as the officer said it."},
+                  "active": {"type": "boolean",
+                             "description": "true to switch on, false to switch off."}},
+                 required=["term", "active"]),
+         _prepare("set_watchlist_term")),
+
+    Tool("add_watchlist_term",
+         "Add a new term to the watchlist so collection starts tracking it." + _CONFIRM_NOTE,
+         _params({"term": {"type": "string",
+                           "description": "A keyword, #hashtag, @account or place."},
+                  "kind": {"type": "string",
+                           "enum": ["keyword", "hashtag", "account", "location"]},
+                  "priority": {"type": "string", "enum": ["low", "medium", "high", "critical"]}},
+                 required=["term"]),
+         _prepare("add_watchlist_term")),
+
+    Tool("set_alert_status",
+         "Acknowledge an alert, or escalate it (supervisor rank; escalation "
+         "files an official report). Needs an alert_id from list_alerts."
+         + _CONFIRM_NOTE,
+         _params({"alert_id": {"type": "string"},
+                  "status": {"type": "string", "enum": ["acknowledged", "escalated"]}},
+                 required=["alert_id", "status"]),
+         _prepare("set_alert_status")),
+
+    Tool("run_maintenance",
+         "Start a maintenance job: collect_now (a collection pass now), "
+         "backfill_translations, or redetect_languages." + _CONFIRM_NOTE,
+         _params({"job": {"type": "string",
+                          "enum": ["collect_now", "backfill_translations",
+                                   "redetect_languages"]}},
+                 required=["job"]),
+         _prepare("run_maintenance"), min_role=ADMIN),
+
+    Tool("confirm_action",
+         "Carry out the action waiting for confirmation. Call ONLY when the "
+         "officer's latest reply is a yes (haan, ha, હા, ok, kar do …) to the "
+         "action you read back. The server checks their words itself and refuses "
+         "otherwise.",
+         _params({"action_id": {"type": "string",
+                                "description": "The action_id the prepare call returned."}}),
+         _h_confirm_action),
+
+    Tool("cancel_action",
+         "Drop the action waiting for confirmation — when the officer says no.",
+         _params({}),
+         _h_cancel_action),
 ]
 
 _BY_NAME = {tool.name: tool for tool in TOOLS}
@@ -1037,13 +1348,11 @@ def for_role(role: str) -> list[Tool]:
     return tools
 
 
-def invoke(name: str, args: dict, ctx: ToolContext) -> ToolResult:
-    """Run a tool by name, re-checking rank on the way in.
-
-    The rank check is duplicated from `for_role` deliberately. That one decides
-    what the model is *shown*; this one decides what actually runs, and a bug
-    in the first must not become a privilege escalation in the second.
-    """
+def _admit(name: str, ctx: ToolContext) -> Tool | ToolResult:
+    """The tool, or the refusal. Rank is re-checked here deliberately: that
+    `for_role` decides what the model is *shown*; this decides what actually
+    runs, and a bug in the first must not become a privilege escalation in the
+    second."""
     tool = _BY_NAME.get(name)
     if tool is None:
         return ToolResult({"error": f"There is no tool called '{name}'.",
@@ -1052,7 +1361,18 @@ def invoke(name: str, args: dict, ctx: ToolContext) -> ToolResult:
         return ToolResult({"error": "Your rank does not permit that lookup."})
     if tool.name == "run_sql" and not settings.ASSISTANT_SQL_ENABLED:
         return ToolResult({"error": "Direct SQL is disabled on this instance."})
+    return tool
 
+
+def invoke(name: str, args: dict, ctx: ToolContext) -> ToolResult:
+    """Run a synchronous tool by name. The rules layer and tests use this; the
+    agent and the voice engines use `invoke_async`, which also runs the one
+    asynchronous tool (`confirm_action`)."""
+    tool = _admit(name, ctx)
+    if isinstance(tool, ToolResult):
+        return tool
+    if inspect.iscoroutinefunction(tool.handler):
+        return ToolResult({"error": f"{name} has to be awaited."})
     if not isinstance(args, dict):
         args = {}
     try:
@@ -1062,6 +1382,29 @@ def invoke(name: str, args: dict, ctx: ToolContext) -> ToolResult:
         # still say something useful from the tools that did work.
         log.exception("assistant tool %s failed", name)
         return ToolResult({"error": f"The {name} lookup failed."})
+
+
+async def invoke_async(name: str, args: dict, ctx: ToolContext, *,
+                       in_thread: bool = False) -> ToolResult:
+    """Run any tool. Synchronous ones run inline, or in a worker thread when
+    `in_thread` (the realtime engine, which must not stall other officers'
+    audio on a slow query); asynchronous ones are awaited on the loop."""
+    import asyncio
+
+    tool = _admit(name, ctx)
+    if isinstance(tool, ToolResult):
+        return tool
+    if not inspect.iscoroutinefunction(tool.handler):
+        if in_thread:
+            return await asyncio.to_thread(invoke, name, args, ctx)
+        return invoke(name, args, ctx)
+    if not isinstance(args, dict):
+        args = {}
+    try:
+        return await tool.handler(ctx, args)
+    except Exception:
+        log.exception("assistant tool %s failed", name)
+        return ToolResult({"error": f"The {name} step failed."})
 
 
 def catalogue(role: str) -> list[dict]:

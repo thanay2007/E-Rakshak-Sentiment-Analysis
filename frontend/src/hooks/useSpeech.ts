@@ -110,7 +110,30 @@ const FEMALE_NAMES =
   /aria|ava|emma|jenny|michelle|sonia|libby|maisie|neerja|kavya|ananya|swara|zira|heera|female|samantha|karen|moira|tessa|fiona|serena|allison|susan|nicky|joanna|salli|kimberly/i;
 const MALE_NAMES = /david|mark|guy|andrew|brian|christopher|eric|roger|steffan|ryan|thomas|george|prabhat|madhur|daniel|alex|fred|male/i;
 
-function scoreVoice(voice: SpeechSynthesisVoice): number {
+/** The language a reply has to be *read* in, decided by its script.
+ *
+ *  Officers ask in English, Hindi, Gujarati, Hinglish and Gujlish, and the
+ *  assistant answers in kind. Hinglish and Gujlish are written in Latin script,
+ *  so an Indian-English voice reads them correctly; Devanagari and Gujarati
+ *  script are not — an English voice skips them or spells them out letter by
+ *  letter, which is how a Hindi answer used to come out as silence. */
+export type SpokenLang = "en" | "hi" | "gu";
+
+const BCP47: Record<SpokenLang, string> = { en: "en-IN", hi: "hi-IN", gu: "gu-IN" };
+
+export function scriptLang(text: string): SpokenLang {
+  let deva = 0;
+  let guj = 0;
+  for (const ch of text) {
+    const code = ch.codePointAt(0) ?? 0;
+    if (code >= 0x0900 && code <= 0x097f) deva += 1;
+    else if (code >= 0x0a80 && code <= 0x0aff) guj += 1;
+  }
+  if (!deva && !guj) return "en";
+  return guj >= deva ? "gu" : "hi";
+}
+
+function scoreVoice(voice: SpeechSynthesisVoice, want: SpokenLang = "en"): number {
   let score = 0;
   const name = voice.name;
 
@@ -120,11 +143,19 @@ function scoreVoice(voice: SpeechSynthesisVoice): number {
   if (FEMALE_NAMES.test(name)) score += 40;
   if (MALE_NAMES.test(name)) score -= 60;
 
-  if (/en[-_]IN/i.test(voice.lang)) score += 20;
-  else if (/en[-_]GB/i.test(voice.lang)) score += 12;
-  else if (/en[-_]AU/i.test(voice.lang)) score += 8;
-  else if (/^en/i.test(voice.lang)) score += 6;
-  else score -= 40;                 // a non-English voice reading English is unusable
+  if (want === "en") {
+    if (/en[-_]IN/i.test(voice.lang)) score += 20;
+    else if (/en[-_]GB/i.test(voice.lang)) score += 12;
+    else if (/en[-_]AU/i.test(voice.lang)) score += 8;
+    else if (/^en/i.test(voice.lang)) score += 6;
+    else score -= 40;               // a non-English voice reading English is unusable
+  } else if (new RegExp(`^${want}`, "i").test(voice.lang)) {
+    // Outweighs every quality bonus: a robotic Gujarati voice reading
+    // Gujarati beats a neural English one that cannot read it at all.
+    score += 500;
+  } else {
+    score -= 40;
+  }
 
   // A tie between an equal local and remote voice goes to the local one: it
   // starts instantly and the text never leaves the machine.
@@ -132,16 +163,26 @@ function scoreVoice(voice: SpeechSynthesisVoice): number {
   return score;
 }
 
-function pickVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
+function pickVoice(
+  voices: SpeechSynthesisVoice[],
+  want: SpokenLang = "en"
+): SpeechSynthesisVoice | null {
   if (!voices.length) return null;
   return voices
     .slice()
-    .sort((a, b) => scoreVoice(b) - scoreVoice(a))[0] ?? null;
+    .sort((a, b) => scoreVoice(b, want) - scoreVoice(a, want))[0] ?? null;
+}
+
+type VoiceSet = Partial<Record<SpokenLang, SpeechSynthesisVoice | null>>;
+
+function pickVoices(voices: SpeechSynthesisVoice[]): VoiceSet {
+  return { en: pickVoice(voices, "en"), hi: pickVoice(voices, "hi"), gu: pickVoice(voices, "gu") };
 }
 
 export function useSpeaker() {
   const [speaking, setSpeaking] = useState(false);
-  const voiceRef = useRef<SpeechSynthesisVoice | null>(null);
+  /** The best installed voice per spoken language, picked once per voice list. */
+  const voiceRef = useRef<VoiceSet | null>(null);
   /** Utterances started and not yet finished. A reply arrives as a stream of
    *  sentences, so several are in flight at once and "am I still speaking" is
    *  a count, not a flag — the microphone gate downstream depends on getting
@@ -154,7 +195,8 @@ export function useSpeaker() {
   useEffect(() => {
     if (!("speechSynthesis" in window)) return;
     const load = () => {
-      voiceRef.current = pickVoice(window.speechSynthesis.getVoices());
+      const available = window.speechSynthesis.getVoices();
+      voiceRef.current = available.length ? pickVoices(available) : null;
     };
     load();
     // Voices load asynchronously in Chrome; the first getVoices() is often [].
@@ -189,14 +231,15 @@ export function useSpeaker() {
         if (!voiceRef.current) {
           const available = window.speechSynthesis.getVoices();
           if (available && available.length > 0) {
-            voiceRef.current = pickVoice(available);
+            voiceRef.current = pickVoices(available);
           }
         }
 
         const mine = generation.current;
-        
-        // Split into sentences for immediate playback start
-        const sentences = text.match(/[^.!?]+[.!?]*/g) || [text];
+
+        // Split into sentences for immediate playback start. The danda (।) is
+        // where a Hindi or Gujarati sentence ends.
+        const sentences = text.match(/[^.!?।]+[.!?।]*/g) || [text];
         let completed = 0;
         
         setSpeaking(true);
@@ -212,7 +255,16 @@ export function useSpeaker() {
           }
           
           const utterance = new SpeechSynthesisUtterance(sentence);
-          if (voiceRef.current) utterance.voice = voiceRef.current;
+          // Per sentence, not per reply: an English answer can quote a
+          // Gujarati place name in its own script.
+          const want = scriptLang(sentence);
+          // `lang` as well as the voice, so a machine with no installed voice
+          // for that language still lets the browser choose one that can read it.
+          utterance.lang = BCP47[want];
+          const voice = voiceRef.current?.[want];
+          if (voice && (want === "en" || voice.lang.toLowerCase().startsWith(want))) {
+            utterance.voice = voice;
+          }
           utterance.rate = 1.05;
           utterance.pitch = 0.98;
 

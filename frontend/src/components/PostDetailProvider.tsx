@@ -22,6 +22,9 @@ type Ctx = {
   openPost: (p: Post) => void;
   openPostId: (id: string) => void;
   close: () => void;
+  /** The id of the post open in the drawer, if any — the voice assistant
+   *  reads it so "explain this post" means the one on screen. */
+  openId: string | null;
 };
 
 const PostDetailContext = createContext<Ctx | null>(null);
@@ -80,7 +83,11 @@ export default function PostDetailProvider({ children }: { children: React.React
     };
   }, [pendingId]);
 
-  const value = useMemo(() => ({ openPost, openPostId, close }), [openPost, openPostId, close]);
+  const openId = post?.id ?? pendingId;
+  const value = useMemo(
+    () => ({ openPost, openPostId, close, openId }),
+    [openPost, openPostId, close, openId]
+  );
 
   return (
     <PostDetailContext.Provider value={value}>

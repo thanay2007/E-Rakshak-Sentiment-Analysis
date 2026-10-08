@@ -787,6 +787,17 @@ export interface AssistantAnswer {
   source: "rules" | "agent" | "refusal" | "unknown";
   trace: AssistantStep[];
   model: string | null;
+  /** Browser effects from the tools that ran (download, open a post, show or
+   *  clear a confirmation card). Untyped on the wire — every one goes through
+   *  `parseClientAction` before it is acted on. */
+  client_actions?: unknown[];
+}
+
+/** The result of confirming a prepared assistant action by hand. */
+export interface AssistantActionResult {
+  result: Record<string, unknown>;
+  navigate: string | null;
+  client_actions: unknown[];
 }
 
 export interface AssistantCapabilities {
@@ -1051,6 +1062,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ query, page }),
     }),
+  confirmAssistantAction: (id: string) =>
+    http<AssistantActionResult>(`/api/assistant/actions/${encodeURIComponent(id)}/confirm`, {
+      method: "POST",
+    }),
+  cancelAssistantAction: (id: string) =>
+    http<{ cancelled: boolean }>(`/api/assistant/actions/${encodeURIComponent(id)}/cancel`, {
+      method: "POST",
+    }),
+  pendingAssistantAction: () => http<{ pending: unknown }>("/api/assistant/actions/pending"),
 
   // ── investigation / OSINT toolkit ──────────────────────────────────────
   investigateImage: (file: File) => {

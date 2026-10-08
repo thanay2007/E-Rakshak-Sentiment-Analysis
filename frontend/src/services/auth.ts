@@ -85,8 +85,20 @@ export function atLeast(role: string | undefined, minimum: string): boolean {
   return (RANK[role] ?? -1) >= (RANK[minimum] ?? 99);
 }
 
+/** fetch() only rejects when no HTTP response arrived at all — the API is not
+ *  running, crashed on startup, or is blocked. The browser's own message for
+ *  that is "Failed to fetch", which tells an officer nothing, so say what it
+ *  actually means. */
+async function reach(url: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch {
+    throw new Error(`Cannot reach the SENTINEL server at ${API_BASE}. Make sure the backend is running.`);
+  }
+}
+
 export async function login(username: string, password: string): Promise<LoginResult> {
-  const res = await fetch(`${API_BASE}/api/auth/login`, {
+  const res = await reach(`${API_BASE}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, password }),
@@ -119,7 +131,7 @@ export async function logout(): Promise<void> {
 
 export async function changePassword(current: string, next: string): Promise<LoginResult> {
   const token = getToken();
-  const res = await fetch(`${API_BASE}/api/auth/change-password`, {
+  const res = await reach(`${API_BASE}/api/auth/change-password`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({ current_password: current, new_password: next }),

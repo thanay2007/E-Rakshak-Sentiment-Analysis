@@ -98,6 +98,9 @@ interface Options {
   page: string;
   /** Fires when the assistant's `navigate` tool resolved a page. */
   onNavigate?: (path: string) => void;
+  /** Fires for each browser effect a tool asked for (download, open a post,
+   *  confirmation card). Raw from the wire — the caller validates it. */
+  onClientAction?: (action: unknown) => void;
   /** Server-side TTS is not always configured; when it is not, the browser
    *  speaks. It must resolve when the utterance actually *finishes*, because
    *  that is what un-gates the microphone. */
@@ -155,6 +158,10 @@ const BROWSER_ECHO_ESTIMATE = 0.09;
 const RECONNECT_MIN_MS = 800;
 const RECONNECT_MAX_MS = 15_000;
 
+/** Longest a "thinking" state may stand with nothing heard back. Generous —
+ *  a tool-calling turn with a slow query is several seconds — but finite. */
+const THINKING_TIMEOUT_MS = 20_000;
+
 function floatToPcm16(input: Float32Array): ArrayBuffer {
   const out = new DataView(new ArrayBuffer(input.length * 2));
   for (let i = 0; i < input.length; i += 1) {
@@ -181,7 +188,7 @@ interface Scheduled {
 }
 
 export function useVoiceSession({
-  token, page, onNavigate, speakLocally, cancelLocalSpeech, enabled,
+  token, page, onNavigate, onClientAction, speakLocally, cancelLocalSpeech, enabled,
   muted = false, micMuted = false,
 }: Options) {
   const [state, setState] = useState<VoiceState>("idle");
@@ -276,6 +283,13 @@ export function useVoiceSession({
       socket.current.send(JSON.stringify(payload));
     }
   }, []);
+
+  // The page is sent in the handshake, but a session lasts across many page
+  // changes — tell the server each time, so "what am I looking at" and
+  // "explain this post" are about the screen the officer is on now.
+  useEffect(() => {
+    send({ type: "page", page });
+  }, [page, send]);
 
   // ── is the assistant audible right now ───────────────────────────────────
 
@@ -386,12 +400,27 @@ export function useVoiceSession({
       });
 
       sources.current.push(source);
+      // Audio arriving *is* the assistant speaking. The realtime engine sends
+      // no text-to-speech packets of its own — its voice is these frames — so
+      // without this the state stayed wherever the last control packet left
+      // it, which after a tool call was "thinking", and the button spun for
+      // the rest of the session.
+      setState((current) => (current === "connecting" ? current : "speaking"));
       source.onended = () => {
         sources.current = sources.current.filter((n) => n !== source);
+        // The last scheduled chunk finished: the speakers are quiet, so the
+        // turn is over whatever packet did or did not announce it. A barge-in
+        // has already moved the state to "listening" and is left alone.
+        if (sources.current.length === 0 && !speakersLive()) {
+          setState((current) =>
+            current === "speaking" || current === "thinking" ? "idle" : current
+          );
+        }
+        reportPlayback();
       };
       reportPlayback();
     },
-    [reportPlayback]
+    [reportPlayback, speakersLive]
   );
 
   // ── barge-in ─────────────────────────────────────────────────────────────
@@ -524,8 +553,10 @@ export function useVoiceSession({
         case "TurnChangePacket":
           // Our own playback state is the better answer for "speaking", since
           // the server declares the turn over when the last packet is *sent*.
+          // Still audible means still speaking — never back to "thinking",
+          // which nothing would clear once the audio ends.
           if (packet.speaker === "assistant") setState("speaking");
-          else if (!speakersLive()) setState("idle");
+          else setState(speakersLive() ? "speaking" : "idle");
           break;
 
         case "LLMToolInvokedPacket":
@@ -594,6 +625,10 @@ export function useVoiceSession({
           if (packet.path) onNavigate?.(String(packet.path));
           break;
 
+        case "LLMClientActionPacket":
+          onClientAction?.(packet.action);
+          break;
+
         case "InterruptionDetectedPacket":
           cancelLocalSpeech?.();
           stopPlayback();
@@ -614,7 +649,7 @@ export function useVoiceSession({
           break;
       }
     },
-    [cancelLocalSpeech, onNavigate, push, reportPlayback, speakLocally,
+    [cancelLocalSpeech, onClientAction, onNavigate, push, reportPlayback, speakLocally,
      speakersLive, stopPlayback]
   );
 
@@ -856,6 +891,19 @@ export function useVoiceSession({
     setInterim("");
     setLevel(0);
   }, [cancelLocalSpeech, releaseAudio, stopPlayback]);
+
+  /** "Thinking" is the one state no later packet is guaranteed to end: a tool
+   *  that fails, a reply the model decides not to give, or a socket that drops
+   *  mid-turn all leave it standing. Rather than trust every path to clear it,
+   *  it expires — a spinner that outlives any real answer is a broken button. */
+  useEffect(() => {
+    if (state !== "thinking") return;
+    const timer = window.setTimeout(
+      () => setState((current) => (current === "thinking" ? "idle" : current)),
+      THINKING_TIMEOUT_MS
+    );
+    return () => window.clearTimeout(timer);
+  }, [state]);
 
   /** The whole of "it starts by itself": mounted with a token, it runs. */
   useEffect(() => {

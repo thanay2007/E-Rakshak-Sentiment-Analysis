@@ -18,6 +18,7 @@ from app.crawlers.base import Collector
 from app.crawlers.facebook import FacebookCollector
 from app.crawlers.facebook_scrape import FacebookScrapeCollector
 from app.crawlers.instagram import InstagramCollector
+from app.crawlers.instagram_userfeed import InstagramUserFeedCollector
 from app.crawlers.instagrapi_ig import InstagrapiCollector
 from app.crawlers.reddit import RedditCollector
 from app.crawlers.simulated import SimulatedCollector
@@ -25,15 +26,23 @@ from app.crawlers.telegram import TelegramCollector
 from app.crawlers.twikit_x import TwikitXCollector
 from app.crawlers.twitter import XCollector
 from app.crawlers.youtube import YouTubeCollector
+from app.crawlers.youtube_scrapingbee import ScrapingBeeYouTubeCollector
+from app.crawlers.youtube_web import YouTubeWebCollector
 
-# (platform name, adapters in preference order — official API first)
+# (platform name, adapters in preference order — official API first, except
+# where a scraper was chosen as the primary route: YouTube prefers ScrapingBee
+# when SCRAPINGBEE_API_KEY is set and falls back to YouTube's keyless web
+# routes when no key is set at all; Instagram's posts come from the
+# instagram-user-feed port ahead of instagrapi while IG_USERFEED_ENABLED.)
 _PLATFORMS: list[tuple[str, list[Collector]]] = [
     ("X", [XCollector(), TwikitXCollector()]),
     ("Reddit", [RedditCollector()]),
     ("Telegram", [TelegramCollector()]),
-    ("YouTube", [YouTubeCollector()]),
+    ("YouTube", [ScrapingBeeYouTubeCollector(), YouTubeCollector(),
+                 YouTubeWebCollector()]),
     ("Facebook", [FacebookCollector(), FacebookScrapeCollector()]),
-    ("Instagram", [InstagramCollector(), InstagrapiCollector()]),
+    ("Instagram", [InstagramUserFeedCollector(), InstagramCollector(),
+                   InstagrapiCollector()]),
 ]
 
 # Not a real platform — the demo generator. It only appears at all when
