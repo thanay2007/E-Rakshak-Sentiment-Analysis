@@ -231,7 +231,7 @@ export default function ThreatFeed() {
         <div className="flex items-center gap-2.5">
           <span className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-base-950/70 px-3 py-1.5 font-mono text-xs font-bold text-slate-200 shadow-sm backdrop-blur-md">
             <span className="h-2 w-2 rounded-full bg-accent animate-pulse" />
-            {data ? `${data.total.toLocaleString()} Matching Signals` : "Querying Pipeline…"}
+            {data ? `${data.total.toLocaleString()} Matching Posts` : "Loading Posts…"}
           </span>
           <button
             onClick={() => void refresh()}
@@ -290,7 +290,7 @@ export default function ThreatFeed() {
         <div ref={revealRef} className="h-[calc(100vh-320px)] min-h-[500px] w-full rounded-2xl border border-white/[0.06] bg-base-950/40 p-2 backdrop-blur-md">
           {data?.items.length === 0 ? (
             <GlassCard className="p-12 text-center text-xs text-slate-400">
-              No intelligence items match the current filter criteria. Broaden your search terms or reset filters.
+              No posts match your filters. Try different search words or reset the filters.
             </GlassCard>
           ) : (
             <Virtuoso

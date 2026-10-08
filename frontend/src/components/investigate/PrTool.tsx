@@ -71,8 +71,8 @@ export default function PrTool() {
   return (
     <div className="space-y-4">
       <GlassCard className="p-4">
-        <SectionTitle title="Fake PR Campaign Analysis"
-          sub="Coordinated inauthentic messaging that manufactures a narrative — scoped to law-and-order impact."
+        <SectionTitle title="Organized Online Campaigns"
+          sub="Look for accounts posting together to influence public opinion on law-and-order issues."
           right={
             <div className="flex gap-1">
               {WINDOWS.map((w) => (
@@ -94,7 +94,7 @@ export default function PrTool() {
             {data.campaigns.map((c) => <CampaignCard key={c.id} c={c} />)}
           </div>
         ) : (
-          <EmptyHint>No coordinated law-and-order PR campaigns detected in this window. Try a wider window.</EmptyHint>
+          <EmptyHint>No organized campaigns found in this time period. Try a longer period.</EmptyHint>
         )
       )}
     </div>

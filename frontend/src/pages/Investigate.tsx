@@ -19,43 +19,43 @@ interface Tool {
 const TOOLS: Tool[] = [
   {
     id: "image",
-    label: "Image & Reverse Forensics",
-    desc: "EXIF metadata, tampering heatmaps, deepfake probability & web reverse search",
+    label: "Image & Video Check",
+    desc: "Check file details, signs of editing, possible AI fakes, and where images appear online",
     icon: Image,
     el: <ImageTool />,
   },
   {
     id: "username",
-    label: "Cross-Platform Username",
-    desc: "Enumerate social & messaging footprint across 100+ public platforms",
+    label: "Find Social Accounts",
+    desc: "Search for a username on social media and messaging sites",
     icon: AtSign,
     el: <UsernameTool />,
   },
   {
     id: "url",
-    label: "Phishing & URL Unroller",
-    desc: "Unwrap shortened redirect chains and scan for phishing & obfuscation heuristics",
+    label: "Suspicious Link Check",
+    desc: "Find where a link leads and check for signs of fraud or hidden destinations",
     icon: Link2,
     el: <UrlTool />,
   },
   {
     id: "comments",
-    label: "Comment Bot Swarms",
-    desc: "Analyze comment threads for bot coordinated amplification and sentiment skew",
+    label: "Comment & Bot Check",
+    desc: "Check the tone of comments and look for automated accounts posting together",
     icon: Bot,
     el: <CommentsTool />,
   },
   {
     id: "pr",
-    label: "Coordinated Narrative PR",
-    desc: "Detect astroturfed law-and-order narratives and manufactured outrage",
+    label: "Organized Online Campaigns",
+    desc: "Look for accounts working together to spread messages that may affect law and order",
     icon: Megaphone,
     el: <PrTool />,
   },
   {
     id: "sleuth",
-    label: "Actor Sleuth & Dossier",
-    desc: "Synthesize corpus footprint, bot scores, and network clusters into a case dossier",
+    label: "Account Report",
+    desc: "Bring together an account’s posts, possible automated activity, and connections in one report",
     icon: UserSearch,
     el: <SleuthTool />,
   },
@@ -105,7 +105,7 @@ export default function Investigate() {
           <strong className="text-slate-200">{tool.label}</strong>: {tool.desc}
         </span>
         <span className="hidden md:inline-flex items-center gap-1 font-mono text-[11px] text-accent">
-          <ShieldCheck size={13} /> Active Cyber Forensic Module
+          <ShieldCheck size={13} /> Investigation Tool Ready
         </span>
       </div>
 

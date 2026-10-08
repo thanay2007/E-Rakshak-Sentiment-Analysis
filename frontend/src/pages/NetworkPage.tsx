@@ -67,9 +67,9 @@ export default function NetworkPage() {
 
   const stats: [string, string | number, string][] = [
     ["Accounts Monitored", data?.nodes.length ?? "—", "In interaction graph"],
-    ["Interaction Links", data?.links.length ?? "—", "Affinity & coordination edges"],
-    ["Flagged Clusters", data?.clusters.length ?? "—", "Near-duplicate text bursts"],
-    ["Bot-Like Accounts", botCount, "Algorithmic bot score > 0.65"],
+    ["Interaction Links", data?.links.length ?? "—", "Links between accounts and signs of posting together"],
+    ["Flagged Clusters", data?.clusters.length ?? "—", "Groups posting similar messages at the same time"],
+    ["Bot-Like Accounts", botCount, "Accounts with an automated-activity score above 0.65"],
   ];
 
   return (
@@ -82,10 +82,10 @@ export default function NetworkPage() {
           </div>
           <div>
             <h1 className="text-sm font-black uppercase tracking-wider text-white sm:text-base">
-              Social Network & Influence Centrality Topology
+              Account Connections
             </h1>
             <p className="text-xs text-slate-400">
-              Cross-platform link analysis · Coordinated bot swarms · Astroturfed narrative detection
+              See connected accounts, possible automated activity, and groups posting together
             </p>
           </div>
         </div>
@@ -145,7 +145,7 @@ export default function NetworkPage() {
         ))}
       </div>
 
-      {/* Main Network Graph & Entity Profile Side Deck */}
+      {/* Main Network Graph & Account Details Side Deck */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <GlassCard className="p-2 border border-white/[0.08] xl:col-span-2">
           {loading && !data ? (
@@ -164,7 +164,7 @@ export default function NetworkPage() {
           {/* Entity profile */}
           {selected ? (
             <GlassCard className="border border-accent/40 bg-accent/[0.02] p-4 shadow-lg">
-              <SectionTitle title="Entity Profile" right={<Users size={15} className="text-accent" />} />
+              <SectionTitle title="Account Details" right={<Users size={15} className="text-accent" />} />
               <div className="mt-3 flex items-center gap-3">
                 <PlatformIcon platform={selected.platform} size={32} />
                 <div className="min-w-0 flex-1">
@@ -193,7 +193,7 @@ export default function NetworkPage() {
                 {[
                   ["Avg Threat", Math.round(selected.threat)],
                   ["Posts", selected.posts],
-                  ["Centrality", (selected.influence * 100).toFixed(1)],
+                  ["Connection score", (selected.influence * 100).toFixed(1)],
                 ].map(([k, v]) => (
                   <div key={k} className="rounded-xl border border-white/[0.06] bg-base-950/70 p-2.5">
                     <div
@@ -234,9 +234,9 @@ export default function NetworkPage() {
             </GlassCard>
           ) : (
             <GlassCard className="p-6 border border-white/[0.08] text-center">
-              <SectionTitle title="Entity Profile" right={<Users size={15} className="text-slate-500" />} />
+              <SectionTitle title="Account Details" right={<Users size={15} className="text-slate-500" />} />
               <p className="mt-4 text-xs text-slate-400">
-                Click any node on the force graph or influencer roster to inspect account forensics.
+                Click an account in the chart or list to see its details.
               </p>
             </GlassCard>
           )}
@@ -244,8 +244,8 @@ export default function NetworkPage() {
           {/* Influence roster */}
           <GlassCard className="p-4 border border-white/[0.08]">
             <SectionTitle
-              title="Top Influential Nodes"
-              sub="Ranked by degree centrality"
+              title="Most Connected Accounts"
+              sub="Accounts with the most connections"
               right={<Radar size={15} className="text-accent" />}
             />
             {loading && !data ? (
@@ -280,8 +280,8 @@ export default function NetworkPage() {
       {/* Coordinated Clusters */}
       <GlassCard className="p-4 border border-white/[0.08]">
         <SectionTitle
-          title="Coordinated Narrative Clusters"
-          sub={data ? `${data.clusters.length} synchronized bot / astroturf clusters detected` : undefined}
+          title="Groups Posting Together"
+          sub={data ? `${data.clusters.length} groups with possible automated or organized activity found` : undefined}
           right={<Bot size={16} className="text-threat-critical" />}
         />
         {loading && !data ? (

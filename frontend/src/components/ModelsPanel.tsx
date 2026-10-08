@@ -79,8 +79,8 @@ export default function ModelsPanel() {
   return (
     <GlassCard className="p-4">
       <SectionTitle
-        title="3-Model Consensus Engine"
-        sub="each post scored by three independent models · best chosen · Groq-verified"
+        title="How Posts Are Checked"
+        sub="Three models check each post, followed by a final AI review when available"
         right={<BrainCircuit size={15} className="text-accent" />}
       />
 

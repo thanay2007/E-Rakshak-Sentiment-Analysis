@@ -70,10 +70,10 @@ export default function Trends() {
           </div>
           <div>
             <h1 className="text-sm font-black uppercase tracking-wider text-white sm:text-base">
-              Real-Time Trend Velocity & Spike Radar
+              Trending Topics & Sudden Increases
             </h1>
             <p className="text-xs text-slate-400">
-              Sliding-window term velocity · Z-score statistical anomalies · Regional threat clustering
+              See topics spreading quickly, unusual increases in posts, and activity by area
             </p>
           </div>
         </div>
@@ -100,8 +100,8 @@ export default function Trends() {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <GlassCard className="p-4 border border-white/[0.08]">
           <SectionTitle
-            title="Trending Hashtag Velocity"
-            sub="Fastest accelerating hashtags across all ingested platforms"
+            title="Fast-Spreading Hashtags"
+            sub="Hashtags gaining attention fastest across monitored sites"
             right={<Hash size={15} className="text-accent" />}
           />
           {loading && !data ? <SkeletonRow n={6} /> : (
@@ -115,7 +115,7 @@ export default function Trends() {
         <GlassCard className="p-4 border border-white/[0.08]">
           <SectionTitle
             title="Trending Threat Keywords"
-            sub="NLP evidence terms extracted from high-severity flagged posts"
+            sub="Words found in posts flagged as serious concerns"
             right={<Activity size={15} className="text-threat-inflammatory" />}
           />
           {loading && !data ? <SkeletonRow n={6} /> : (
@@ -127,13 +127,13 @@ export default function Trends() {
         </GlassCard>
       </div>
 
-      {/* Gujarat Regional Heat & Language Distribution */}
+      {/* Gujarat Regional Heat & Languages Used in Posts */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         {/* regional heat */}
         <GlassCard className="p-4 border border-white/[0.08] xl:col-span-2">
           <SectionTitle
-            title="Gujarat Regional Threat Heatmap"
-            sub="District threat aggregation: circle size = total volume, color = average severity score"
+            title="Concern Levels by District"
+            sub="Circle size shows the number of posts. Color shows the average concern score."
             right={<MapPinned size={15} className="text-accent" />}
           />
           {loading && !data ? <SkeletonChart h={240} /> : (
@@ -174,8 +174,8 @@ export default function Trends() {
         {/* language breakdown */}
         <GlassCard className="p-4 border border-white/[0.08]">
           <SectionTitle
-            title="Language Distribution"
-            sub="Detected scripts & code-mixed dialects"
+            title="Languages Used in Posts"
+            sub="Languages found, including mixed Hindi/English and Gujarati/English"
             right={<Globe2 size={15} className="text-accent" />}
           />
           {loading && !data ? <SkeletonChart h={200} /> : (
@@ -195,7 +195,7 @@ export default function Trends() {
                 </div>
               ))}
               <div className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-2.5 text-[11px] leading-relaxed text-slate-400">
-                <strong className="text-accent">Multilingual AI:</strong> Code-mixed romanized dialect (e.g. Hinglish / Gujlish) is normalized into semantic vector embeddings for robust threat scoring.
+                <strong className="text-accent">Multilingual AI:</strong> The system checks mixed-language posts, such as Hindi or Gujarati written in English letters, when calculating concern scores.
               </div>
             </div>
           )}

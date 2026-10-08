@@ -40,7 +40,7 @@ const NAV_GROUPS: { name: string; items: NavEntry[] }[] = [
       },
       {
         to: "/app/alerts",
-        label: "Alerts Triage",
+        label: "Review Alerts",
         icon: Bell,
         badge: "HIGH",
         badgeColor: "bg-red-600/20 text-red-800 border-red-600/50 dark:bg-red-500/20 dark:text-red-300 dark:border-red-500/40 font-black",
@@ -48,11 +48,11 @@ const NAV_GROUPS: { name: string; items: NavEntry[] }[] = [
     ],
   },
   {
-    name: "INTELLIGENCE",
+    name: "INVESTIGATION",
     items: [
-      { to: "/app/investigate", label: "Forensics Hub", icon: ScanSearch },
-      { to: "/app/network", label: "Actor Network", icon: Share2 },
-      { to: "/app/trends", label: "Sentiment Trends", icon: TrendingUp },
+      { to: "/app/investigate", label: "Investigation Tools", icon: ScanSearch },
+      { to: "/app/network", label: "Account Connections", icon: Share2 },
+      { to: "/app/trends", label: "Post Trends", icon: TrendingUp },
       { to: "/app/watchlist", label: "Target Watchlist", icon: Eye },
       { to: "/app/reports", label: "Incident Reports", icon: FileText },
     ],

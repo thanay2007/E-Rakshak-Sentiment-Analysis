@@ -162,7 +162,7 @@ export default function Settings() {
         {sys && !sys.scheduler_running && (
           <p className="mt-3 flex items-start gap-2 rounded-xl border border-threat-high/30 bg-threat-high/[0.06] p-2.5 text-[11.5px] text-threat-high">
             <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-            The background collector is not running, so nothing new is being ingested. Alerts
+            The background collector is not running, so no new posts are being collected. Alerts
             you see are historical. Restart the backend, or use “Collect now” below for a
             one-off pass.
           </p>
@@ -238,14 +238,14 @@ export default function Settings() {
       {/* ── LLM final check ───────────────────────────────────────────── */}
       <GlassCard className="p-4">
         <SectionTitle
-          title="LLM Final Check"
-          sub="reviews the 3-model verdict — calls walk this chain top to bottom when one is rate-limited"
+          title="Final AI Check"
+          sub="Reviews results from the three models. If one service reaches its limit, the next service is tried."
           right={<Bot size={15} className="text-slate-600" />}
         />
         {!sys?.llm?.enabled ? (
           <p className="text-xs text-slate-500">
             Not configured — posts are tagged by the three local models alone. Translation and
-            evidence dossiers are also unavailable without it.
+            evidence reports are also unavailable without it.
           </p>
         ) : (
           <>
@@ -253,7 +253,7 @@ export default function Settings() {
               <p className="mb-2 flex items-start gap-2 rounded-xl border border-threat-high/30 bg-threat-high/[0.06] p-2.5 text-[11.5px] text-threat-high">
                 <AlertTriangle size={13} className="mt-0.5 shrink-0" />
                 Every model is rate-limited. Tagging continues on the three local models; the
-                final check, translation and dossiers resume when quota returns.
+                final checks, translations, and evidence reports will resume when the usage limit resets.
               </p>
             )}
             <div className="space-y-1.5">
@@ -311,7 +311,7 @@ export default function Settings() {
             onClick={() =>
               run("Collect", async () => {
                 const r = await api.crawlNow();
-                return `Collection pass complete — ${r.new_posts} new posts ingested`;
+                return `Collection pass complete — ${r.new_posts} new posts collected`;
               })
             }
             disabled={busy !== null}
@@ -478,7 +478,7 @@ export default function Settings() {
           <p className="mt-2 text-[10.5px] text-slate-600">
             {db.counts.posts.toLocaleString()} posts on record
             {db.oldest_post ? ` · oldest ${new Date(db.oldest_post).toLocaleDateString()}` : ""}
-            {db.newest_post ? ` · newest ${new Date(db.newest_post).toLocaleString()}` : ""}
+            {db.newest_post ? ` · newest ${new Date(db.newest_post).toLocaleString("en-IN", { hour12: true })}` : ""}
             {" · "}purging is irreversible and is recorded in the audit log.
           </p>
         )}

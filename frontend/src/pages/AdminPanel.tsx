@@ -21,7 +21,7 @@ const TABS: { id: Tab; label: string; icon: typeof Users }[] = [
 
 const ROLE_NOTE: Record<string, string> = {
   analyst: "Read the feed, investigate, generate reports",
-  supervisor: "Analyst, plus escalation, bulk export and registry deletion",
+  supervisor: "Analyst access, plus sending reports for action, downloading records, and deleting registry entries",
   admin: "Everything, plus officer accounts and the operations toolkit",
 };
 
@@ -35,7 +35,7 @@ const SEVERITY_STYLE: Record<string, string> = {
 function when(iso: string | null): string {
   if (!iso) return "never";
   const d = new Date(iso.endsWith("Z") ? iso : `${iso}Z`);
-  return d.toLocaleString("en-IN", { hour12: false });
+  return d.toLocaleString("en-IN", { hour12: true });
 }
 
 const inputCls =

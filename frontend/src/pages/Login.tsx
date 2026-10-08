@@ -86,7 +86,7 @@ export default function Login() {
             </div>
             <div>
               <h1 className="text-base font-black tracking-wide text-white">E-RAKSHAK · AUTH</h1>
-              <p className="text-[11px] font-semibold text-accent uppercase">State Cyber Intelligence</p>
+              <p className="text-[11px] font-semibold text-accent uppercase">State Cyber Monitoring</p>
             </div>
           </div>
           <button

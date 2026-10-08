@@ -77,7 +77,7 @@ export function LanguageChip({ language, mixed }: { language: string; mixed?: bo
   return (
     <span
       className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[11px] font-medium text-slate-300"
-      title={mixed ? `${language} (Code-mixed vernacular: Hinglish/Gujlish)` : language}
+      title={mixed ? `${language} (Mixed Hindi/English or Gujarati/English)` : language}
     >
       <Languages size={11} className="text-slate-400" />
       {language}

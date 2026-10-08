@@ -24,18 +24,17 @@ export default function UrlTool() {
   return (
     <div className="space-y-4">
       <GlassCard className="p-4">
-        <SectionTitle title="Link & URL Analysis"
-          sub="Unwrap shortened / cloaked links and score them for phishing and obfuscation signals." />
+        <SectionTitle title="Suspicious Link Check"
+          sub="Find where a link leads and check for signs of fraud or hidden destinations." />
         <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <Link2 size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-            <div className="pl-6"><TextInput value={url} onChange={setUrl} onEnter={run} placeholder="https://bit.ly/… or any suspicious link" mono /></div>
+          <div className="min-w-0 flex-1">
+            <TextInput value={url} onChange={setUrl} onEnter={run} placeholder="https://bit.ly/… or any suspicious link" mono icon={<Link2 size={15} />} />
           </div>
           <RunButton onClick={run} disabled={loading || !url.trim()}><ShieldAlert size={15} /> Analyze</RunButton>
         </div>
       </GlassCard>
 
-      {loading && <GlassCard className="p-2"><Spinner label="Resolving redirects & scoring…" /></GlassCard>}
+      {loading && <GlassCard className="p-2"><Spinner label="Checking link destination and risk…" /></GlassCard>}
       {err && <GlassCard className="p-4 text-sm text-red-400">Error: {err}</GlassCard>}
       {data && !data.valid && <GlassCard className="p-4 text-sm text-amber-400">{data.error}</GlassCard>}
 
@@ -64,7 +63,7 @@ export default function UrlTool() {
                 {data.redirect.chain.map((h, i) => (
                   <div key={i} className="flex items-center gap-2 text-[12px]">
                     <span className="font-mono text-slate-500">{h.status}</span>
-                    <ArrowRight size={11} className="text-slate-600" />
+                    <ArrowRight size={11} className="shrink-0 text-slate-600" />
                     <span className="truncate font-mono text-slate-300">{h.url}</span>
                   </div>
                 ))}
@@ -75,7 +74,7 @@ export default function UrlTool() {
                 )}
               </div>
             ) : (
-              <EmptyHint>{data.redirect?.reason || "Redirects not resolved."}</EmptyHint>
+              <EmptyHint>{data.redirect?.reason || "Could not find the final link destination."}</EmptyHint>
             )}
           </GlassCard>
 
@@ -88,7 +87,7 @@ export default function UrlTool() {
         </div>
       )}
 
-      {!data && !loading && <EmptyHint>Paste a link — shorteners are unwrapped to their true destination before scoring.</EmptyHint>}
+      {!data && !loading && <EmptyHint>Paste a link to check where it leads and whether it looks suspicious.</EmptyHint>}
     </div>
   );
 }

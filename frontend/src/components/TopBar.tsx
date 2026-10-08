@@ -1,7 +1,6 @@
 import { Bell, HelpCircle, LogOut, Moon, Search, Sun, UserRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { LANGUAGES } from "../data/constants";
 import { useAuth } from "../hooks/useAuth";
 import { useLiveAlerts, useLiveStatus } from "../hooks/useLive";
 import IntelGuideModal from "./IntelGuideModal";
@@ -57,7 +56,7 @@ export default function TopBar() {
   return (
     <>
       <header className="sticky top-0 z-20 flex h-14 items-center gap-3.5 border-b border-white/[0.08] bg-base-900/80 px-5 sm:px-6 backdrop-blur-xl">
-        <form onSubmit={submit} className="relative w-full max-w-xs sm:max-w-sm md:max-w-md">
+        <form onSubmit={submit} className="relative min-w-0 flex-1">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             ref={searchInputRef}
@@ -72,25 +71,9 @@ export default function TopBar() {
           </kbd>
         </form>
 
-        <select
-          onChange={(e) =>
-            navigate(e.target.value ? `/app/feed?language=${encodeURIComponent(e.target.value)}` : "/app/feed")
-          }
-          defaultValue=""
-          className="rounded-xl border border-white/[0.1] bg-base-800 pl-2.5 pr-8 py-2 text-xs text-slate-300 hover:border-white/20 focus:border-accent/60 focus:outline-none"
-          aria-label="Language quick filter"
-        >
-          <option value="">All languages</option>
-          {LANGUAGES.map((l) => (
-            <option key={l} value={l}>
-              {l}
-            </option>
-          ))}
-        </select>
-
-        <div className="ml-auto flex items-center gap-3 sm:gap-4">
-          <span className="hidden font-mono text-[11px] text-slate-400 md:block">
-            {clock.toLocaleTimeString("en-IN", { hour12: false })} IST
+        <div className="flex shrink-0 items-center gap-3 sm:gap-4">
+          <span className="hidden whitespace-nowrap font-mono text-[11px] text-slate-400 md:block">
+            {clock.toLocaleTimeString("en-IN", { hour12: true, timeZone: "Asia/Kolkata" })} IST
           </span>
 
           <span className="flex items-center gap-2 text-[11px] font-bold tracking-widest">

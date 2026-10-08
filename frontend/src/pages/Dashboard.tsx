@@ -140,10 +140,10 @@ export default function Dashboard() {
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
             <h1 className="text-sm font-black tracking-wide text-white uppercase sm:text-base">
-              State Cyber Defense Intelligence Hub
+              State Cyber Monitoring Dashboard
             </h1>
             <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> LIVE TELEMETRY
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> LIVE UPDATES
             </span>
           </div>
         </div>
@@ -157,7 +157,7 @@ export default function Dashboard() {
                 ? "border-accent/60 bg-accent/20 text-accent shadow-[0_0_15px_rgba(245,158,11,0.25)]"
                 : "border-white/10 bg-white/[0.04] text-slate-300 hover:border-accent/40 hover:bg-white/[0.08] hover:text-white"
             }`}
-            title="Synchronize telemetry and feed"
+            title="Refresh dashboard and posts"
           >
             <RefreshCw
               size={13}
@@ -168,7 +168,7 @@ export default function Dashboard() {
               }`}
             />
             <span className="font-mono text-xs">
-              {isSyncing ? "Syncing…" : "Sync"}
+              {isSyncing ? "Refreshing…" : "Refresh"}
             </span>
           </button>
         </div>
@@ -177,14 +177,14 @@ export default function Dashboard() {
       {statsError && !stats && (
         <GlassCard className="space-y-3 p-4 text-sm text-slate-200 border-red-500/30 bg-red-500/10">
           <div className="font-semibold text-red-300 flex items-center gap-2">
-            <AlertOctagon size={16} /> Could not load dashboard telemetry
+            <AlertOctagon size={16} /> Could not load dashboard updates
           </div>
           <div className="text-xs text-slate-400">{statsError}</div>
           <button
             onClick={() => void refreshStats()}
             className="rounded-xl border border-accent/40 bg-accent/15 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent/25"
           >
-            Retry Sync
+            Try Again
           </button>
         </GlassCard>
       )}
@@ -205,7 +205,7 @@ export default function Dashboard() {
             spark={stats.sparklines.posts}
             icon={Activity}
             color="#38BDF8"
-            tooltip="Total social media posts evaluated by NLP pipeline in the last 24h."
+            tooltip="Social media posts checked in the last 24 hours."
           />
           <StatTile
             label="Negative Posts"
@@ -215,7 +215,7 @@ export default function Dashboard() {
             color="#EF4444"
             icon={Target}
             invertDelta
-            tooltip="Posts tagged negative with a concern score of 50 or above — negative sentiment that is also getting traction."
+            tooltip="Negative posts with a concern score of 50 or more that are spreading online."
           />
           <StatTile
             label="Critical Incidents"
@@ -225,7 +225,7 @@ export default function Dashboard() {
             color="#F59E0B"
             icon={AlertOctagon}
             invertDelta
-            tooltip="Severe incidents escalated for law enforcement intervention."
+            tooltip="Serious incidents sent to police for action."
           />
           <StatTile
             label="Platforms Online"
@@ -233,15 +233,15 @@ export default function Dashboard() {
             suffix={`/${stats.kpis.platforms_total}`}
             icon={Radio}
             color="#10B981"
-            tooltip="Active social media pipelines (X, Telegram, Reddit, Facebook, Instagram, YouTube)."
+            tooltip="Social media sites being monitored (X, Telegram, Reddit, Facebook, Instagram, YouTube)."
           />
           <StatTile
-            label="Bot Swarm Campaigns"
+            label="Suspected Automated Campaigns"
             value={stats.kpis.campaigns}
             color="#A855F7"
             icon={Bot}
             invertDelta
-            tooltip="Synchronized inauthentic account clusters spreading manufactured outrage."
+            tooltip="Groups of suspected automated accounts posting together to spread angry messages."
           />
         </div>
       )}
@@ -255,11 +255,11 @@ export default function Dashboard() {
               <div className="flex items-center gap-2">
                 <Radio size={16} className="text-emerald-400 shrink-0" />
                 <h2 className="text-sm font-extrabold uppercase tracking-wider text-white whitespace-nowrap">
-                  Live OSINT Sentiment Stream
+                  Live Social Media Posts
                 </h2>
               </div>
               <p className="text-[11px] text-slate-400 mt-0.5">
-                Real-time multi-platform ingestion, sentiment tagging and concern scoring
+                Latest posts from social media, with tone and concern scores
               </p>
             </div>
 
@@ -314,12 +314,12 @@ export default function Dashboard() {
           )}
         </GlassCard>
 
-        {/* Right 1 Col: Sentiment Breakdown & Viral Hashtags (Balanced heights) */}
+        {/* Right 1 Col: Post Tone Summary & Viral Hashtags (Balanced heights) */}
         <div className="flex flex-col gap-4 h-[620px]">
-          {/* Sentiment Breakdown Donut & Interactive List */}
+          {/* Post Tone Summary Donut & Interactive List */}
           <GlassCard className="flex flex-1 flex-col justify-between p-4">
             <SectionTitle
-              title="Sentiment Breakdown"
+              title="Post Tone Summary"
             />
             {!stats ? (
               <SkeletonChart h={180} />
@@ -453,7 +453,7 @@ export default function Dashboard() {
           <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-white/[0.06] pb-3 shrink-0">
             <div>
               <h2 className="text-sm font-extrabold uppercase tracking-wider text-white">
-                Sentiment Polarity Velocity Timeline
+                Post Tone Over Time
               </h2>
             </div>
             <div className="flex flex-wrap items-center gap-3 text-xs">
@@ -523,7 +523,7 @@ export default function Dashboard() {
           <GlassCard className="flex flex-1 flex-col justify-between p-3.5 overflow-hidden">
             <div className="flex items-center justify-between border-b border-white/[0.08] pb-1.5 shrink-0">
               <span className="text-xs font-bold uppercase tracking-wide text-white">
-                Platform Ingestion
+                Posts Collected by Platform
               </span>
               <div className="flex items-center gap-2.5 text-[10px]">
                 <span className="inline-flex items-center gap-1 font-semibold text-slate-300">

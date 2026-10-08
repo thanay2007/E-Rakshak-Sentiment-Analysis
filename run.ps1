@@ -6,25 +6,22 @@ $root = $PSScriptRoot
 Write-Host "SENTINEL bootstrap" -ForegroundColor Cyan
 
 # ── backend ──────────────────────────────────────────────────────────────
-if (-not (Test-Path "$root\backend\.venv")) {
-    Write-Host "[1/4] creating Python venv..." -ForegroundColor Yellow
-    python -m venv "$root\backend\.venv"
-} else { Write-Host "[1/4] venv exists" }
+Write-Host "[1/4] using active Python environment..." -ForegroundColor Yellow
 
 Write-Host "[2/4] installing backend deps (ML stack is ~2.5 GB on first run)..."
-& "$root\backend\.venv\Scripts\python.exe" -m pip install -q -r "$root\backend\requirements.txt"
-& "$root\backend\.venv\Scripts\python.exe" -m pip install -q -r "$root\backend\requirements-ml.txt"
+& python -m pip install -q -r "$root\backend\requirements.txt"
+& python -m pip install -q -r "$root\backend\requirements-ml.txt"
 
 if (-not (Test-Path "$root\backend\app\ml\models\threat-classifier") -or
     -not (Test-Path "$root\backend\app\ml\models\sentiment-classifier")) {
     Write-Host "NOTE: no fine-tuned models yet. Rebuild datasets + train both with ONE command:" -ForegroundColor Yellow
-    Write-Host "      cd backend; .venv\Scripts\python.exe -m app.ml.bootstrap" -ForegroundColor Yellow
+    Write-Host "      cd backend; python -m app.ml.bootstrap" -ForegroundColor Yellow
     Write-Host "      (until then, full mode uses slower generic models)" -ForegroundColor Yellow
 }
 
 Write-Host "[3/4] starting backend on http://localhost:8000 ..."
 Start-Process powershell -ArgumentList "-NoExit", "-Command",
-    "Set-Location '$root\backend'; .venv\Scripts\python.exe -m uvicorn app.main:app --port 8000"
+    "Set-Location '$root\backend'; python -m uvicorn app.main:app --port 8000"
 
 # ── frontend ─────────────────────────────────────────────────────────────
 if (-not (Test-Path "$root\frontend\node_modules")) {

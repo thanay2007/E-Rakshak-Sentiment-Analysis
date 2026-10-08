@@ -16,11 +16,11 @@ export default function EmergingPanel() {
   return (
     <GlassCard className="border-amber-500/30 bg-amber-500/[0.02] p-5 shadow-xl">
       <SectionTitle
-        title="Emerging · Unverified Rumor Triage"
+        title="Fast-Spreading Posts to Review"
         right={
           <div className="flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-[11px] font-bold text-amber-300">
             <Radio size={12} className="animate-pulse text-amber-400" />
-            <span>EARLY WARNING RADAR</span>
+            <span>EARLY WARNING</span>
             {items.length > 0 && (
               <span className="ml-1 rounded-full bg-amber-500/30 px-1.5 py-0.2 font-mono text-[10px] text-amber-200">
                 {items.length}
@@ -32,7 +32,7 @@ export default function EmergingPanel() {
 
       {items.length === 0 ? (
         <div className="py-8 text-center text-xs text-slate-400">
-          No fast-spreading single-source posts detected in the last 24h window.
+          No fast-spreading posts from a single source found in the last 24 hours.
         </div>
       ) : (
         <div className="max-h-[460px] overflow-y-auto pr-1.5 custom-scrollbar">

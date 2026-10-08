@@ -41,8 +41,8 @@ export default function CommentsTool() {
   return (
     <div className="space-y-4">
       <GlassCard className="p-4">
-        <SectionTitle title="Comment Analysis & Bot Detection"
-          sub="Score a post's comment section for audience sentiment and automated / coordinated accounts." />
+        <SectionTitle title="Comment & Bot Check"
+          sub="Check the tone of comments and look for automated accounts posting together." />
         <div className="flex items-center gap-2">
           <div className="flex-1"><TextInput value={postId} onChange={setPostId} onEnter={run} placeholder="Post ID (leave blank to analyze the top threat post)" mono /></div>
           <RunButton onClick={run} disabled={loading}><MessagesSquare size={15} /> Analyze</RunButton>
@@ -114,7 +114,7 @@ export default function CommentsTool() {
         </>
       )}
 
-      {!data && !loading && <EmptyHint>Analyze a comment thread to reveal audience sentiment and bot amplification.</EmptyHint>}
+      {!data && !loading && <EmptyHint>Check comments to see reactions and possible automated activity.</EmptyHint>}
     </div>
   );
 }

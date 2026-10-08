@@ -188,8 +188,8 @@ export default function Watchlist() {
       {/* Preset Packs */}
       <GlassCard className="p-4 border border-white/[0.08]">
         <SectionTitle
-          title="Rapid-Deploy Threat Intelligence Packs"
-          sub="Curated term sets for emerging riots, scams, election rumors, and disaster misinformation"
+          title="Ready-Made Watchlists"
+          sub="Lists of words to watch for riots, scams, election rumors, and false disaster reports"
           right={<PackagePlus size={16} className="text-accent" />}
         />
         <div className="mt-3 flex flex-wrap gap-2">
@@ -202,7 +202,7 @@ export default function Watchlist() {
               className="inline-flex items-center gap-1.5 rounded-xl border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-bold text-accent transition-all hover:bg-accent/25 disabled:opacity-50 shadow-sm"
             >
               <Layers size={13} />
-              {busy === p.slug ? "Deploying…" : p.title}
+              {busy === p.slug ? "Adding…" : p.title}
               <span className="rounded-md bg-accent/20 px-1.5 py-0.2 font-mono text-[10px] font-extrabold">{p.count}</span>
             </button>
           ))}

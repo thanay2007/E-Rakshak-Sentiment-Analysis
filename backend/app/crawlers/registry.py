@@ -55,6 +55,16 @@ def get_active_collectors() -> list[Collector]:
     return collectors
 
 
+def get_collector(name: str) -> Collector | None:
+    """Returns the active collector for a given platform name, if any."""
+    for p_name, adapters in _PLATFORMS:
+        if p_name == name:
+            return _preferred(adapters)
+    if _SIMULATED.is_configured() and _SIMULATED.name == name:
+        return _SIMULATED
+    return None
+
+
 def platform_status() -> list[dict]:
     """One row per platform. `adapter` names the route actually in use, so an
     analyst can tell official-API traffic from the keyless fallback."""

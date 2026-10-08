@@ -46,7 +46,7 @@ export default function IntelGuideModal({ open, onClose }: Props) {
           transition={{ type: "spring", damping: 25, stiffness: 300 }}
           className="relative z-10 flex h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-base-900/95 shadow-2xl backdrop-blur-2xl"
           role="dialog"
-          aria-label="Intelligence & Operations Guide"
+          aria-label="User Guide"
         >
           {/* Header */}
           <div className="flex items-center justify-between border-b border-white/[0.08] px-6 py-4">
@@ -56,10 +56,10 @@ export default function IntelGuideModal({ open, onClose }: Props) {
               </span>
               <div>
                 <h2 className="text-base font-bold tracking-wide text-slate-100">
-                  E-RAKSHAK · Intelligence & Operational Guide
+                  E-RAKSHAK · User Guide
                 </h2>
                 <p className="text-xs text-slate-400">
-                  Sentiment tagging, concern scoring, spike statistics and OSINT investigation reference
+                  How to review posts, understand scores, and use investigation tools
                 </p>
               </div>
             </div>
@@ -76,11 +76,11 @@ export default function IntelGuideModal({ open, onClose }: Props) {
           <div className="flex flex-wrap gap-1 border-b border-white/[0.06] bg-base-800/50 px-6 py-2.5">
             {[
               { id: "overview", label: "Quick Start", icon: Activity },
-              { id: "sentiment", label: "Sentiment & Concern Score", icon: ShieldAlert },
-              { id: "spikes", label: "Spikes & Z-Scores (σ)", icon: Flame },
-              { id: "nlp", label: "Multilingual NLP", icon: Cpu },
-              { id: "osint", label: "OSINT & Link Analysis", icon: Network },
-              { id: "shortcuts", label: "Shortcuts & Workflow", icon: Keyboard },
+              { id: "sentiment", label: "Post Tone & Concern Score", icon: ShieldAlert },
+              { id: "spikes", label: "Sudden Increases", icon: Flame },
+              { id: "nlp", label: "Language Support", icon: Cpu },
+              { id: "osint", label: "Investigation Tools", icon: Network },
+              { id: "shortcuts", label: "Shortcuts & Tips", icon: Keyboard },
             ].map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
@@ -103,43 +103,43 @@ export default function IntelGuideModal({ open, onClose }: Props) {
               <div className="space-y-6">
                 <div className="rounded-xl border border-accent/20 bg-accent/[0.06] p-4 text-xs leading-relaxed text-slate-200">
                   <div className="font-bold text-accent">What is E-Rakshak?</div>
-                  E-Rakshak is a real-time OSINT threat intelligence platform designed for state cyber command centers. It monitors social media platforms (X, Reddit, Facebook, Instagram, Telegram, YouTube) to detect communal incitement, viral disinformation, coordinated bot campaigns, and regional tension in native scripts (Gujarati, Hindi, English) as well as code-mixed vernaculars (Hinglish, Gujlish).
+                  E-Rakshak helps police review public social media posts on X, Reddit, Facebook, Instagram, Telegram, and YouTube. It shows the tone of posts, concern scores, and signs of accounts posting together. It supports Gujarati, Hindi, English, Hinglish, and Gujlish. Officers must check the evidence before taking action.
                 </div>
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
                     <div className="flex items-center gap-2 font-semibold text-slate-200">
-                      <Radio size={16} className="text-threat-neutral" /> 1. Real-time Ingestion
+                      <Radio size={16} className="text-threat-neutral" /> 1. Collect New Posts
                     </div>
                     <p className="mt-2 text-xs leading-relaxed text-slate-400">
-                      Posts flow from live social streams via WebSockets. Each post undergoes immediate multilingual preprocessing, translation, and 3-model NLP ensemble scoring.
+                      New social media posts appear as they are collected. The system checks their language, translates them when needed, and uses three models to assess their tone.
                     </p>
                   </div>
 
                   <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
                     <div className="flex items-center gap-2 font-semibold text-slate-200">
-                      <ShieldAlert size={16} className="text-threat-critical" /> 2. Threat Triage
+                      <ShieldAlert size={16} className="text-threat-critical" /> 2. Review Alerts
                     </div>
                     <p className="mt-2 text-xs leading-relaxed text-slate-400">
-                      Posts scoring ≥ 65 on the concern score automatically raise Critical Incidents with auto-generated escalation packets and suggested police countermeasures.
+                      Posts with a concern score of 65 or more raise alerts. Review the post and its evidence, then decide whether to send it to the police unit for action.
                     </p>
                   </div>
 
                   <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
                     <div className="flex items-center gap-2 font-semibold text-slate-200">
-                      <Network size={16} className="text-purple-400" /> 3. Coordination Detection
+                      <Network size={16} className="text-purple-400" /> 3. Find Accounts Posting Together
                     </div>
                     <p className="mt-2 text-xs leading-relaxed text-slate-400">
-                      Link analysis clusters accounts posting near-identical text bursts or sharing common propaganda hashtags within tight time windows.
+                      The system groups accounts that post very similar messages or use the same hashtags at nearly the same time.
                     </p>
                   </div>
 
                   <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
                     <div className="flex items-center gap-2 font-semibold text-slate-200">
-                      <Sparkles size={16} className="text-amber-400" /> 4. AI Forensics & Dossiers
+                      <Sparkles size={16} className="text-amber-400" /> 4. Check Images & Create Reports
                     </div>
                     <p className="mt-2 text-xs leading-relaxed text-slate-400">
-                      Deepfake image analysis, reverse image lookup, handle profiling, and one-click court-ready evidence dossier export.
+                      Check images for possible editing or AI fakes, find where they appear online, review account details, and create evidence reports.
                     </p>
                   </div>
                 </div>
@@ -149,19 +149,15 @@ export default function IntelGuideModal({ open, onClose }: Props) {
             {tab === "sentiment" && (
               <div className="space-y-5">
                 <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
-                  <h3 className="font-bold text-slate-200">What the system claims — and what it does not</h3>
+                  <h3 className="font-bold text-slate-200">What the Results Mean</h3>
                   <p className="mt-2 text-xs leading-relaxed text-slate-300">
                     Every post gets exactly one tag — <b>positive</b>, <b>negative</b> or <b>neutral</b> —
-                    plus a <b>concern score</b> from 0 to 100. That is the whole taxonomy.
+                    plus a <b>concern score</b> from 0 to 100. These are the three possible tags.
                   </p>
                   <p className="mt-2 text-xs leading-relaxed text-slate-400">
-                    The system does <b>not</b> classify posts as incitement, propaganda or
-                    misinformation. Whether a post will cause violence, or whether a claim inside it
-                    is false, are investigative conclusions about the world — a model reading one
-                    post's words cannot establish either, and a console that printed them as model
-                    output would invite an analyst to treat a guess as a finding. Where an external
-                    fact matters, the post detail shows news corroboration from named sources
-                    (Google News, GNews, NewsAPI.org) and lets you judge it yourself.
+                    A negative tag does <b>not</b> prove that a post is false or will cause violence.
+                    Officers must check the facts and evidence. Open the post to see related news
+                    from named sources (Google News, GNews, NewsAPI.org) and compare their reports.
                   </p>
                 </div>
 
@@ -169,9 +165,9 @@ export default function IntelGuideModal({ open, onClose }: Props) {
                   <h3 className="mb-2 font-bold text-slate-200">The three tags</h3>
                   <div className="grid gap-2 sm:grid-cols-3">
                     {[
-                      { t: "Negative", c: "red", d: "Anger, grievance, hostility, abuse or distress." },
-                      { t: "Neutral", c: "slate", d: "Factual, logistical or informational — no clear lean." },
-                      { t: "Positive", c: "emerald", d: "Approval, praise, celebration or satisfaction." },
+                      { t: "Negative", c: "red", d: "Angry, abusive, upset, or unhappy language." },
+                      { t: "Neutral", c: "slate", d: "Information without a clear positive or negative tone." },
+                      { t: "Positive", c: "emerald", d: "Support, praise, happiness, or approval." },
                     ].map((x) => (
                       <div key={x.t} className={`rounded-xl border border-${x.c}-500/30 bg-${x.c}-500/10 p-3`}>
                         <div className={`font-bold text-${x.c}-300`}>{x.t}</div>
@@ -182,20 +178,19 @@ export default function IntelGuideModal({ open, onClose }: Props) {
                 </div>
 
                 <div>
-                  <h3 className="mb-2 font-bold text-slate-200">Concern score bands</h3>
+                  <h3 className="mb-2 font-bold text-slate-200">Concern Score Levels</h3>
                   <p className="mb-2 text-xs text-slate-400">
-                    The score combines how negative the post is (weighted by model confidence, 50%),
-                    how toxic its language is (22%), how far it travelled (18%) and the severity of
-                    the strongest matched term (10%). The weights are shaped so no single dimension
-                    reaches an alert band alone — an alert always means <b>negative and travelling</b>.
-                    A positive post never raises one, however viral.
+                    The score uses the post's negative tone and confidence in that result (50%),
+                    abusive language (22%), how widely it has spread (18%), and concerning words (10%).
+                    An alert needs a combination of factors. Positive posts do not raise alerts,
+                    even if they spread widely.
                   </p>
                   <div className="space-y-2">
                     {[
-                      { t: "Critical", r: "74 – 100", c: "red", d: "Strongly negative, abusive and spreading. Raises a critical alert with an auto-generated escalation packet." },
-                      { t: "High", r: "65 – 73", c: "orange", d: "Raises a high alert for analyst triage." },
-                      { t: "Elevated", r: "50 – 64", c: "amber", d: "Surfaced on the dashboard as worth a look; no alert." },
-                      { t: "Routine", r: "0 – 49", c: "emerald", d: "Ordinary traffic — collected and searchable, nothing raised." },
+                      { t: "Critical", r: "74 – 100", c: "red", d: "Strongly negative, abusive, and spreading widely. Raises a critical alert with an automatic action report." },
+                      { t: "High", r: "65 – 73", c: "orange", d: "Raises a high-priority alert for an officer to review." },
+                      { t: "Elevated", r: "50 – 64", c: "amber", d: "Shown on the dashboard for review. No alert is raised." },
+                      { t: "Routine", r: "0 – 49", c: "emerald", d: "Collected posts that you can search. No alert is raised." },
                     ].map((b) => (
                       <div key={b.t} className={`rounded-xl border border-${b.c}-500/30 bg-${b.c}-500/10 p-3`}>
                         <div className="flex items-center justify-between">
@@ -213,15 +208,11 @@ export default function IntelGuideModal({ open, onClose }: Props) {
                 <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
                   <h3 className="font-bold text-slate-200">How a tag is decided</h3>
                   <p className="mt-2 text-xs leading-relaxed text-slate-300">
-                    Three independent models read the post — a fine-tuned MuRIL transformer, a
-                    TF-IDF + LinearSVC classical model, and a multilingual valence lexicon. All
-                    three see the post together with its discourse tags (is it a question, reported
-                    speech, conditional, ironic, contrastive). If two or more agree, that tag wins;
-                    if all three disagree, the most confident model's answer is chosen. Account
-                    standing and reach then adjust the <i>confidence only</i>, never the tag, and
-                    every adjustment is shown with its reason. Finally Groq reads the post and can
-                    overturn the result when it is confident — recorded as an override, never
-                    silent. Open any post to see all of it.
+                    Three models check the post's words and context, such as questions, quotations,
+                    and sarcasm. If two models agree, their tag is used. If all three disagree,
+                    the result with the highest confidence is used. Account details and reach can
+                    change the confidence score, but not the tag. A final AI check can change the
+                    result; any change is recorded. Open a post to see the results and reasons.
                   </p>
                 </div>
               </div>
@@ -231,26 +222,26 @@ export default function IntelGuideModal({ open, onClose }: Props) {
               <div className="space-y-5">
                 <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
                   <h3 className="flex items-center gap-2 font-bold text-slate-200">
-                    <Flame size={16} className="text-threat-critical" /> What does the Spike Z-Score (e.g. 3.2σ) mean?
+                    <Flame size={16} className="text-threat-critical" /> How Unusual Is This Increase?
                   </h3>
                   <p className="mt-2 text-xs leading-relaxed text-slate-300">
-                    A <strong>Z-Score (standard score)</strong> measures how many standard deviations a term's current hourly mention velocity deviates from its 24-hour baseline rolling average:
+                    The <strong>increase score (Z-score)</strong> compares mentions of a topic in the current hour with its usual level over the last 24 hours. A higher score means a more unusual increase:
                   </p>
                   <div className="my-3 rounded-lg bg-black/30 p-3 font-mono text-xs text-accent">
-                    Z = (Current Hourly Velocity - 24h Mean) / Standard Deviation
+                    Z-score = (mentions this hour - usual hourly mentions) / usual variation
                   </div>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                     <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3 text-xs">
                       <div className="font-bold text-slate-300">&lt; 1.5σ (Normal)</div>
-                      <div className="mt-1 text-slate-400">Regular organic fluctuations within baseline variance.</div>
+                      <div className="mt-1 text-slate-400">Small changes within the usual range.</div>
                     </div>
                     <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
                       <div className="font-bold text-amber-300">1.5σ – 2.5σ (Elevated)</div>
-                      <div className="mt-1 text-slate-300">Notable acceleration. Potential emerging viral topic.</div>
+                      <div className="mt-1 text-slate-300">Mentions are increasing. The topic may be spreading quickly.</div>
                     </div>
                     <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs">
                       <div className="font-bold text-red-300">&gt; 2.5σ (Viral Spike)</div>
-                      <div className="mt-1 text-slate-300">Statistically abnormal surge (p &lt; 0.01). Possible orchestrated blitz.</div>
+                      <div className="mt-1 text-slate-300">A large, unusual increase. Check whether accounts are posting together.</div>
                     </div>
                   </div>
                 </div>
@@ -260,32 +251,32 @@ export default function IntelGuideModal({ open, onClose }: Props) {
             {tab === "nlp" && (
               <div className="space-y-4">
                 <p className="text-xs text-slate-400">
-                  E-Rakshak utilizes a multi-stage Indic NLP pipeline specifically tuned for Western and Northern Indian languages and dialects:
+                  E-Rakshak checks posts in local languages, including Hindi and Gujarati written in English letters:
                 </p>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-4 text-xs">
                     <div className="font-bold text-slate-200">Gujarati & Gujlish</div>
                     <div className="mt-1 text-slate-400">
-                      Handles native Gujarati script (ગુજરાતી) as well as Romanized Gujlish phonetic writing (e.g. "aa loko ne sabak shikhavo").
+                      Reads Gujarati script (ગુજરાતી) and Gujarati written in English letters (Gujlish).
                     </div>
                   </div>
                   <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-4 text-xs">
                     <div className="font-bold text-slate-200">Hindi & Hinglish</div>
                     <div className="mt-1 text-slate-400">
-                      Full Devnagari parsing combined with phonetic Hinglish tokenizers to classify colloquial slang, abusive idioms, and dogwhistles.
+                      Reads Hindi script and Hindi written in English letters (Hinglish), including slang and abusive phrases.
                     </div>
                   </div>
                   <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-4 text-xs">
-                    <div className="font-bold text-slate-200">3-Model Consensus</div>
+                    <div className="font-bold text-slate-200">Three Models Check Each Post</div>
                     <div className="mt-1 text-slate-400">
-                      Combines RoBERTa/mBERT Indic transformer embeddings, keyword-density heuristics, and LLM verification for high precision and low false-positive rate.
+                      Three models assess each post, followed by a final AI check when available. Review the results and reasons in the post details.
                     </div>
                   </div>
                   <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-4 text-xs">
-                    <div className="font-bold text-slate-200">Sentiment Score (-1.0 to +1.0)</div>
+                    <div className="font-bold text-slate-200">Post Tone Score (-1.0 to +1.0)</div>
                     <div className="mt-1 text-slate-400">
-                      Polarity index: -1.0 (extremely hostile/negative), 0.0 (neutral factual), +1.0 (positive/supportive).
+                      -1.0 means strongly negative, 0.0 means neutral, and +1.0 means strongly positive.
                     </div>
                   </div>
                 </div>
@@ -295,23 +286,23 @@ export default function IntelGuideModal({ open, onClose }: Props) {
             {tab === "osint" && (
               <div className="space-y-4">
                 <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-4 text-xs">
-                  <h3 className="font-bold text-slate-200">Investigation Hub OSINT Capabilities</h3>
+                  <h3 className="font-bold text-slate-200">Investigation Tools</h3>
                   <div className="mt-3 space-y-3">
                     <div className="flex items-start gap-2">
-                      <span className="font-mono text-accent">1. Image & Reverse Forensics:</span>
-                      <span>Analyzes metadata, EXIF traces, deepfake manipulation probability, and queries Google/Yandex/TinEye databases for cross-web appearances.</span>
+                      <span className="font-mono text-accent">1. Image & Video Check:</span>
+                      <span>Checks file details and possible editing or AI fakes. Searches for the image on other websites.</span>
                     </div>
                     <div className="flex items-start gap-2">
                       <span className="font-mono text-accent">2. Username Lookup:</span>
-                      <span>Scans 30+ platforms for account presence, bio consistency, account age, and known malicious aliases.</span>
+                      <span>Searches public sites for a username and compares the profiles found.</span>
                     </div>
                     <div className="flex items-start gap-2">
-                      <span className="font-mono text-accent">3. Link & URL Scanner:</span>
-                      <span>Unshortens redirected links (bit.ly, t.co), checks Google Safe Browsing and VirusTotal reputation, and parses destination meta tags.</span>
+                      <span className="font-mono text-accent">3. Suspicious Link Check:</span>
+                      <span>Finds where a shortened link leads and checks the destination for signs of fraud or harmful content.</span>
                     </div>
                     <div className="flex items-start gap-2">
-                      <span className="font-mono text-accent">4. Bot & Comments Swarm:</span>
-                      <span>Analyzes reply velocity, repetitive syntactic patterns, and temporal bursts to score account authenticity.</span>
+                      <span className="font-mono text-accent">4. Comment & Bot Check:</span>
+                      <span>Checks repeated comments and unusual posting speed for signs of automated accounts.</span>
                     </div>
                   </div>
                 </div>
@@ -324,19 +315,19 @@ export default function IntelGuideModal({ open, onClose }: Props) {
                   <h3 className="font-bold text-slate-200">Keyboard Shortcuts & Navigation Tips</h3>
                   <div className="mt-3 space-y-2">
                     <div className="flex items-center justify-between border-b border-white/[0.05] pb-2">
-                      <span className="text-slate-300">Global Search & Feed Filter</span>
+                      <span className="text-slate-300">Search Posts & Apply Filters</span>
                       <kbd className="rounded border border-white/20 bg-base-800 px-2 py-0.5 font-mono text-[11px] text-accent">/</kbd>
                     </div>
                     <div className="flex items-center justify-between border-b border-white/[0.05] pb-2">
-                      <span className="text-slate-300">Close Modals & Drawers</span>
+                      <span className="text-slate-300">Close Pop-Up Windows</span>
                       <kbd className="rounded border border-white/20 bg-base-800 px-2 py-0.5 font-mono text-[11px] text-slate-300">Esc</kbd>
                     </div>
                     <div className="flex items-center justify-between border-b border-white/[0.05] pb-2">
-                      <span className="text-slate-300">Open Sentinel Voice AI Assistant</span>
-                      <span className="text-slate-400">Click Sentinel button at bottom right or speak query</span>
+                      <span className="text-slate-300">Open Voice Assistant</span>
+                      <span className="text-slate-400">Click the Sentinel button at the bottom right or ask a question aloud</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-300">Inspect Full Post Dossier</span>
+                      <span className="text-slate-300">View Full Post Details</span>
                       <span className="text-slate-400">Click on any post card in Dashboard or Feed</span>
                     </div>
                   </div>
@@ -348,7 +339,7 @@ export default function IntelGuideModal({ open, onClose }: Props) {
           {/* Footer */}
           <div className="flex items-center justify-between border-t border-white/[0.08] bg-base-950/60 px-6 py-3.5">
             <span className="font-mono text-[11px] text-slate-400">
-              E-RAKSHAK OSINT THREAT INTELLIGENCE SYSTEM · CONFIDENTIAL
+              E-RAKSHAK SOCIAL MEDIA MONITORING · CONFIDENTIAL
             </span>
             <button
               onClick={onClose}

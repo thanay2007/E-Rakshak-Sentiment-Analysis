@@ -29,15 +29,15 @@ export default function SleuthTool() {
   return (
     <div className="space-y-4">
       <GlassCard className="p-4">
-        <SectionTitle title="Social Sleuth — Account Dossier"
-          sub="Fuse an account's corpus footprint, authenticity score, coordination and cross-platform presence into one profile." />
+        <SectionTitle title="Account Report"
+          sub="See an account’s posts, possible automated activity, linked accounts, and profiles on other sites." />
         <div className="flex items-center gap-2">
-          <div className="flex-1"><TextInput value={handle} onChange={setHandle} onEnter={run} placeholder="account handle to profile" mono /></div>
-          <RunButton onClick={run} disabled={loading || !handle.trim()}><UserSearch size={15} /> Build dossier</RunButton>
+          <div className="flex-1"><TextInput value={handle} onChange={setHandle} onEnter={run} placeholder="Enter an account username" mono /></div>
+          <RunButton onClick={run} disabled={loading || !handle.trim()}><UserSearch size={15} /> Create report</RunButton>
         </div>
       </GlassCard>
 
-      {loading && <GlassCard className="p-2"><Spinner label="Compiling dossier…" /></GlassCard>}
+      {loading && <GlassCard className="p-2"><Spinner label="Creating report…" /></GlassCard>}
       {err && <GlassCard className="p-4 text-sm text-red-400">Error: {err}</GlassCard>}
 
       {data && !loading && (
@@ -45,7 +45,7 @@ export default function SleuthTool() {
           <div className="grid gap-4 lg:grid-cols-3">
             {/* authenticity */}
             <GlassCard className="space-y-3 p-4">
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-200"><ShieldAlert size={15} className="text-accent" /> Authenticity</div>
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-200"><ShieldAlert size={15} className="text-accent" /> Account check</div>
               <div className="text-center">
                 <div className="font-mono text-3xl font-semibold" style={{ color: authColor }}>{auth!.score}</div>
                 <Pill color={authColor}>{auth!.verdict.replace("_", " ")}</Pill>
@@ -69,18 +69,18 @@ export default function SleuthTool() {
                   <KV k="Posts / day" v={data.activity!.posts_per_day} />
                   <KV k="Platforms" v={data.profile.platforms.join(", ")} />
                   <KV k="Languages" v={data.profile.languages.join(", ")} />
-                  <KV k="Avg threat" v={data.threat_profile!.avg_concern_score} />
-                  <KV k="In cluster" v={data.coordination!.in_cluster ? data.coordination!.cluster_ids.join(", ") : "no"} />
+                  <KV k="Average concern score" v={data.threat_profile!.avg_concern_score} />
+                  <KV k="In a linked group" v={data.coordination!.in_cluster ? data.coordination!.cluster_ids.join(", ") : "no"} />
                 </div>
               ) : (
-                <EmptyHint>{data.note || "No corpus footprint for this handle."}</EmptyHint>
+                <EmptyHint>{data.note || "No collected posts found for this username."}</EmptyHint>
               )}
             </GlassCard>
           </div>
 
           {data.found && data.threat_profile && (
             <GlassCard className="p-4">
-              <div className="mb-2 text-sm font-semibold text-slate-200">Threat footprint</div>
+              <div className="mb-2 text-sm font-semibold text-slate-200">Post summary</div>
               <div className="flex flex-wrap gap-1.5">
                 {Object.entries(data.threat_profile.label_breakdown).map(([k, v]) => (
                   <Pill key={k} color={sentimentColor(k)}>{k}: {v}</Pill>
@@ -112,7 +112,7 @@ export default function SleuthTool() {
 
           {data.cross_platform?.valid && (
             <GlassCard className="p-4">
-              <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-200"><Globe size={15} className="text-accent" /> Cross-platform presence</div>
+              <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-200"><Globe size={15} className="text-accent" /> Profiles on Other Sites</div>
               <div className="mb-2 text-[12px] text-slate-500">
                 Found on {data.cross_platform.summary.found} of {data.cross_platform.summary.checked} platforms
               </div>
@@ -123,14 +123,14 @@ export default function SleuthTool() {
                     {r.site}
                   </a>
                 ))}
-                {data.cross_platform.summary.found === 0 && <span className="text-[12px] text-slate-600">No confirmed profiles (or probes were rate-limited).</span>}
+                {data.cross_platform.summary.found === 0 && <span className="text-[12px] text-slate-600">No confirmed profiles found. Some sites may have limited the search.</span>}
               </div>
             </GlassCard>
           )}
         </>
       )}
 
-      {!data && !loading && <EmptyHint>Enter a handle to compile a full investigative dossier.</EmptyHint>}
+      {!data && !loading && <EmptyHint>Enter an account username to create a detailed report.</EmptyHint>}
     </div>
   );
 }

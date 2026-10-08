@@ -92,7 +92,7 @@ export function RunButton({ onClick, disabled, children }: { onClick: () => void
     <button
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex items-center gap-2 rounded-xl border border-accent/30 bg-accent/10 px-4 py-2 text-sm font-semibold text-accent transition-all hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-40"
+      className="inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-accent/30 bg-accent/10 px-4 py-2 text-sm font-semibold text-accent transition-all hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-40 [&>svg]:shrink-0"
     >
       {children}
     </button>
@@ -100,16 +100,19 @@ export function RunButton({ onClick, disabled, children }: { onClick: () => void
 }
 
 export function TextInput({
-  value, onChange, placeholder, onEnter, mono = false,
-}: { value: string; onChange: (v: string) => void; placeholder?: string; onEnter?: () => void; mono?: boolean }) {
+  value, onChange, placeholder, onEnter, mono = false, icon,
+}: { value: string; onChange: (v: string) => void; placeholder?: string; onEnter?: () => void; mono?: boolean; icon?: ReactNode }) {
   return (
-    <input
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      onKeyDown={(e) => { if (e.key === "Enter" && onEnter) onEnter(); }}
-      placeholder={placeholder}
-      className={`w-full rounded-xl border border-white/[0.08] bg-white/[0.04] px-3.5 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 focus:border-accent/40 focus:outline-none ${mono ? "font-mono" : ""}`}
-    />
+    <div className="relative w-full min-w-0">
+      {icon && <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-500 [&>svg]:shrink-0">{icon}</span>}
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter" && onEnter) onEnter(); }}
+        placeholder={placeholder}
+        className={`w-full min-w-0 rounded-xl border border-white/[0.08] bg-white/[0.04] ${icon ? "pl-10 pr-3.5" : "px-3.5"} py-2.5 text-sm text-slate-200 placeholder:text-slate-600 focus:border-accent/40 focus:outline-none ${mono ? "font-mono" : ""}`}
+      />
+    </div>
   );
 }
 

@@ -32,11 +32,10 @@ export default function UsernameTool() {
     <div className="space-y-4">
       <GlassCard className="p-4">
         <SectionTitle title="Username Lookup"
-          sub="Enumerate a handle across social, dev and messaging platforms to map a person's online footprint." />
+          sub="Search for a username on social media and other public sites." />
         <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <AtSign size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-            <div className="pl-6"><TextInput value={u} onChange={setU} onEnter={run} placeholder="handle e.g. desh_sachai_4471" mono /></div>
+          <div className="min-w-0 flex-1">
+            <TextInput value={u} onChange={setU} onEnter={run} placeholder="Username, e.g. desh_sachai_4471" mono icon={<AtSign size={15} />} />
           </div>
           <RunButton onClick={run} disabled={loading || !u.trim()}><Search size={15} /> Search</RunButton>
         </div>
@@ -45,7 +44,7 @@ export default function UsernameTool() {
         </p>
       </GlassCard>
 
-      {loading && <GlassCard className="p-2"><Spinner label={`Probing platforms for “${u}”…`} /></GlassCard>}
+      {loading && <GlassCard className="p-2"><Spinner label={`Searching sites for “${u}”…`} /></GlassCard>}
       {err && <GlassCard className="p-4 text-sm text-red-400">Error: {err}</GlassCard>}
       {data && !data.valid && <GlassCard className="p-4 text-sm text-amber-400">{data.error}</GlassCard>}
 
@@ -71,7 +70,7 @@ export default function UsernameTool() {
                       <div className="truncate text-[13px] text-slate-200">{r.site}</div>
                       <div className="truncate text-[11px] text-slate-600">{r.category}</div>
                     </div>
-                    <span className="inline-flex shrink-0 items-center gap-1 text-[12px] font-medium" style={{ color: m.color }}>
+                    <span className="inline-flex shrink-0 items-center gap-1 text-[12px] font-medium leading-none [&>svg]:shrink-0" style={{ color: m.color }}>
                       {m.icon} {m.label} <ExternalLink size={11} className="text-slate-600" />
                     </span>
                   </a>
@@ -82,7 +81,7 @@ export default function UsernameTool() {
         </>
       )}
 
-      {!data && !loading && <EmptyHint>Enter a username to map its cross-platform presence.</EmptyHint>}
+      {!data && !loading && <EmptyHint>Enter a username to find its profiles on other sites.</EmptyHint>}
     </div>
   );
 }

@@ -1,0 +1,65 @@
+.landing-page {
+  position: relative;
+  isolation: isolate;
+  min-height: 100vh;
+  min-height: 100svh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(var(--color-base-900));
+  color: rgb(var(--color-slate-200));
+}
+.landing-backdrop { position: absolute; inset: 0; z-index: -1; pointer-events: none; opacity: 0.6; }
+
+.landing-content {
+  width: 100%;
+  max-width: 680px;
+  text-align: center;
+}
+
+.landing-emblem { position: relative; display: flex; justify-content: center; width: 88px; height: 88px; margin: 0 auto 32px; }
+.landing-emblem-halo { position: absolute; inset: -28px; z-index: -1; border-radius: 50%; background: rgba(var(--color-accent), 0.2); filter: blur(28px); }
+.landing-emblem-ring { position: absolute; inset: -12px; border: 1px dashed rgba(var(--color-accent), 0.3); border-radius: 50%; animation: landing-ring-spin 20s linear infinite; }
+.landing-eyebrow { color: rgb(var(--color-accent)); font-size: 10px; font-weight: 800; letter-spacing: 0.3em; }
+.landing-content h1 { margin: 14px 0 18px; padding-left: 0.2em; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: clamp(28px, 6vw, 60px); font-weight: 900; letter-spacing: 0.2em; line-height: 1.15; color: rgb(var(--color-white)); text-shadow: 0 0 30px rgba(var(--color-accent), 0.35); }
+.landing-description { color: rgb(var(--color-slate-300)); font-size: 14px; line-height: 1.8; }
+
+.landing-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  max-width: 100%;
+  min-height: 48px;
+  margin-top: 32px;
+  padding: 12px 22px;
+  border: 1px solid rgb(var(--color-accent));
+  border-radius: 12px;
+  background: rgb(var(--color-accent));
+  color: rgb(var(--color-base-950));
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow: 0 0 25px rgba(var(--color-accent), 0.25);
+  text-decoration: none;
+  transition: background 160ms ease, box-shadow 160ms ease;
+}
+.landing-primary svg { flex-shrink: 0; }
+.landing-primary:hover { background: rgb(var(--color-accent-glow)); box-shadow: 0 0 32px rgba(var(--color-accent), 0.4); }
+.landing-primary:focus-visible { outline: 2px solid rgb(var(--color-accent)); outline-offset: 5px; }
+.landing-access-note { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 20px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: rgb(var(--color-slate-400)); }
+
+@keyframes landing-ring-spin { to { transform: rotate(360deg); } }
+
+@media (max-height: 480px) {
+  .landing-emblem { width: 44px; height: 44px; margin-bottom: 24px; }
+  .landing-emblem svg { width: 44px; height: 44px; }
+  .landing-content h1 { margin: 8px 0 12px; font-size: clamp(28px, 5vw, 38px); }
+  .landing-primary { margin-top: 20px; }
+  .landing-access-note { margin-top: 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .landing-primary { transition: none; }
+  .landing-emblem-ring { animation: none; }
+}

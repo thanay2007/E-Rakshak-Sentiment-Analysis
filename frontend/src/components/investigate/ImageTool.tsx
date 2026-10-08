@@ -105,7 +105,7 @@ export default function ImageTool() {
   return (
     <div className="space-y-4">
       <GlassCard className="p-4">
-        <SectionTitle title="Image & Video Forensics"
+        <SectionTitle title="Image & Video Check"
           sub="Upload an image or video, pull it straight from a post URL, or grab a flagged post from the live feed — then trace where else it appears." />
 
         <div className="mb-3 flex gap-1.5">
@@ -127,7 +127,7 @@ export default function ImageTool() {
           >
             <ImageUp size={26} className="text-slate-500" />
             <div className="text-sm text-slate-400">Drop an image or video here or <span className="text-accent">browse</span></div>
-            <div className="text-[11px] text-slate-600">JPG / PNG / WEBP · MP4 / MOV — EXIF & container forensics + reverse-source tracing · max 25 MB</div>
+            <div className="text-[11px] text-slate-600">JPG / PNG / WEBP · MP4 / MOV — Check file details, editing, and image sources · max 25 MB</div>
             <input ref={inputRef} type="file" accept="image/*,video/*" className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) fromFile(f); }} />
           </div>
