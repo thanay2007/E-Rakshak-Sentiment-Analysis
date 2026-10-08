@@ -13,6 +13,8 @@ import { api, API_BASE } from "../services/api";
 import { BotChip, LanguageChip, PlatformIcon, SentimentBadge } from "./Badges";
 import { PostMediaGrid } from "./PostMedia";
 import { safeHref } from "../lib/safeUrl";
+import { newsStatusLabel } from "../lib/newsStatus";
+import { useModalDialog } from "../hooks/useModalDialog";
 import IdentifiedPersonsPanel, { buildFaceOutcomes } from "./investigate/PersonIdentification";
 import { Spinner } from "./investigate/shared";
 
@@ -40,7 +42,7 @@ function Section({
       className="glass mt-4 p-4"
       style={accent ? { borderColor: `${accent}40`, borderWidth: 1 } : undefined}
     >
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
           {Icon && <Icon size={11} />} {title}
         </span>
@@ -65,8 +67,8 @@ function EvidenceTrail({ sources }: { sources: EvidenceSource[] }) {
                 {e.source}
               </span>
               {e.verdict && (
-                <span className="shrink-0 rounded-md bg-white/[0.06] px-1.5 py-0.5 font-mono text-[9.5px] text-slate-300">
-                  {e.verdict}
+                <span className="rounded-md bg-white/[0.06] px-1.5 py-0.5 font-mono text-[9.5px] text-slate-300">
+                  {newsStatusLabel(e.verdict)}
                 </span>
               )}
             </div>
@@ -130,9 +132,6 @@ export default function PostDetail({
   const [faceReport, setFaceReport] = useState<PostImageReport | null>(null);
   const [faceChecking, setFaceChecking] = useState(false);
   const [facePreviewUrl, setFacePreviewUrl] = useState<string | null>(null);
-  const [translation, setTranslation] = useState<string | null>(null);
-  const [translating, setTranslating] = useState(false);
-  const [translateError, setTranslateError] = useState<string | null>(null);
 
   useEffect(() => {
     setFactCheck(null);
@@ -140,8 +139,6 @@ export default function PostDetail({
     setDossier(null);
     setDossierError(false);
     setFaceReport(null);
-    setTranslation(null);
-    setTranslateError(null);
   }, [post?.id]);
 
   // Automatic — no button to press. Any post with attached media gets its
@@ -177,69 +174,14 @@ export default function PostDetail({
     return () => { live = false; if (created) URL.revokeObjectURL(created); };
   }, [faceReport]);
 
-  const asideRef = useRef<HTMLElement>(null);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-
-  // Modal behaviour: Escape to close, Tab trapped inside, background scroll
-  // locked, and focus returned to whatever opened the drawer.
+  const dialogRef = useRef<HTMLElement>(null);
   const open = !!post || loading || !!error;
-  useEffect(() => {
-    if (!open) return;
-    const restoreTo = document.activeElement as HTMLElement | null;
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onCloseRef.current();
-        return;
-      }
-      if (e.key !== "Tab") return;
-      const focusables = asideRef.current?.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-      );
-      if (!focusables?.length) return;
-      const first = focusables[0];
-      const last = focusables[focusables.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-
-    document.addEventListener("keydown", onKeyDown);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const raf = window.requestAnimationFrame(() => asideRef.current?.focus());
-
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = prevOverflow;
-      window.cancelAnimationFrame(raf);
-      restoreTo?.focus?.();
-    };
-  }, [open]);
+  useModalDialog(open, onClose, dialogRef);
 
   const report = dossier ?? (post?.evidence_report?.summary ? post.evidence_report : undefined);
   const consensus = post?.sentiment_consensus;
   const fc = post ? factCheck ?? post.fact_check : undefined;
   const faceOutcomes = buildFaceOutcomes(faceReport?.analysis?.forensics?.face_matches, faceReport?.identification);
-  const englishGloss = translation ?? post?.translation ?? "";
-
-  const runTranslate = async () => {
-    if (!post || translating) return;
-    setTranslating(true);
-    setTranslateError(null);
-    try {
-      setTranslation((await api.translatePost(post.id)).translation);
-    } catch (e) {
-      setTranslateError((e as Error).message || "Translation failed — try again.");
-    } finally {
-      setTranslating(false);
-    }
-  };
 
   const generateDossier = async () => {
     if (!post || dossierBusy) return;
@@ -281,14 +223,19 @@ export default function PostDetail({
   };
 
   // Portal to <body>: ancestors use CSS transforms (page transitions), which
-  // would trap position:fixed and pin the drawer to the page top instead of
+  // would trap position:fixed and pin the dialog to the page top instead of
   // the viewport.
   return createPortal(
     <AnimatePresence>
       {open && (
-        <>
+        <motion.div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+        >
           <motion.div
-            className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -296,11 +243,11 @@ export default function PostDetail({
             aria-hidden="true"
           />
           <motion.aside
-            ref={asideRef}
-            className="fixed right-0 top-0 z-50 h-full w-full max-w-md overflow-y-auto border-l border-white/10 bg-base-800/95 p-5 backdrop-blur-2xl focus:outline-none"
-            initial={{ x: "100%" }}
-            animate={{ x: 0 }}
-            exit={{ x: "100%" }}
+            ref={dialogRef}
+            className="relative z-10 max-h-[calc(100dvh-2rem)] w-full min-w-0 max-w-3xl overflow-y-auto overscroll-contain rounded-2xl border border-white/10 bg-base-800/95 p-5 shadow-2xl backdrop-blur-2xl focus:outline-none sm:max-h-[calc(100dvh-3rem)] sm:p-6"
+            initial={{ opacity: 0, y: 16, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 16, scale: 0.98 }}
             transition={{ type: "spring", damping: 28, stiffness: 260 }}
             role="dialog"
             aria-modal="true"
@@ -311,7 +258,7 @@ export default function PostDetail({
               <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-300">
                 Post detail
               </h3>
-              <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10">
+              <button onClick={onClose} aria-label="Close post details" className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10">
                 <X size={16} />
               </button>
             </div>
@@ -447,35 +394,22 @@ export default function PostDetail({
                     </div>
                     <p className="glass p-3 text-[13.5px] leading-relaxed text-slate-200">{post.text}</p>
                   </div>
-                  {/* Every post gets the option, whatever the detector
-                      concluded — one Gujarati word inside English prose is
-                      below every language threshold and is still the clause an
-                      officer cannot read. */}
-                  {englishGloss && englishGloss !== post.text ? (
+                  {post.translation && post.translation !== post.text ? (
                     <div>
                       <div className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                         <Languages size={11} /> English translation
                       </div>
                       <p className="glass p-3 text-[13px] italic leading-relaxed text-slate-400">
-                        {englishGloss}
+                        {post.translation}
                       </p>
                     </div>
                   ) : (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        onClick={runTranslate}
-                        disabled={translating}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-accent/30 bg-accent/10 px-2.5 py-1.5 text-[11px] font-semibold text-accent transition-colors hover:bg-accent/20 disabled:opacity-50"
-                      >
-                        <Languages size={12} />
-                        {translating ? "Translating…" : "Translate to English"}
-                      </button>
-                      <span className="text-[10.5px] italic text-slate-600">
-                        {translateError
-                          ? translateError
-                          : "No English translation on record for this post yet."}
-                      </span>
-                    </div>
+                    post.language !== "English" && (
+                      <p className="text-[10.5px] italic text-slate-600">
+                        No English translation on record for this post yet — run
+                        “Backfill translations” from Settings to fill the gap.
+                      </p>
+                    )
                   )}
                   {(post.media_urls?.length ?? 0) > 0 && (
                     <div>
@@ -507,10 +441,10 @@ export default function PostDetail({
                   </div>
                 )}
 
-                {/* ── 3-model consensus + Groq final check ──────────────── */}
+                {/* ── Results from Three Models + Groq final check ──────────────── */}
                 {(consensus?.votes?.length ?? 0) > 0 && (
                   <Section
-                    title="3-model consensus"
+                    title="Results from Three Models"
                     icon={Brain}
                     accent="#38BDF8"
                     right={
@@ -565,7 +499,7 @@ export default function PostDetail({
                         </div>
                         {consensus!.context_adjustments!.map((a, i) => (
                           <div key={i} className="rounded-lg bg-white/[0.03] px-2 py-1.5">
-                            <div className="flex items-center justify-between gap-2">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
                               <span className="text-[10.5px] font-semibold text-slate-300">
                                 {a.factor}
                               </span>
@@ -595,7 +529,7 @@ export default function PostDetail({
                               : "bg-white/[0.04]"
                         }`}
                       >
-                        <div className="flex items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
                           <span className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-slate-200">
                             <Sparkles size={10} /> Groq final check
                           </span>
@@ -684,7 +618,7 @@ export default function PostDetail({
                 {/* ── news corroboration ────────────────────────────────── */}
                 {fc?.checked ? (
                   <Section
-                    title="News corroboration"
+                    title="Related News Reports"
                     icon={Newspaper}
                     accent={fc.verdict === "uncorroborated" ? "#EA580C" : "#059669"}
                     right={
@@ -695,7 +629,7 @@ export default function PostDetail({
                             : "bg-threat-high/15 text-threat-high"
                         }`}
                       >
-                        {fc.verdict?.toUpperCase()}
+                        {newsStatusLabel(fc.verdict)}
                       </span>
                     }
                   >
@@ -708,7 +642,7 @@ export default function PostDetail({
                     )}
                     {(fc.attempted?.length ?? 0) > 0 && (
                       <p className="mt-1 text-[10px] text-slate-500">
-                        Queried:{" "}
+                        Sources searched:{" "}
                         {fc.attempted!.map((a) => (
                           <span
                             key={a}
@@ -769,7 +703,7 @@ export default function PostDetail({
                 {/* ── analyst dossier ───────────────────────────────────── */}
                 {report ? (
                   <Section
-                    title="Evidence dossier"
+                    title="Evidence report"
                     icon={ScrollText}
                     accent="#38BDF8"
                     right={
@@ -838,10 +772,10 @@ export default function PostDetail({
                       <div className="mt-3 rounded-lg bg-white/[0.03] p-2">
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                            Source corroboration
+                            Source Check
                           </span>
                           <span className="font-mono text-[10px] font-bold text-slate-300">
-                            {report.corroboration.verdict.toUpperCase()}
+                            {newsStatusLabel(report.corroboration.verdict)}
                           </span>
                         </div>
                         {report.corroboration.explanation && (
@@ -913,10 +847,10 @@ export default function PostDetail({
                   >
                     <ScrollText size={14} />
                     {dossierBusy
-                      ? "Compiling evidence dossier…"
+                      ? "Creating evidence report…"
                       : dossierError
-                        ? "Failed — tap to retry evidence dossier"
-                        : "Generate evidence dossier (detailed analysis)"}
+                        ? "Could not create report — tap to try again"
+                        : "Create detailed evidence report"}
                   </button>
                 )}
 
@@ -943,24 +877,24 @@ export default function PostDetail({
                   >
                     {escalated ? (
                       <>
-                        <ShieldCheck size={13} /> Escalated
+                        <ShieldCheck size={13} /> Sent for action
                       </>
                     ) : (
                       <>
-                        <Flag size={13} /> {busy ? "Filing…" : "Escalate"}
+                        <Flag size={13} /> {busy ? "Filing…" : "Send for action"}
                       </>
                     )}
                   </button>
                 </div>
                 {escalated && (
                   <p className="mt-1 text-right font-mono text-[10px] text-slate-500">
-                    escalation report {escalated} filed → Reports
+                    Action report {escalated} saved → Reports
                   </p>
                 )}
               </>
             )}
           </motion.aside>
-        </>
+        </motion.div>
       )}
     </AnimatePresence>,
     document.body

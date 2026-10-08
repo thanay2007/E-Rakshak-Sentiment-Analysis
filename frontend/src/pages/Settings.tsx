@@ -1,9 +1,10 @@
 import {
-  Activity, AlertTriangle, Bot, Database, Download, Languages,
+  Activity, AlertTriangle, Bot, Database, Download, Languages, Newspaper,
   RefreshCcw, Settings as SettingsIcon, Trash2, Zap,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import GlassCard, { SectionTitle } from "../components/GlassCard";
+import ModelsPanel from "../components/ModelsPanel";
 import { usePolling } from "../hooks/usePolling";
 import { api, API_BASE } from "../services/api";
 
@@ -20,13 +21,13 @@ function fmtUptime(s: number): string {
  * browser: is collection running, is the analysis stack healthy, are the
  * evidence sources answering, and the maintenance actions on the corpus.
  *
- * Deliberately NOT here: API keys, model internals, the scoring formula and
- * the per-source news quota tables. Keys belong in backend/.env — a console
- * that displays them turns every shoulder-surfer and every screenshot into a
- * credential leak. Model architecture, training data and score weights are
- * documentation rather than settings; they live in the Intel Guide, where they
- * read as reference instead of implying they are dials to turn. What is left on
- * this page is only what a duty supervisor can decide or act on.
+ * Deliberately NOT here: API keys, model internals and the scoring formula.
+ * Keys belong in backend/.env — a console that displays them turns every
+ * shoulder-surfer and every screenshot into a credential leak, and one that
+ * lets you edit them puts secret rotation behind a session cookie. The scoring
+ * weights and model architecture are documentation, not settings; they live in
+ * the Analysis Stack panel below and in the Intel Guide, where they can be read
+ * without implying they are dials to turn.
  */
 export default function Settings() {
   const { data: sys, refresh } = usePolling(() => api.systemStatus(), 15000);
@@ -101,7 +102,7 @@ export default function Settings() {
           <SettingsIcon size={18} className="text-accent" /> System
         </h1>
         <p className="text-xs text-slate-500">
-          is collection running, are the outside services working, and housekeeping for the stored posts
+          operations console · collection health, analysis stack, evidence sources and corpus maintenance
         </p>
       </div>
 
@@ -109,7 +110,7 @@ export default function Settings() {
       <GlassCard className="p-4">
         <SectionTitle
           title="Collection & Analysis"
-          sub="is the system collecting and analysing posts right now"
+          sub="is the console actually watching anything right now"
           right={<Activity size={15} className="text-slate-600" />}
         />
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -161,7 +162,7 @@ export default function Settings() {
         {sys && !sys.scheduler_running && (
           <p className="mt-3 flex items-start gap-2 rounded-xl border border-threat-high/30 bg-threat-high/[0.06] p-2.5 text-[11.5px] text-threat-high">
             <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-            The background collector is not running, so nothing new is being ingested. Alerts
+            The background collector is not running, so no new posts are being collected. Alerts
             you see are historical. Restart the backend, or use “Collect now” below for a
             one-off pass.
           </p>
@@ -175,56 +176,113 @@ export default function Settings() {
         )}
       </GlassCard>
 
-      {/* ── external services ─────────────────────────────────────────────
-          One strip, not two panels of reference text. The only operational
-          question here is "is anything I depend on unavailable right now" —
-          which model answered, and each index's per-day quota table, are not
-          decisions a supervisor makes from this screen. */}
+      {/* ── evidence sources ──────────────────────────────────────────── */}
       <GlassCard className="p-4">
         <SectionTitle
-          title="External Services"
-          sub="which outside services are working — keys stay in backend/.env and are never shown here"
+          title="Evidence Sources"
+          sub="the news indexes searched when corroborating a post — quota is per day, per source"
+          right={<Newspaper size={15} className="text-slate-600" />}
+        />
+        <div className="space-y-1.5">
+          {newsSources.length === 0 ? (
+            <p className="text-xs text-slate-500">Source status unavailable.</p>
+          ) : (
+            newsSources.map((s) => {
+              const used = s.used_today ?? 0;
+              const budget = s.daily_budget ?? 0;
+              const pct = budget ? Math.min(100, (used / budget) * 100) : 0;
+              return (
+                <div key={s.name} className="rounded-xl bg-white/[0.03] px-3 py-2">
+                  <div className="flex items-center gap-2.5 text-xs">
+                    <span
+                      className={`h-2 w-2 shrink-0 rounded-full ${
+                        s.configured ? "bg-threat-neutral" : "bg-slate-600"
+                      }`}
+                    />
+                    <span className="font-semibold text-slate-200">{s.name}</span>
+                    {s.keyless && (
+                      <span className="rounded-full bg-white/[0.06] px-2 py-px text-[9px] uppercase tracking-wider text-slate-500">
+                        keyless
+                      </span>
+                    )}
+                    <span className="ml-auto font-mono text-[10.5px] text-slate-500">
+                      {!s.configured
+                        ? "no key — skipped"
+                        : budget
+                          ? `${used} / ${budget} today`
+                          : "unmetered"}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 pl-[18px] text-[10.5px] text-slate-500">{s.note}</p>
+                  {s.configured && budget > 0 && (
+                    <div className="mt-1.5 ml-[18px] h-1 overflow-hidden rounded-full bg-white/[0.06]">
+                      <div
+                        className={`h-full rounded-full ${pct > 85 ? "bg-threat-high" : "bg-accent/70"}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+        <p className="mt-2.5 text-[10.5px] leading-relaxed text-slate-600">
+          A source with no key is skipped, never faked — the evidence panel on a post names only
+          the indexes that actually answered, and says so when one found nothing. Keys are read
+          from <code className="rounded bg-white/10 px-1 font-mono text-[10px]">backend/.env</code> at
+          startup and are never displayed or editable here.
+        </p>
+      </GlassCard>
+
+      {/* ── LLM final check ───────────────────────────────────────────── */}
+      <GlassCard className="p-4">
+        <SectionTitle
+          title="Final AI Check"
+          sub="Reviews results from the three models. If one service reaches its limit, the next service is tried."
           right={<Bot size={15} className="text-slate-600" />}
         />
-
-        {llmDown && (
-          <p className="mb-2 flex items-start gap-2 rounded-xl border border-threat-high/30 bg-threat-high/[0.06] p-2.5 text-[11.5px] text-threat-high">
-            <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-            The LLM is rate-limited. Tagging continues on the three local models; the final check,
-            translation and dossiers resume when quota returns.
+        {!sys?.llm?.enabled ? (
+          <p className="text-xs text-slate-500">
+            Not configured — posts are tagged by the three local models alone. Translation and
+            evidence reports are also unavailable without it.
           </p>
+        ) : (
+          <>
+            {llmDown && (
+              <p className="mb-2 flex items-start gap-2 rounded-xl border border-threat-high/30 bg-threat-high/[0.06] p-2.5 text-[11.5px] text-threat-high">
+                <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                Every model is rate-limited. Tagging continues on the three local models; the
+                final checks, translations, and evidence reports will resume when the usage limit resets.
+              </p>
+            )}
+            <div className="space-y-1.5">
+              {llmModels.map((m) => (
+                <div
+                  key={m.model}
+                  className="flex items-center gap-3 rounded-xl bg-white/[0.03] px-3 py-2 text-xs"
+                >
+                  <span
+                    className={`h-2 w-2 shrink-0 rounded-full ${
+                      m.state === "ready" ? "bg-threat-neutral" : "bg-threat-critical"
+                    }`}
+                  />
+                  <code className="font-mono text-[11px] text-slate-200">{m.model}</code>
+                  <span className="rounded-full bg-white/[0.06] px-2 py-px text-[9px] uppercase tracking-wider text-slate-500">
+                    {m.role}
+                  </span>
+                  <span className="ml-auto text-[10.5px] text-slate-500">
+                    {m.state === "cooling_down"
+                      ? `rate-limited — retry in ${Math.ceil(m.cooldown_seconds_left / 60)}m`
+                      : m.last_ok
+                        ? "ready"
+                        : "untested"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
         )}
-
-        <div className="flex flex-wrap gap-2">
-          <span className="inline-flex items-center gap-2 rounded-xl bg-white/[0.04] px-3 py-1.5 text-xs">
-            <span className={`h-2 w-2 rounded-full ${
-              !sys?.llm?.enabled ? "bg-slate-600" : llmDown ? "bg-threat-critical" : "bg-threat-neutral"
-            }`} />
-            <span className="text-slate-200">LLM final check</span>
-            <span className="font-mono text-[10.5px] text-slate-500">
-              {!sys?.llm?.enabled ? "not configured" : llmDown ? "rate-limited" : "ready"}
-            </span>
-          </span>
-
-          {newsSources.map((s) => {
-            const used = s.used_today ?? 0;
-            const budget = s.daily_budget ?? 0;
-            const spent = budget > 0 && used >= budget;
-            return (
-              <span key={s.name}
-                className="inline-flex items-center gap-2 rounded-xl bg-white/[0.04] px-3 py-1.5 text-xs">
-                <span className={`h-2 w-2 rounded-full ${
-                  !s.configured ? "bg-slate-600" : spent ? "bg-threat-high" : "bg-threat-neutral"
-                }`} />
-                <span className="text-slate-200">{s.name}</span>
-                <span className="font-mono text-[10.5px] text-slate-500">
-                  {!s.configured ? "no key" : budget ? `${used}/${budget} today` : "unmetered"}
-                </span>
-              </span>
-            );
-          })}
-        </div>
-
         <button
           onClick={() =>
             run("LLM test", async () => {
@@ -245,7 +303,7 @@ export default function Settings() {
       <GlassCard className="p-4">
         <SectionTitle
           title="Maintenance"
-          sub="actions that change the stored posts"
+          sub="actions that run against the live corpus"
           right={<RefreshCcw size={15} className="text-slate-600" />}
         />
         <div className="flex flex-wrap gap-2">
@@ -253,7 +311,7 @@ export default function Settings() {
             onClick={() =>
               run("Collect", async () => {
                 const r = await api.crawlNow();
-                return `Collection pass complete — ${r.new_posts} new posts ingested`;
+                return `Collection pass complete — ${r.new_posts} new posts collected`;
               })
             }
             disabled={busy !== null}
@@ -365,7 +423,7 @@ export default function Settings() {
       <GlassCard className="p-4">
         <SectionTitle
           title="Records & Retention"
-          sub="download posts for a case file, or delete old ones"
+          sub="export for the case file · retention purge"
           right={<Database size={15} className="text-slate-600" />}
         />
         <div className="flex flex-wrap items-center gap-2">
@@ -420,12 +478,14 @@ export default function Settings() {
           <p className="mt-2 text-[10.5px] text-slate-600">
             {db.counts.posts.toLocaleString()} posts on record
             {db.oldest_post ? ` · oldest ${new Date(db.oldest_post).toLocaleDateString()}` : ""}
-            {db.newest_post ? ` · newest ${new Date(db.newest_post).toLocaleString()}` : ""}
+            {db.newest_post ? ` · newest ${new Date(db.newest_post).toLocaleString("en-IN", { hour12: true })}` : ""}
             {" · "}purging is irreversible and is recorded in the audit log.
           </p>
         )}
       </GlassCard>
 
+      {/* Read-only reference: what the models are and how the score is built. */}
+      <ModelsPanel />
     </div>
   );
 }

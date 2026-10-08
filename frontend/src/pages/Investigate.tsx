@@ -1,9 +1,12 @@
 import { useUrlFilters } from "../hooks/useUrlFilters";
-import { Image, Megaphone, AtSign, ShieldCheck } from "lucide-react";
+import { Bot, Image, Link2, Megaphone, UserSearch, AtSign, ShieldCheck } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import ImageTool from "../components/investigate/ImageTool";
 import UsernameTool from "../components/investigate/UsernameTool";
+import UrlTool from "../components/investigate/UrlTool";
+import CommentsTool from "../components/investigate/CommentsTool";
 import PrTool from "../components/investigate/PrTool";
+import SleuthTool from "../components/investigate/SleuthTool";
 
 interface Tool {
   id: string;
@@ -16,24 +19,45 @@ interface Tool {
 const TOOLS: Tool[] = [
   {
     id: "image",
-    label: "Photo & Video Check",
-    desc: "Check whether a photo or video was edited or AI-made, and find where else it has been posted",
+    label: "Image & Video Check",
+    desc: "Check file details, signs of editing, possible AI fakes, and where images appear online",
     icon: Image,
     el: <ImageTool />,
   },
   {
     id: "username",
-    label: "Username Search",
-    desc: "Search one username across the big platforms and ~480 other websites, then see which accounts are the same person",
+    label: "Find Social Accounts",
+    desc: "Search for a username on social media and messaging sites",
     icon: AtSign,
     el: <UsernameTool />,
   },
   {
+    id: "url",
+    label: "Suspicious Link Check",
+    desc: "Find where a link leads and check for signs of fraud or hidden destinations",
+    icon: Link2,
+    el: <UrlTool />,
+  },
+  {
+    id: "comments",
+    label: "Comment & Bot Check",
+    desc: "Check the tone of comments and look for automated accounts posting together",
+    icon: Bot,
+    el: <CommentsTool />,
+  },
+  {
     id: "pr",
-    label: "Coordinated Campaigns",
-    desc: "Find many accounts pushing the same message at the same time — an organised or paid campaign",
+    label: "Organized Online Campaigns",
+    desc: "Look for accounts working together to spread messages that may affect law and order",
     icon: Megaphone,
     el: <PrTool />,
+  },
+  {
+    id: "sleuth",
+    label: "Account Report",
+    desc: "Bring together an account’s posts, possible automated activity, and connections in one report",
+    icon: UserSearch,
+    el: <SleuthTool />,
   },
 ];
 
@@ -49,27 +73,27 @@ export default function Investigate() {
   return (
     <div className="space-y-4">
       {/* Tool Selector Tabs */}
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         {TOOLS.map(({ id, label, icon: Icon }) => {
           const isActive = active === id;
           return (
             <button
               key={id}
               onClick={() => setActive(id)}
-              className={`group flex items-center gap-3 rounded-2xl border p-3 text-left transition-all duration-150 ${
+              className={`group flex flex-col items-center justify-center gap-2 rounded-2xl border p-3 text-center transition-all duration-150 ${
                 isActive
                   ? "border-accent/60 bg-accent/15 text-accent shadow-[0_0_20px_-5px_rgba(20,184,196,0.3)] ring-1 ring-accent/30"
                   : "border-white/[0.08] bg-white/[0.02] text-slate-400 hover:border-white/20 hover:bg-white/[0.05] hover:text-slate-200"
               }`}
             >
               <div
-                className={`shrink-0 rounded-xl p-2 transition-colors ${
+                className={`rounded-xl p-2 transition-colors ${
                   isActive ? "bg-accent/20 text-accent" : "bg-white/[0.04] text-slate-400 group-hover:text-slate-200"
                 }`}
               >
                 <Icon size={18} />
               </div>
-              <span className="text-[13px] font-semibold leading-tight">{label}</span>
+              <span className="text-xs font-semibold leading-tight">{label}</span>
             </button>
           );
         })}
@@ -81,7 +105,7 @@ export default function Investigate() {
           <strong className="text-slate-200">{tool.label}</strong>: {tool.desc}
         </span>
         <span className="hidden md:inline-flex items-center gap-1 font-mono text-[11px] text-accent">
-          <ShieldCheck size={13} /> Tool in use
+          <ShieldCheck size={13} /> Investigation Tool Ready
         </span>
       </div>
 

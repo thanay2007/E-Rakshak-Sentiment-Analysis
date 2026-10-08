@@ -113,6 +113,12 @@ def get_stats(session: Session = Depends(get_session)) -> dict:
         "kpis": {
             "posts_monitored": total_posts,
             "posts_monitored_delta": _delta(posts24),
+            # Keep the retained dashboard's measurements alongside the new KPIs.
+            "active_threats": len(flagged24),
+            "active_threats_delta": _delta(flagged24),
+            "critical_alerts": open_critical,
+            "critical_alerts_delta": _delta([a for a in alerts24 if a.severity == "critical"]),
+            "campaigns": fake_pr_campaigns,
             # Alerts raised in the last 24h, and how many of those are critical
             # and still unhandled — the tile shows the first and the tooltip
             # the second, so "12 alerts" never hides "and 4 are untouched".

@@ -10,6 +10,9 @@ from pydantic import BaseModel
 from sqlmodel import Session
 from app.database import get_session
 
+from app.osint.comment_analysis import analyze_comments, analyze_post_comments
+from app.osint.sleuth import build_dossier
+from app.osint.url_analysis import analyze_url
 from app.osint import lens_search
 from app.osint.explain import explain_report
 from app.osint.face_intel import identify_faces, identify_media
@@ -39,6 +42,24 @@ async def _read_capped(file: UploadFile, limit: int, label: str) -> bytes:
     if not buf:
         raise HTTPException(400, "Empty file.")
     return bytes(buf)
+
+
+class UrlRequest(BaseModel):
+    url: str
+    resolve: bool = True
+
+
+class CommentItem(BaseModel):
+    author_handle: str = ""
+    author_name: str = ""
+    text: str
+    followers: int = 0
+    account_age_days: int = 365
+    verified: bool = False
+
+
+class CommentsRequest(BaseModel):
+    comments: list[CommentItem]
 
 
 class PostImageRequest(BaseModel):
@@ -197,3 +218,34 @@ def investigate_pr_campaigns(hours: int = 48, min_accounts: int = 3,
     log_action(session, "osint_pr_campaigns", str(hours))
     return detect_pr_campaigns(hours=max(1, min(hours, 168)),
                                min_accounts=max(2, min(min_accounts, 20)))
+
+
+# Compatibility routes for the retained investigation screens.
+@router.post("/url", dependencies=[Expensive])
+async def investigate_url(req: UrlRequest, session: Session = Depends(get_session)) -> dict:
+    from app.services.audit import log_action
+    log_action(session, "osint_url_lookup", req.url)
+    return await analyze_url(req.url, resolve=req.resolve)
+
+
+@router.get("/comments/{post_id}", dependencies=[Expensive])
+def investigate_post_comments(post_id: str, session: Session = Depends(get_session)) -> dict:
+    from app.services.audit import log_action
+    log_action(session, "osint_post_comments", post_id)
+    return analyze_post_comments(post_id)
+
+
+@router.post("/comments")
+def investigate_comments(req: CommentsRequest, session: Session = Depends(get_session)) -> dict:
+    from app.services.audit import log_action
+    if not req.comments:
+        raise HTTPException(400, "Provide at least one comment.")
+    log_action(session, "osint_raw_comments", str(len(req.comments)))
+    return analyze_comments([c.model_dump() for c in req.comments])
+
+
+@router.get("/sleuth", dependencies=[Expensive])
+async def investigate_sleuth(handle: str, lookup: bool = True, session: Session = Depends(get_session)) -> dict:
+    from app.services.audit import log_action
+    log_action(session, "osint_sleuth", handle)
+    return await build_dossier(handle, do_username_lookup=lookup)

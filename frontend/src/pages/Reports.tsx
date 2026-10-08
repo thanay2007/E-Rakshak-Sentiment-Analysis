@@ -1,7 +1,9 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowUpRight, Download, FilePlus2, FileSpreadsheet, FileText, ShieldAlert, X } from "lucide-react";
-import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { AlertCircle, ArrowUpRight, CheckCircle2, Download, FilePlus2, FileSpreadsheet, FileText, ShieldAlert, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useModalDialog } from "../hooks/useModalDialog";
+import { readableReportText, reportPeriod } from "../lib/reportPeriod";
 import { SentimentBadge } from "../components/Badges";
 import { usePostDetail } from "../components/PostDetailProvider";
 import GlassCard from "../components/GlassCard";
@@ -10,186 +12,167 @@ import { SENTIMENT_TEXT, sentimentColor } from "../data/constants";
 import { useGsapReveal } from "../hooks/useGsapReveal";
 import { usePolling } from "../hooks/usePolling";
 import { api } from "../services/api";
-import type { Report } from "../services/api";
+import type { Post, Report } from "../services/api";
 
-function ReportModal({ report, onClose }: { report: Report; onClose: () => void }) {
+type Notice = { type: "success" | "error"; message: string };
+
+function ReportNotice({ notice, onClose }: { notice: Notice; onClose: () => void }) {
+  const closeRef = useRef(onClose);
+  useEffect(() => { closeRef.current = onClose; }, [onClose]);
+  useEffect(() => {
+    if (notice.type !== "success") return;
+    const timer = window.setTimeout(() => closeRef.current(), 6000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+  const Icon = notice.type === "success" ? CheckCircle2 : AlertCircle;
+  return createPortal(
+    <div className="pointer-events-none fixed inset-x-0 top-6 z-[70] flex justify-center px-4">
+      <div role={notice.type === "error" ? "alert" : "status"} className="pointer-events-auto flex w-full max-w-md items-start gap-3 rounded-xl border border-white/15 bg-base-800 p-4 text-sm text-slate-200 shadow-2xl">
+        <Icon size={20} className={`mt-0.5 shrink-0 ${notice.type === "success" ? "text-threat-neutral" : "text-threat-critical"}`} aria-hidden="true" />
+        <p className="min-w-0 flex-1">{notice.message}</p>
+        <button onClick={onClose} aria-label="Dismiss message" className="shrink-0 rounded p-1 text-slate-400 hover:bg-white/10"><X size={16} /></button>
+      </div>
+    </div>, document.body
+  );
+}
+
+type ReportPost = Pick<Post, "id" | "platform" | "author_handle" | "language" | "location" | "text" | "translation" | "sentiment_label" | "concern_score"> & {
+  concern_level?: string;
+  review_reasons?: string[];
+  suggested_action?: string;
+};
+
+interface ReportPayload {
+  summary?: string;
+  summary_points?: string[];
+  totals?: Record<string, number>;
+  sentiment_distribution?: Record<string, number>;
+  top_concern?: ReportPost[];
+  follow_up_posts?: ReportPost[];
+  concern_thresholds?: { medium: number; high: number; critical: number };
+  recommended_actions?: string[];
+  escalation?: {
+    priority?: string;
+    incident_type?: string;
+    platform?: string;
+    language?: string;
+    location?: string;
+    author?: { handle?: string };
+    evidence?: { english_translation?: string; original_text?: string; sentiment?: string; concern_score?: number };
+    recommended_actions?: string[];
+  };
+}
+
+const TOTAL_LABELS: Record<string, string> = {
+  posts: "Posts checked", negative_posts: "Negative posts", flagged_posts: "Posts needing review",
+  alerts: "Alerts raised", critical_alerts: "Critical alerts", avg_concern_score: "Average concern score",
+};
+
+function ReportPosts({ posts, medium = false }: { posts: ReportPost[]; medium?: boolean }) {
   const { openPostId } = usePostDetail();
-  const p = report.payload ?? {};
+  return <div className="space-y-2">
+    {posts.map(post => <article key={post.id} className={`rounded-xl border p-3 transition-colors ${medium ? "border-accent/30 bg-accent/[0.04]" : "border-white/[0.06] bg-base-950/60"}`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <SentimentBadge label={post.sentiment_label} />
+        <div className="min-w-0 break-words font-mono text-[11px] text-slate-400">{post.platform} · <span className="break-all">@{post.author_handle}</span></div>
+        <span className={`ml-auto rounded-md border px-2 py-0.5 font-mono text-[10px] font-bold ${medium ? "border-accent/30 bg-accent/10 text-accent" : "border-white/10 bg-white/[0.06] text-slate-200"}`}>
+          {medium ? "Medium concern" : (post.concern_level ?? "Priority")} · {Math.round(post.concern_score)}/100
+        </span>
+      </div>
+      <p className="mt-1 font-mono text-[10px] text-slate-400">{post.language} · {post.location || "Location not available"}</p>
+      <p className="mt-2 whitespace-pre-line break-words text-xs leading-relaxed text-slate-200">{post.translation || post.text}</p>
+      {post.review_reasons?.length ? <div className="mt-3 border-t border-white/[0.06] pt-2">
+        <h4 className="break-words font-mono text-[10px] font-black uppercase tracking-widest text-accent">Why this needs follow-up</h4>
+        <ul className="mt-1.5 list-disc space-y-1 pl-4 text-xs leading-relaxed text-slate-300">{post.review_reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>
+      </div> : null}
+      {post.suggested_action && <p className="mt-2 text-xs leading-relaxed text-slate-300"><strong>Next step: </strong>{post.suggested_action}</p>}
+      <button onClick={() => openPostId(post.id)} className="mt-2 inline-flex items-center gap-1 text-[10.5px] font-semibold text-accent hover:underline">View full post details <ArrowUpRight size={13} /></button>
+    </article>)}
+  </div>;
+}
+
+function ReportModal({ report, onClose, onNotice }: { report: Report; onClose: () => void; onNotice: (notice: Notice) => void }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalDialog(true, onClose, dialogRef);
+  const [downloading, setDownloading] = useState<"pdf" | "xlsx" | null>(null);
+  const p = (report.payload ?? {}) as ReportPayload;
   const esc = p.escalation;
-  const dist: Record<string, number> = p.sentiment_distribution ?? {};
-  const total = Object.values(dist).reduce((s, v) => s + v, 0) || 1;
+  const dist = p.sentiment_distribution ?? {};
+  const total = Object.values(dist).reduce((sum, count) => sum + count, 0) || 1;
+  const summary = p.summary_points?.length ? p.summary_points : p.summary ? p.summary.split("\n").filter(Boolean) : [];
+  const urgent = p.top_concern ?? [];
+  const medium = p.follow_up_posts ?? [];
+  const actions = esc?.recommended_actions ?? p.recommended_actions ?? [];
 
-  return (
-    <>
-      <motion.div
-        className="fixed inset-0 z-40 bg-black/70 backdrop-blur-md"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={onClose}
-      />
-      <motion.div
-        className="fixed inset-x-4 top-[5vh] z-50 mx-auto max-h-[90vh] max-w-2xl overflow-y-auto rounded-2xl border border-white/[0.12] bg-base-900/95 p-6 shadow-2xl backdrop-blur-2xl"
-        initial={{ opacity: 0, y: 26, scale: 0.97 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 26, scale: 0.97 }}
-        transition={{ type: "spring", damping: 26, stiffness: 280 }}
-        role="dialog"
-        aria-label="Report preview"
-      >
-        <div className="flex items-start justify-between gap-3 border-b border-white/[0.08] pb-4">
-          <div>
-            <div className="font-mono text-[10px] font-black uppercase tracking-widest text-accent">
-              SENTINEL INTELLIGENCE · {report.kind.toUpperCase()} REPORT · {report.id}
-            </div>
-            <h2 className="mt-1 text-base font-black text-white sm:text-lg">{report.title}</h2>
-            <div className="font-mono text-xs text-slate-400">
-              Generated: {new Date(report.created_at).toLocaleString("en-IN")}
-            </div>
+  const download = async (format: "pdf" | "xlsx") => {
+    if (downloading) return;
+    setDownloading(format);
+    try {
+      if (format === "pdf") await api.downloadReport(report.id);
+      else await api.downloadReportXlsx(report.id);
+      onNotice({ type: "success", message: `${format === "pdf" ? "PDF" : "Excel file"} download started.` });
+    } catch {
+      onNotice({ type: "error", message: "Could not download the file. Please try again." });
+    } finally { setDownloading(null); }
+  };
+
+  return createPortal(
+    <motion.div className="fixed inset-0 z-40 flex items-center justify-center p-4 sm:p-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-md" aria-hidden="true" onClick={onClose} />
+      <motion.div ref={dialogRef} tabIndex={-1} className="relative z-10 max-h-[calc(100dvh-2rem)] w-full min-w-0 max-w-2xl overflow-y-auto overscroll-contain rounded-2xl border border-white/[0.12] bg-base-900/95 p-4 shadow-2xl backdrop-blur-2xl focus:outline-none sm:max-h-[calc(100dvh-3rem)] sm:p-6" initial={{ opacity: 0, y: 16, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 16, scale: 0.98 }} role="dialog" aria-modal="true" aria-label="Report preview">
+        <header className="flex items-start justify-between gap-3 border-b border-white/[0.08] pb-4">
+          <div className="min-w-0">
+            <p className="break-words font-mono text-[10px] font-black uppercase tracking-widest text-accent">E-RAKSHAK · {report.kind === "escalation" ? "Police Action Report" : "Incident Report"}</p>
+            <h2 className="mt-1 break-words text-base font-black leading-snug text-white sm:text-lg">{readableReportText(report.title, report.period_hours)}</h2>
+            <p className="mt-1 font-mono text-xs leading-relaxed text-slate-400">Generated {new Date(report.created_at).toLocaleString("en-IN", { hour12: true, timeZone: "Asia/Kolkata" })} IST · Past {reportPeriod(report.period_hours)}</p>
           </div>
-          <button
-            onClick={onClose}
-            className="rounded-xl border border-white/10 bg-white/[0.04] p-2 text-slate-400 hover:bg-white/[0.08] hover:text-white transition-all"
-            aria-label="Close"
-          >
-            <X size={16} />
-          </button>
-        </div>
+          <button onClick={onClose} className="shrink-0 rounded-xl border border-white/10 bg-white/[0.04] p-2 text-slate-400 transition-all hover:bg-white/[0.08] hover:text-white" aria-label="Close"><X size={18} /></button>
+        </header>
 
-        {p.summary && (
-          <p className="mt-4 rounded-xl border border-white/[0.08] bg-white/[0.03] p-4 text-xs leading-relaxed text-slate-200">
-            {p.summary}
-          </p>
-        )}
-
-        {p.totals && (
-          <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-5">
-            {Object.entries(p.totals as Record<string, number>).map(([k, v]) => (
-              <div key={k} className="rounded-xl border border-white/[0.06] bg-base-950/70 p-3 text-center">
-                <div className="font-mono text-xl font-black text-slate-100">{v}</div>
-                <div className="mt-0.5 text-[9.5px] font-bold uppercase tracking-wider text-slate-400">
-                  {k.replace(/_/g, " ")}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {Object.keys(dist).length > 0 && (
-          <div className="mt-4 rounded-xl border border-white/[0.06] bg-base-950/40 p-4">
-            <h3 className="mb-2.5 text-xs font-bold uppercase tracking-wider text-slate-300">
-              Threat Category Breakdown
-            </h3>
-            {Object.entries(dist).map(([label, count]) => (
-              <div key={label} className="mb-2 flex items-center gap-3 text-xs">
-                <span className="w-32 truncate text-slate-300 font-semibold">{SENTIMENT_TEXT[label] ?? label}</span>
-                <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/[0.08]">
-                  <div
-                    className="h-full rounded-full"
-                    style={{
-                      width: `${(count / total) * 100}%`,
-                      backgroundColor: sentimentColor(label),
-                    }}
-                  />
-                </div>
-                <span className="w-12 text-right font-mono font-bold text-slate-200">{count}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {p.top_concern?.length > 0 && (
-          <div className="mt-4">
-            <h3 className="mb-2.5 text-xs font-bold uppercase tracking-wider text-slate-300">
-              Highest-Concern Posts
-            </h3>
-            <div className="space-y-2">
-              {p.top_concern.slice(0, 5).map((t: any) => (
-                <button
-                  key={t.id}
-                  onClick={() => openPostId(t.id)}
-                  className="w-full rounded-xl border border-white/[0.06] bg-base-950/60 p-3 text-left transition-colors hover:border-accent/40 hover:bg-white/[0.04]"
-                >
-                  <div className="flex items-center gap-2">
-                    <SentimentBadge label={t.sentiment_label} score={t.concern_score} />
-                    <span className="font-mono text-[11px] text-slate-400">
-                      {t.platform} @{t.author_handle} · {t.language} · {t.location || "Gujarat"}
-                    </span>
-                  </div>
-                  <p className="mt-1.5 line-clamp-2 text-xs text-slate-200">{t.translation || t.text}</p>
-                  <span className="mt-1 block text-[10.5px] font-semibold text-accent">
-                    open full detail →
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {esc && (
-          <div className="mt-4 rounded-xl border border-threat-inflammatory/40 bg-threat-inflammatory/[0.06] p-4">
-            <h3 className="text-xs font-black uppercase tracking-wider text-threat-inflammatory">
-              Tactical Escalation Dossier · {esc.priority.toUpperCase()}
-            </h3>
-            <div className="mt-2.5 space-y-1.5 text-xs text-slate-200">
-              <p><strong className="text-slate-400">Incident:</strong> {esc.incident_type} on {esc.platform} ({esc.language}, {esc.location || "Gujarat"})</p>
-              <p><strong className="text-slate-400">Target Profile:</strong> @{esc.author?.handle} · {esc.author?.followers} followers · {esc.author?.account_age_days}d account age</p>
-              <p><strong className="text-slate-400">Evidence Quote:</strong> {esc.evidence?.english_translation || esc.evidence?.original_text}</p>
-              <p><strong className="text-slate-400">Classification:</strong> {esc.evidence?.classification} (Score {esc.evidence?.concern_score}/100)</p>
-            </div>
-            {esc.recommended_actions && (
-              <ul className="mt-3 space-y-1.5 text-xs text-slate-300">
-                {esc.recommended_actions.map((a: string, i: number) => (
-                  <li key={i} className="flex items-start gap-1.5">
-                    <span className="text-threat-inflammatory font-bold">▸</span>
-                    <span>{a}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-
-        {p.recommended_actions?.length > 0 && !esc && (
-          <div className="mt-4 rounded-xl border border-white/[0.06] bg-base-950/40 p-4">
-            <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-300">
-              Recommended Law Enforcement Actions
-            </h3>
-            <ul className="space-y-1.5 text-xs text-slate-300">
-              {p.recommended_actions.map((a: string, i: number) => (
-                <li key={i} className="flex items-start gap-1.5">
-                  <span className="text-accent font-bold">▸</span>
-                  <span>{a}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {(report.has_pdf || report.has_xlsx) && (
-          <div className="mt-5 flex flex-wrap gap-2 border-t border-white/[0.08] pt-4">
-            {report.has_pdf && (
-              <button
-                onClick={() => void api.downloadReport(report.id)}
-                className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-xs font-black text-base-950 shadow-md shadow-accent/20 hover:bg-accent-light transition-all"
-              >
-                <Download size={14} /> Download Official PDF Dossier
-              </button>
-            )}
-            {/* Secondary styling on purpose: the PDF is the document of record
-                and stays the primary action. The workbook is the working copy. */}
-            {report.has_xlsx && (
-              <button
-                onClick={() => void api.downloadReportXlsx(report.id)}
-                className="inline-flex items-center gap-2 rounded-xl border border-accent/40 bg-accent/10 px-4 py-2.5 text-xs font-black text-accent hover:bg-accent/20 transition-all"
-              >
-                <FileSpreadsheet size={14} /> Download Excel Workbook
-              </button>
-            )}
-          </div>
-        )}
+        {summary.length > 0 && <section className="mt-4" aria-labelledby="report-summary-title">
+          <h3 id="report-summary-title" className="text-xs font-bold uppercase tracking-wider text-slate-300">Report at a glance</h3>
+          <ul className="mt-2 list-disc space-y-1.5 rounded-xl border border-white/[0.08] bg-white/[0.03] py-3 pl-7 pr-4 text-xs leading-relaxed text-slate-200">{summary.map((point, index) => <li key={index}>{readableReportText(point, report.period_hours)}</li>)}</ul>
+        </section>}
+        {p.totals && <dl className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+          {Object.entries(p.totals).map(([key, value]) => <div key={key} className="flex flex-col rounded-xl border border-white/[0.06] bg-base-950/70 p-3 text-center">
+            <dt className="order-2 mt-0.5 text-[9.5px] font-bold uppercase tracking-wider text-slate-400">{TOTAL_LABELS[key] ?? key.replaceAll("_", " ")}</dt>
+            <dd className="order-1 font-mono text-xl font-black text-slate-100">{value.toLocaleString()}</dd>
+          </div>)}
+        </dl>}
+        {Object.keys(dist).length > 0 && <section className="mt-4 rounded-xl border border-white/[0.06] bg-base-950/40 p-4">
+          <h3 className="mb-2.5 text-xs font-bold uppercase tracking-wider text-slate-300">Post tone summary</h3>
+          {Object.entries(dist).map(([label, count]) => <div key={label} className="mb-2 flex items-center gap-3 text-xs">
+            <span className="w-20 shrink-0 font-semibold text-slate-300">{SENTIMENT_TEXT[label] ?? label}</span>
+            <div className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full rounded-full" style={{ width: `${count / total * 100}%`, backgroundColor: sentimentColor(label) }} /></div>
+            <span className="w-12 shrink-0 text-right font-mono font-bold text-slate-200">{count}</span>
+          </div>)}
+        </section>}
+        <section className="mt-4" aria-labelledby="report-priority-title">
+          <h3 id="report-priority-title" className="text-xs font-bold uppercase tracking-wider text-slate-300">Priority posts — review first</h3>
+          <p className="mb-2.5 mt-1 text-[11px] leading-relaxed text-slate-400">Posts with the highest concern levels in this period.</p>
+          {urgent.length ? <ReportPosts posts={urgent} /> : <p className="text-xs text-slate-400">No priority posts selected for this period.</p>}
+        </section>
+        {p.follow_up_posts && <section className="mt-4" aria-labelledby="report-medium-title">
+          <h3 id="report-medium-title" className="text-xs font-bold uppercase tracking-wider text-accent">Medium concerns to monitor</h3>
+          <p className="mb-2.5 mt-1 text-[11px] leading-relaxed text-slate-400">{p.concern_thresholds && `Scores ${p.concern_thresholds.medium}–${p.concern_thresholds.high - 1}. `}Review these posts and watch for wider sharing or repeated messages.</p>
+          {medium.length ? <ReportPosts posts={medium} medium /> : <p className="text-xs text-slate-400">No medium-concern posts selected for follow-up.</p>}
+        </section>}
+        {esc && <section className="mt-4 rounded-xl border border-threat-inflammatory/40 bg-threat-inflammatory/[0.06] p-4">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300">Police action details {esc.priority && `· ${esc.priority}`}</h3>
+          <p className="mt-2.5 text-xs leading-relaxed text-slate-300">{esc.incident_type} · {esc.platform} · {esc.location || "Location not available"}</p>
+          {esc.author?.handle && <p className="mt-2 break-all font-mono text-xs text-slate-300">Account: @{esc.author.handle}</p>}
+          <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-slate-200">{esc.evidence?.english_translation || esc.evidence?.original_text}</p>
+        </section>}
+        {actions.length > 0 && <section className="mt-4">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300">Suggested next steps</h3>
+          <ol className="mt-2 list-disc space-y-1.5 rounded-xl border border-white/[0.06] bg-base-950/40 p-4 pl-8 text-xs leading-relaxed text-slate-300">{actions.map((action, index) => <li key={index}>{action}</li>)}</ol>
+        </section>}
+        {(report.has_pdf || report.has_xlsx) && <footer className="mt-5 flex flex-wrap gap-2 border-t border-white/[0.08] pt-4">
+          {report.has_pdf && <button onClick={() => void download("pdf")} disabled={downloading !== null} className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-xs font-black text-base-950 shadow-md shadow-accent/20 transition-all hover:bg-accent-glow disabled:opacity-50"><Download size={16} />{downloading === "pdf" ? "Downloading PDF…" : "Download PDF"}</button>}
+          {report.has_xlsx && <button onClick={() => void download("xlsx")} disabled={downloading !== null} className="inline-flex items-center gap-2 rounded-xl border border-accent/40 bg-accent/10 px-4 py-2.5 text-xs font-black text-accent transition-all hover:bg-accent/20 disabled:opacity-50"><FileSpreadsheet size={16} />{downloading === "xlsx" ? "Downloading Excel…" : "Download Excel"}</button>}
+        </footer>}
       </motion.div>
-    </>
+    </motion.div>, document.body
   );
 }
 
@@ -199,52 +182,32 @@ export default function Reports() {
   const [title, setTitle] = useState("");
   const [period, setPeriod] = useState(24);
   const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<Notice | null>(null);
   const revealRef = useGsapReveal<HTMLDivElement>(data?.length ?? 0);
 
   const generate = async () => {
     if (busy) return;
     setBusy(true);
+    setNotice(null);
     try {
-      const r = await api.generateReport({ title: title || undefined, period_hours: period });
+      await api.generateReport({ title: title || undefined, period_hours: period });
       setTitle("");
-      refresh();
-      setOpen(r);
+      void refresh();
+      setNotice({ type: "success", message: "Report generated." });
+    } catch {
+      setNotice({ type: "error", message: "Could not create the report. Please try again." });
     } finally {
       setBusy(false);
     }
   };
 
-  const openFull = async (r: Report) => {
-    setOpen(await api.report(r.id));
+  const openFull = async (report: Report) => {
+    try {
+      setOpen(await api.report(report.id));
+    } catch {
+      setNotice({ type: "error", message: "Could not open the report. Please try again." });
+    }
   };
-
-  // `?open=<id>` opens that report — how the voice assistant shows one it has
-  // just generated or been asked for. The id is consumed so closing the modal
-  // and reloading doesn't reopen it.
-  const [params, setParams] = useSearchParams();
-  const openParam = params.get("open");
-  useEffect(() => {
-    if (!openParam || !/^[0-9a-fA-F-]{8,40}$/.test(openParam)) return;
-    let live = true;
-    api
-      .report(openParam)
-      .then((r) => {
-        if (live) setOpen(r);
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (!live) return;
-        refresh();
-        setParams((p) => {
-          p.delete("open");
-          return p;
-        }, { replace: true });
-      });
-    return () => {
-      live = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openParam]);
 
   return (
     <div className="space-y-4">
@@ -256,10 +219,10 @@ export default function Reports() {
           </div>
           <div>
             <h1 className="text-sm font-black uppercase tracking-wider text-white sm:text-base">
-              Reports & Case Files
+              Evidence & Incident Reports
             </h1>
             <p className="text-xs text-slate-400">
-              Make a briefing, a PDF to send up the chain, or an evidence timeline for the case file
+              Create incident summaries and review evidence reports
             </p>
           </div>
         </div>
@@ -270,25 +233,25 @@ export default function Reports() {
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="Custom dossier title (e.g. Surat Riot Escalation)"
-          className="min-w-[260px] flex-1 rounded-xl border border-white/[0.1] bg-white/[0.04] px-3.5 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:border-accent/60 focus:bg-white/[0.07] focus:outline-none"
+          placeholder="Report title (e.g. Surat Incident Report)"
+          className="min-w-0 w-full flex-1 sm:min-w-[260px] rounded-xl border border-white/[0.1] bg-white/[0.04] px-3.5 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:border-accent/60 focus:bg-white/[0.07] focus:outline-none"
         />
         <select
           value={period}
           onChange={(e) => setPeriod(Number(e.target.value))}
           className="rounded-xl border border-white/[0.1] bg-base-800 py-2 pl-3 pr-8 text-xs text-slate-200 hover:border-white/20 focus:border-accent/60 focus:outline-none"
         >
-          <option value={6}>Window: Last 6 Hours</option>
-          <option value={24}>Window: Last 24 Hours</option>
-          <option value={72}>Window: Last 72 Hours</option>
-          <option value={168}>Window: Last 7 Days</option>
+          <option value={6}>Past {reportPeriod(6)}</option>
+          <option value={24}>Past {reportPeriod(24)}</option>
+          <option value={72}>Past {reportPeriod(72)}</option>
+          <option value={168}>Past {reportPeriod(168)}</option>
         </select>
         <button
           onClick={generate}
           disabled={busy}
           className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2 text-xs font-black text-base-950 shadow-md shadow-accent/20 hover:bg-accent-light disabled:opacity-50 transition-all"
         >
-          <FilePlus2 size={14} /> {busy ? "Synthesizing Dossier…" : "Generate Incident Report"}
+          <FilePlus2 size={14} /> {busy ? "Creating Report…" : "Generate Incident Report"}
         </button>
       </GlassCard>
 
@@ -326,16 +289,11 @@ export default function Reports() {
                               : "border-accent/50 bg-accent/15 text-accent"
                           }`}
                         >
-                          {r.kind}
+                          {escalation ? "Police action" : r.kind}
                         </span>
-                        {r.has_pdf && (
-                          <span className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-0.2 font-mono text-[9.5px] font-bold uppercase tracking-wider text-slate-400">
-                            <Download size={9} /> PDF Ready
-                          </span>
-                        )}
                       </div>
                       <h3 className="mt-2 line-clamp-2 text-xs font-bold text-slate-100 transition-colors group-hover:text-accent">
-                        {r.title}
+                        {readableReportText(r.title, r.period_hours)}
                       </h3>
                     </div>
                   </div>
@@ -343,8 +301,8 @@ export default function Reports() {
 
                 <div className="mt-4 flex items-center justify-between border-t border-white/[0.06] pt-3">
                   <span className="font-mono text-[11px] text-slate-400">
-                    {new Date(r.created_at).toLocaleString("en-IN")}
-                    {r.period_hours > 0 && ` · ${r.period_hours}h`}
+                    {new Date(r.created_at).toLocaleString("en-IN", { hour12: true })}
+                    {r.period_hours > 0 && ` · Past ${reportPeriod(r.period_hours)}`}
                   </span>
                   <span className="inline-flex items-center gap-1 font-mono text-xs font-bold text-slate-400 group-hover:text-accent transition-colors">
                     Review <ArrowUpRight size={13} className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
@@ -364,7 +322,8 @@ export default function Reports() {
         </div>
       )}
 
-      <AnimatePresence>{open && <ReportModal report={open} onClose={() => setOpen(null)} />}</AnimatePresence>
+      {notice && <ReportNotice notice={notice} onClose={() => setNotice(null)} />}
+      <AnimatePresence>{open && <ReportModal report={open} onClose={() => setOpen(null)} onNotice={setNotice} />}</AnimatePresence>
     </div>
   );
 }

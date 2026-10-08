@@ -2,14 +2,13 @@ import { gsap } from "gsap";
 import {
   Activity,
   AlertOctagon,
-  ArrowRight,
   ArrowUpRight,
+  Bot,
   CheckCircle2,
   Cpu,
-  Megaphone,
   Radio,
   RefreshCw,
-  ShieldQuestion,
+  Target,
   TrendingUp as TrendIcon,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -141,10 +140,10 @@ export default function Dashboard() {
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
             <h1 className="text-sm font-black tracking-wide text-white uppercase sm:text-base">
-              State Cyber Defense Intelligence Hub
+              State Cyber Monitoring Dashboard
             </h1>
             <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> LIVE TELEMETRY
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> LIVE UPDATES
             </span>
           </div>
         </div>
@@ -158,7 +157,7 @@ export default function Dashboard() {
                 ? "border-accent/60 bg-accent/20 text-accent shadow-[0_0_15px_rgba(245,158,11,0.25)]"
                 : "border-white/10 bg-white/[0.04] text-slate-300 hover:border-accent/40 hover:bg-white/[0.08] hover:text-white"
             }`}
-            title="Synchronize telemetry and feed"
+            title="Refresh dashboard and posts"
           >
             <RefreshCw
               size={13}
@@ -169,7 +168,7 @@ export default function Dashboard() {
               }`}
             />
             <span className="font-mono text-xs">
-              {isSyncing ? "Syncing…" : "Sync"}
+              {isSyncing ? "Refreshing…" : "Refresh"}
             </span>
           </button>
         </div>
@@ -178,14 +177,14 @@ export default function Dashboard() {
       {statsError && !stats && (
         <GlassCard className="space-y-3 p-4 text-sm text-slate-200 border-red-500/30 bg-red-500/10">
           <div className="font-semibold text-red-300 flex items-center gap-2">
-            <AlertOctagon size={16} /> Could not load dashboard telemetry
+            <AlertOctagon size={16} /> Could not load dashboard updates
           </div>
           <div className="text-xs text-slate-400">{statsError}</div>
           <button
             onClick={() => void refreshStats()}
             className="rounded-xl border border-accent/40 bg-accent/15 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent/25"
           >
-            Retry Sync
+            Try Again
           </button>
         </GlassCard>
       )}
@@ -206,59 +205,43 @@ export default function Dashboard() {
             spark={stats.sparklines.posts}
             icon={Activity}
             color="#38BDF8"
-            to="/app/feed"
-            tooltip="Every post the NLP pipeline has evaluated. Opens the full feed."
+            tooltip="Social media posts checked in the last 24 hours."
           />
           <StatTile
-            label="Alert Posts"
-            value={stats.kpis.alert_posts}
-            delta={stats.kpis.alert_posts_delta}
-            spark={stats.sparklines.alerts}
+            label="Negative Posts"
+            value={stats.kpis.active_threats}
+            delta={stats.kpis.active_threats_delta}
+            spark={stats.sparklines.threats}
             color="#EF4444"
+            icon={Target}
+            invertDelta
+            tooltip="Negative posts with a concern score of 50 or more that are spreading online."
+          />
+          <StatTile
+            label="Critical Incidents"
+            value={stats.kpis.critical_alerts}
+            delta={stats.kpis.critical_alerts_delta}
+            spark={stats.sparklines.alerts}
+            color="#F59E0B"
             icon={AlertOctagon}
             invertDelta
-            to="/app/alerts"
-            tooltip={
-              `Posts that crossed the alert threshold in the last 24h — ${stats.kpis.critical_alerts_open} ` +
-              `critical alert${stats.kpis.critical_alerts_open === 1 ? " is" : "s are"} still unhandled. ` +
-              "Opens the Alerts queue."
-            }
-          />
-          <StatTile
-            label="Fake PR Campaigns"
-            value={stats.kpis.fake_pr_campaigns}
-            color="#A855F7"
-            icon={Megaphone}
-            to="/app/investigate?tab=pr"
-            tooltip="Clusters of accounts pushing near-identical copy in lock-step over the last 48h — manufactured narrative rather than organic opinion, filtered to the ones touching law and order. Opens the campaign detector."
+            tooltip="Serious incidents sent to police for action."
           />
           <StatTile
             label="Platforms Online"
             value={stats.kpis.platforms_online}
             suffix={`/${stats.kpis.platforms_total}`}
             icon={Radio}
-            color={stats.kpis.platforms_online === stats.kpis.platforms_total ? "#10B981" : "#F59E0B"}
-            // Which pipeline is down and why, not a fixed list of names. "4/6"
-            // on its own tells an operator something is wrong but not what to
-            // do about it; the reason string comes from the adapter that failed.
-            tooltip={
-              (stats.platforms ?? [])
-                .map((p) =>
-                  p.online
-                    ? `✓ ${p.name}${p.adapter && p.adapter !== p.name ? ` (${p.adapter})` : ""}`
-                    : `✗ ${p.name} — ${p.detail || "not configured"}`
-                )
-                .join("\n") || "Collection pipeline status unavailable."
-            }
+            color="#10B981"
+            tooltip="Social media sites being monitored (X, Telegram, Reddit, Facebook, Instagram, YouTube)."
           />
           <StatTile
-            label="Unverified Rumours"
-            value={stats.kpis.unverified_rumours}
-            color="#F59E0B"
-            icon={ShieldQuestion}
+            label="Suspected Automated Campaigns"
+            value={stats.kpis.campaigns}
+            color="#A855F7"
+            icon={Bot}
             invertDelta
-            to="/app/unverified"
-            tooltip="Alarming claims from a single account that no second source and no news index has corroborated — the window to check one before it goes viral. Opens the rumour triage queue."
+            tooltip="Groups of suspected automated accounts posting together to spread angry messages."
           />
         </div>
       )}
@@ -267,28 +250,21 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         {/* Left 2 Cols: Live sentiment stream (fixed proportional height) */}
         <GlassCard className="flex flex-col p-4 xl:col-span-2 h-[620px]">
-          {/* Title and controls are separate rows below `xl`, because four
-              filter pills plus the Full Feed button next to a two-line title
-              is what made this header wrap into a ragged stack. From `xl` up
-              the card is wide enough for one row, and the controls sit on a
-              single baseline with the title. */}
-          <div className="mb-3 flex flex-col gap-3 border-b border-white/[0.08] pb-3 shrink-0 xl:flex-row xl:items-start xl:justify-between">
-            <div className="min-w-0">
+          <div className="mb-3 flex flex-col gap-2.5 border-b border-white/[0.08] pb-3 sm:flex-row sm:items-center sm:justify-between shrink-0">
+            <div className="shrink-0 min-w-0">
               <div className="flex items-center gap-2">
                 <Radio size={16} className="text-emerald-400 shrink-0" />
-                <h2 className="text-sm font-extrabold uppercase tracking-wider text-white">
-                  Live Social Media Feed
+                <h2 className="text-sm font-extrabold uppercase tracking-wider text-white whitespace-nowrap">
+                  Live Social Media Posts
                 </h2>
               </div>
-              <p className="mt-0.5 text-[11px] text-slate-400">
-                New posts as they arrive — each one marked positive, negative or neutral, with a concern score out of 100
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Latest posts from social media, with tone and concern scores
               </p>
             </div>
 
-            {/* Quick filter pills. `shrink-0` on the row and fixed-width count
-                slots keep the four pills from resizing as their counts tick
-                over — a filter bar that jitters every poll is unusable. */}
-            <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+            {/* Quick Filter Pill Buttons */}
+            <div className="flex flex-wrap items-center gap-1.5">
               {[
                 { id: "all", label: "All Feeds", color: "#38BDF8" },
                 { id: "negative", label: "Negative", color: SENTIMENT_COLORS.negative },
@@ -301,20 +277,15 @@ export default function Dashboard() {
                   <button
                     key={id}
                     onClick={() => setFeedThreatFilter(id)}
-                    aria-pressed={isSelected}
-                    className={`inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold leading-none transition-all ${
+                    className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-xs font-semibold transition-all ${
                       isSelected
                         ? "border-accent bg-accent/20 text-accent shadow-sm"
                         : "border-white/[0.08] bg-white/[0.02] text-slate-400 hover:border-white/20 hover:bg-white/[0.06] hover:text-slate-100"
                     }`}
                   >
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+                    <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />
                     <span>{label}</span>
-                    <span
-                      className={`min-w-[1.25rem] text-right font-mono text-[10px] tabular-nums ${
-                        isSelected ? "font-bold text-accent" : "text-slate-500"
-                      }`}
-                    >
+                    <span className={`font-mono text-[10px] ${isSelected ? "text-accent font-bold" : "text-slate-500"}`}>
                       {count}
                     </span>
                   </button>
@@ -323,7 +294,7 @@ export default function Dashboard() {
 
               <Link
                 to="/app/feed"
-                className="inline-flex h-7 items-center gap-1 rounded-lg border border-accent/40 bg-accent/10 px-2.5 text-xs font-bold leading-none text-accent transition-all hover:bg-accent/20"
+                className="ml-0.5 inline-flex items-center gap-1 rounded-lg border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs font-bold text-accent hover:bg-accent/20 transition-all"
               >
                 <span>Full Feed</span> <ArrowUpRight size={12} />
               </Link>
@@ -343,12 +314,12 @@ export default function Dashboard() {
           )}
         </GlassCard>
 
-        {/* Right 1 Col: Sentiment Breakdown & Viral Hashtags (Balanced heights) */}
+        {/* Right 1 Col: Post Tone Summary & Viral Hashtags (Balanced heights) */}
         <div className="flex flex-col gap-4 h-[620px]">
-          {/* Sentiment Breakdown Donut & Interactive List */}
+          {/* Post Tone Summary Donut & Interactive List */}
           <GlassCard className="flex flex-1 flex-col justify-between p-4">
             <SectionTitle
-              title="Sentiment Breakdown"
+              title="Post Tone Summary"
             />
             {!stats ? (
               <SkeletonChart h={180} />
@@ -429,15 +400,6 @@ export default function Dashboard() {
           <GlassCard className="flex flex-1 flex-col justify-between p-4 overflow-hidden">
             <SectionTitle
               title="Viral Hashtags"
-              hint="Hashtags being used most across the monitored platforms in this window. The σ badge marks a statistical spike — the tag is running far above its own normal rate, which matters more than a high count on its own. Click any tag to read the posts using it."
-              right={
-                <Link
-                  to="/app/trends"
-                  className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] font-bold text-slate-300 transition-colors hover:border-accent/40 hover:text-accent"
-                >
-                  View all <ArrowRight size={12} />
-                </Link>
-              }
             />
             {trendsError && !trends ? (
               <div className="py-4 text-xs text-slate-400">{trendsError}</div>
@@ -491,7 +453,7 @@ export default function Dashboard() {
           <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-white/[0.06] pb-3 shrink-0">
             <div>
               <h2 className="text-sm font-extrabold uppercase tracking-wider text-white">
-                Sentiment Polarity Velocity Timeline
+                Post Tone Over Time
               </h2>
             </div>
             <div className="flex flex-wrap items-center gap-3 text-xs">
@@ -561,7 +523,7 @@ export default function Dashboard() {
           <GlassCard className="flex flex-1 flex-col justify-between p-3.5 overflow-hidden">
             <div className="flex items-center justify-between border-b border-white/[0.08] pb-1.5 shrink-0">
               <span className="text-xs font-bold uppercase tracking-wide text-white">
-                Platform Ingestion
+                Posts Collected by Platform
               </span>
               <div className="flex items-center gap-2.5 text-[10px]">
                 <span className="inline-flex items-center gap-1 font-semibold text-slate-300">
@@ -572,26 +534,6 @@ export default function Dashboard() {
                 </span>
               </div>
             </div>
-
-            {/* A dead collection pipeline is invisible on a bar chart — the bar
-                just stops growing, which looks identical to a quiet platform.
-                Name it, with the reason the adapter gave. */}
-            {(stats?.platforms ?? []).some((p) => !p.online) && (
-              <div className="flex flex-wrap gap-1 pt-1.5 shrink-0">
-                {(stats?.platforms ?? [])
-                  .filter((p) => !p.online)
-                  .map((p) => (
-                    <span
-                      key={p.name}
-                      title={p.detail || "No credentials configured for this platform."}
-                      className="inline-flex cursor-help items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/[0.08] px-1.5 py-0.5 text-[9.5px] font-bold text-amber-300"
-                    >
-                      <span className="h-1 w-1 rounded-full bg-amber-400" />
-                      {p.name} offline
-                    </span>
-                  ))}
-              </div>
-            )}
 
             {!stats ? (
               <SkeletonChart h={130} />

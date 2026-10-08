@@ -9,7 +9,6 @@ import {
   Settings,
   Share2,
   ShieldCheck,
-  ShieldQuestion,
   TrendingUp,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
@@ -41,26 +40,19 @@ const NAV_GROUPS: { name: string; items: NavEntry[] }[] = [
       },
       {
         to: "/app/alerts",
-        label: "Alerts Triage",
+        label: "Review Alerts",
         icon: Bell,
         badge: "HIGH",
         badgeColor: "bg-red-600/20 text-red-800 border-red-600/50 dark:bg-red-500/20 dark:text-red-300 dark:border-red-500/40 font-black",
       },
-      {
-        to: "/app/unverified",
-        label: "Unverified Claims",
-        icon: ShieldQuestion,
-        badge: "TRIAGE",
-        badgeColor: "bg-amber-600/20 text-amber-800 border-amber-600/50 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-500/40 font-black",
-      },
     ],
   },
   {
-    name: "INTELLIGENCE",
+    name: "INVESTIGATION",
     items: [
-      { to: "/app/investigate", label: "Forensics Hub", icon: ScanSearch },
-      { to: "/app/network", label: "Actor Network", icon: Share2 },
-      { to: "/app/trends", label: "Sentiment Trends", icon: TrendingUp },
+      { to: "/app/investigate", label: "Investigation Tools", icon: ScanSearch },
+      { to: "/app/network", label: "Account Connections", icon: Share2 },
+      { to: "/app/trends", label: "Post Trends", icon: TrendingUp },
       { to: "/app/watchlist", label: "Target Watchlist", icon: Eye },
       { to: "/app/reports", label: "Incident Reports", icon: FileText },
     ],
@@ -126,7 +118,7 @@ export default function Sidebar({
           }`}
         >
           <div className="font-mono text-sm font-black tracking-[0.18em] text-white flex items-center gap-1.5 whitespace-nowrap">
-            <span>SENTINEL</span>
+            <span>E-RAKSHAK</span>
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400 animate-pulse" />
           </div>
         </div>

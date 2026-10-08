@@ -89,6 +89,8 @@ export interface EmergingItem {
   /** Triage rank, 0-100. How alarming the claim is, whether it carries rumour
    *  phrasing, and how much it is being passed on — NOT a spread measure. */
   priority_score: number;
+  /** Legacy display score; queue ranking still uses priority_score. */
+  spread_score: number;
   /** informational | opinion | call_to_action | rumor */
   intent: string;
   source_count: number;
@@ -235,6 +237,12 @@ export interface FeedPage {
 }
 
 export interface Kpis {
+  /** Compatibility measurements used by the preserved dashboard. */
+  active_threats: number;
+  active_threats_delta: number;
+  critical_alerts: number;
+  critical_alerts_delta: number;
+  campaigns: number;
   posts_monitored: number;
   posts_monitored_delta: number;
   /** Alerts raised in the last 24h. */
@@ -701,6 +709,40 @@ export interface PrReport {
   weak_clusters_ignored?: number; min_confidence?: number;
 }
 
+export interface UrlFinding { level: string; text: string; on?: string }
+export interface UrlReport {
+  url: string; valid: boolean; error?: string; risk_score?: number; risk_level?: string;
+  meta?: Record<string, unknown>;
+  redirect?: { resolved: boolean; hops?: number; chain: { url: string; status: number }[]; final_url: string | null; reason?: string };
+  findings?: UrlFinding[];
+}
+
+export interface AnalyzedComment {
+  author_handle: string; author_name: string; text: string;
+  sentiment_label: string; sentiment_score: number; duplicate_ratio: number;
+  bot_score: number; bot_verdict: string; bot_signals: string[];
+}
+export interface CommentReport {
+  source: string; synthetic?: boolean;
+  post?: { post_id: string; platform: string; author_handle: string; text: string; sentiment_label: string };
+  total_comments: number;
+  sentiment_breakdown: { positive: number; neutral: number; negative: number; positive_pct: number; neutral_pct: number; negative_pct: number };
+  bot_analysis: { likely_bots: number; suspicious: number; suspected_pct: number; bot_pct: number; coordinated: boolean };
+  assessment: string[]; comments: AnalyzedComment[]; error?: string;
+}
+
+export interface Dossier {
+  handle: string; found: boolean; note?: string; error?: string;
+  profile?: { author_name: string; followers: number; verified: boolean; account_age_days: number; primary_platform: string; platforms: string[]; languages: string[]; locations: string[] };
+  activity?: { posts_tracked: number; posts_per_day: number; first_seen: string; last_seen: string; duplicate_ratio: number };
+  threat_profile?: { avg_concern_score: number; max_concern_score: number; label_breakdown: Record<string, number>; negative_posts: number };
+  sentiment_lean?: Record<string, number>;
+  authenticity: { score: number; verdict: string; signals: string[]; verified: boolean };
+  coordination?: { in_cluster: boolean; cluster_ids: string[]; amplified_posts: number };
+  notable_posts?: { id?: string; platform: string; sentiment_label: string; concern_score: number; text: string; url: string; created_at: string }[];
+  cross_platform?: UsernameReport;
+}
+
 // ── Administration ─────────────────────────────────────────────────────
 
 /** An officer account as the server is willing to describe it. Note what is
@@ -962,8 +1004,8 @@ export const api = {
   health: () => http<{ status: string }>("/api/health"),
   stats: () => http<Stats>("/api/stats"),
   models: () => http<ModelsInfo>("/api/models"),
-  emerging: (f: EmergingFilters = {}) =>
-    http<EmergingData>(`/api/emerging${qs({ hours: 24, ...f } as Record<string, unknown>)}`),
+  emerging: (f: EmergingFilters | number = {}) =>
+    http<EmergingData>(`/api/emerging${qs({ hours: 24, ...(typeof f === "number" ? { hours: f } : f) } as Record<string, unknown>)}`),
   feed: (f: FeedFilters = {}) => http<FeedPage>(`/api/feed${qs(f as Record<string, unknown>)}`),
   post: (id: string) => http<Post>(`/api/feed/${id}`),
   factCheckPost: (id: string) =>
@@ -1099,6 +1141,14 @@ export const api = {
   /** Model commentary on a report already on screen. The report is posted back
    *  rather than recomputed, so the explanation describes what the officer is
    *  actually looking at. */
+  investigateUrl: (url: string, resolve = true) =>
+    http<UrlReport>("/api/investigate/url", { method: "POST", body: JSON.stringify({ url, resolve }) }),
+  investigatePostComments: (postId: string) =>
+    http<CommentReport>(`/api/investigate/comments/${encodeURIComponent(postId)}`),
+  investigateComments: (comments: { author_handle: string; text: string; followers?: number; account_age_days?: number }[]) =>
+    http<CommentReport>("/api/investigate/comments", { method: "POST", body: JSON.stringify({ comments }) }),
+  investigateSleuth: (handle: string, lookup = true) =>
+    http<Dossier>(`/api/investigate/sleuth?handle=${encodeURIComponent(handle)}&lookup=${lookup}`),
   investigateExplain: (tool: "image" | "username" | "pr", report: unknown) =>
     http<ExplainResult>("/api/investigate/explain", {
       method: "POST", body: JSON.stringify({ tool, report }),

@@ -14,7 +14,7 @@ import type { Alert } from "../services/api";
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   new: { label: "NEW INCIDENT", cls: "text-threat-critical border-threat-critical/50 bg-threat-critical/10" },
   acknowledged: { label: "ACKNOWLEDGED", cls: "text-accent border-accent/50 bg-accent/10" },
-  escalated: { label: "LE ESCALATED", cls: "text-threat-inflammatory border-threat-inflammatory/50 bg-threat-inflammatory/10" },
+  escalated: { label: "SENT TO POLICE", cls: "text-threat-inflammatory border-threat-inflammatory/50 bg-threat-inflammatory/10" },
 };
 
 function AlertRow({ alert, onAction, onOpenPost }: {
@@ -45,7 +45,7 @@ function AlertRow({ alert, onAction, onOpenPost }: {
 
         <div className="flex items-center gap-3 shrink-0 font-mono text-xs">
           <span className="text-slate-400">
-            {new Date(alert.created_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })}
+            {new Date(alert.created_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true })}
           </span>
           <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.06] px-2 py-0.5 font-bold text-slate-200">
             Threat {Math.round(alert.concern_score)}
@@ -82,7 +82,7 @@ function AlertRow({ alert, onAction, onOpenPost }: {
             <div>
               <div className="mb-1.5 flex items-center gap-1 text-[10.5px] font-bold uppercase tracking-widest text-slate-400">
                 <AlertOctagon size={12} className="text-threat-inflammatory" />
-                <span>Auto-Generated Escalation Packet ({esc.priority})</span>
+                <span>Automatic Action Report ({esc.priority})</span>
               </div>
               <ul className="space-y-1 text-xs text-slate-200">
                 {(esc.recommended_actions as string[]).map((a, i) => (
@@ -110,12 +110,12 @@ function AlertRow({ alert, onAction, onOpenPost }: {
                 onClick={() => onAction(alert.id, "escalate")}
                 className="inline-flex items-center gap-1.5 rounded-xl bg-threat-critical px-3.5 py-1.5 text-xs font-bold text-white shadow-md hover:bg-red-600 transition-all"
               >
-                <Flag size={13} /> Escalate to Police Cyber Cell
+                <Flag size={13} /> Send to Police Cyber Cell
               </button>
             )}
             {alert.status === "escalated" && (
               <span className="inline-flex items-center gap-1.5 font-mono text-xs font-bold text-threat-inflammatory">
-                <CheckCheck size={14} /> Escalation report dispatched to law enforcement unit
+                <CheckCheck size={14} /> Action report sent to the police unit
               </span>
             )}
           </div>
@@ -210,10 +210,10 @@ export default function Alerts() {
             onChange={(e) => set("status", e.target.value)}
             className="rounded-xl border border-white/[0.1] bg-base-800 py-1.5 pl-3 pr-8 text-xs text-slate-200 hover:border-white/20 focus:border-accent/60 focus:outline-none"
           >
-            <option value="">All Triage Statuses</option>
+            <option value="">All Alert Statuses</option>
             <option value="new">New Incident</option>
             <option value="acknowledged">Acknowledged</option>
-            <option value="escalated">Escalated to LE</option>
+            <option value="escalated">Sent to Police</option>
           </select>
 
           {(severityFilter || statusFilter) && (
@@ -237,7 +237,7 @@ export default function Alerts() {
           ))}
           {data?.length === 0 && (
             <GlassCard className="p-12 text-center text-xs text-slate-400">
-              No active alerts matching the selected triage filter.
+              No active alerts match the selected filters.
             </GlassCard>
           )}
         </div>

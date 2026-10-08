@@ -19,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from statistics import mean
 from xml.sax.saxutils import escape
+from zoneinfo import ZoneInfo
 
 from sqlmodel import select
 
@@ -50,8 +51,8 @@ RECOMMENDED_ACTIONS = {
         "Brief community-liaison officers for the affected area",
     ],
     "elevated": [
-        "Keep under passive monitoring; no action indicated on this post alone",
-        "Track share velocity in case the sentiment spreads",
+        "Review the post and keep it on the watchlist",
+        "Watch for wider sharing or accounts posting the same message together",
     ],
 }
 
@@ -88,6 +89,59 @@ def escalation_template(post: Post) -> dict:
     }
 
 
+def _follow_up_reasons(post: Post) -> list[str]:
+    reasons = []
+    if post.is_amplified or post.cluster_id:
+        reasons.append("Signs of accounts sharing or posting together.")
+    shares = (post.engagement or {}).get("shares", 0) or 0
+    if shares > 0:
+        reasons.append(f"Shared {shares} times; monitor for wider spread.")
+    if post.toxicity_score >= 0.5:
+        reasons.append("Strong abusive language detected; review the wording.")
+    if post.keywords:
+        reasons.append("Concerning words found: " + ", ".join(post.keywords[:4]) + ".")
+    return reasons
+
+
+def _select_report_posts(posts: list[Post]) -> tuple[list[dict], list[dict]]:
+    """Use configured bands; medium posts are review leads, not predictions."""
+    urgent = sorted(
+        (post for post in posts if post.sentiment_label == "negative"
+         and _band(post.concern_score) in {"high", "critical"}),
+        key=lambda post: (-post.concern_score, post.id),
+    )[:6]
+    medium = sorted(
+        (post for post in posts if post.sentiment_label == "negative"
+         and _band(post.concern_score) == "elevated"),
+        key=lambda post: (-len(_follow_up_reasons(post)), -post.concern_score, post.id),
+    )[:3]
+    top = [{**post_to_dict(post, full=True), "concern_level": _band(post.concern_score)}
+           for post in urgent]
+    follow_up = [{**post_to_dict(post, full=True), "concern_level": "medium",
+                  "review_reasons": _follow_up_reasons(post) or [
+                      "Negative tone with a medium concern score; monitor for wider sharing."],
+                  "suggested_action": "Review the post, check the context, and watch for wider sharing or repeated messages."}
+                 for post in medium]
+    return top, follow_up
+
+
+def _report_period(hours: int) -> str:
+    # Keep the wording consistent with the available report filters.
+    if hours == 168:
+        return "7 days"
+    return f"{hours} {'hour' if hours == 1 else 'hours'}"
+
+
+def _report_time(value: str) -> str:
+    try:
+        stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=timezone.utc)
+        return stamp.astimezone(ZoneInfo("Asia/Kolkata")).strftime("%d %b %Y, %I:%M %p IST")
+    except (ValueError, TypeError):
+        return value or "Not available"
+
+
 def _build_payload(period_hours: int) -> dict:
     since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=period_hours)
     with session_scope() as s:
@@ -101,27 +155,28 @@ def _build_payload(period_hours: int) -> dict:
     trends = get_trends(period_hours)
 
     negative = [p for p in posts if p.sentiment_label == "negative"]
-    top = sorted(posts, key=lambda p: -p.concern_score)[:6]
+    top, follow_up = _select_report_posts(posts)
     label_counts = Counter(p.sentiment_label for p in posts)
     flagged = [p for p in posts if p.concern_score >= settings.ALERT_THRESHOLD]
 
-    summary = (
-        f"In the last {period_hours}h SENTINEL processed {len(posts)} posts across "
-        f"{len({p.platform for p in posts})} platforms. Sentiment split "
-        f"{label_counts.get('negative', 0)} negative / "
-        f"{label_counts.get('neutral', 0)} neutral / "
-        f"{label_counts.get('positive', 0)} positive; {len(flagged)} posts scored at or "
-        f"above the concern threshold of {settings.ALERT_THRESHOLD}. "
-        f"{sum(1 for a in alerts if a.severity == 'critical')} critical alerts were raised and "
-        f"{len(network['clusters'])} coordinated amplification cluster(s) detected."
-    )
+    summary_points = [
+        f"{len(posts)} posts checked across {len({p.platform for p in posts})} social media sites in the past {_report_period(period_hours)}.",
+        f"Post tone: {label_counts.get('negative', 0)} negative, {label_counts.get('neutral', 0)} neutral, and {label_counts.get('positive', 0)} positive.",
+        f"{len(flagged)} posts reached the alert threshold. {sum(1 for a in alerts if a.severity == 'critical')} critical alerts were raised.",
+        f"{len(follow_up)} medium-concern posts selected for follow-up. {len(network['clusters'])} groups showed signs of posting together.",
+    ]
+    summary = "\n".join(summary_points)
 
     actions: list[str] = []
-    for b, _ in Counter(_band(p.concern_score) for p in negative).most_common():
-        actions.extend(RECOMMENDED_ACTIONS.get(b, [])[:2])
+    present_bands = {_band(post.concern_score) for post in negative}
+    for band in ("critical", "high", "elevated"):
+        if band in present_bands:
+            actions.extend(RECOMMENDED_ACTIONS.get(band, [])[:2])
 
     return {
         "summary": summary,
+        "summary_points": summary_points,
+        "concern_thresholds": {"medium": settings.ELEVATED_THRESHOLD, "high": settings.ALERT_THRESHOLD, "critical": settings.CRITICAL_THRESHOLD},
         "period_hours": period_hours,
         "generated_at": iso(datetime.now(timezone.utc).replace(tzinfo=None)),
         "totals": {
@@ -135,7 +190,8 @@ def _build_payload(period_hours: int) -> dict:
         "sentiment_distribution": dict(label_counts),
         "language_distribution": dict(Counter(p.language for p in posts)),
         "platform_distribution": dict(Counter(p.platform for p in posts)),
-        "top_concern": [post_to_dict(p, full=True) for p in top],
+        "top_concern": top,
+        "follow_up_posts": follow_up,
         "coordinated_clusters": network["clusters"],
         "trending_hashtags": trends["hashtags"][:8],
         "regions": trends["regions"][:8],
@@ -327,21 +383,21 @@ def _render_pdf(report: Report) -> str:
     h1 = ParagraphStyle("h1", parent=styles["Title"], textColor=colors.HexColor("#0F1420"),
                         fontSize=18, fontName=bold_font)
     h2 = ParagraphStyle("h2", parent=styles["Heading2"], textColor=colors.HexColor("#14B8C4"),
-                        fontName=bold_font)
-    body = ParagraphStyle("body", parent=styles["BodyText"], fontName=base_font)
+                        fontName=bold_font, fontSize=13, leading=18, spaceBefore=12, spaceAfter=8)
+    body = ParagraphStyle("body", parent=styles["BodyText"], fontName=base_font, fontSize=11, leading=16, spaceAfter=7)
 
     doc = SimpleDocTemplate(str(path), pagesize=A4, topMargin=18 * mm, bottomMargin=18 * mm)
     flow = [
-        Paragraph("SENTINEL — Public Sentiment Report", h1),
+        Paragraph("E-Rakshak — Incident Report", h1),
         # The title is operator-supplied and the summary can quote a post, so
         # both are user text as far as this document is concerned.
-        Paragraph(f"{mk(report.title)} • generated {mk(p.get('generated_at', ''))} "
-                  f"• window {mk(p.get('period_hours'))}h", body),
+        Paragraph(f"{mk(report.title)} • generated {mk(_report_time(p.get('generated_at', '')))} "
+                  f"• past {mk(_report_period(p.get('period_hours', report.period_hours)))}", body),
         Spacer(1, 6 * mm),
-        Paragraph("Executive Summary", h2),
-        Paragraph(mk(p.get("summary", "")), body),
+        Paragraph("Report at a Glance", h2),
+        *[Paragraph(f"• {mk(point)}", body) for point in p.get("summary_points", [p.get("summary", "")])],
         Spacer(1, 4 * mm),
-        Paragraph("Sentiment Breakdown", h2),
+        Paragraph("Post Tone Summary", h2),
     ]
     dist = p.get("sentiment_distribution", {})
     # Table cells are not parsed as markup, so they cannot carry per-run fonts.
@@ -360,28 +416,43 @@ def _render_pdf(report: Report) -> str:
     flow.append(table)
 
     flow.append(Spacer(1, 4 * mm))
-    flow.append(Paragraph("Highest-Concern Posts", h2))
-    for t in p.get("top_concern", [])[:5]:
+    flow.append(Paragraph("High & Critical Concerns — Review First", h2))
+    if not p.get("top_concern"):
+        flow.append(Paragraph("No high or critical concern posts selected in this period.", body))
+    for t in p.get("top_concern", []):
         # Handle, location and label are all user- or platform-supplied and any
         # of them can be non-Latin — a Gujarati place name in `location` was
         # tofu even when the post body happened to be English.
-        headline = "[{}] {}".format(t["concern_score"], t["sentiment_label"])
+        headline = "Concern {}/100 — {}".format(t["concern_score"], t.get("concern_level", t["sentiment_label"]).title())
         flow.append(Paragraph(
             f"<b>{mk(headline)}</b> — {mk(t['platform'])} @{mk(t['author_handle'])} "
             f"({mk(t['language'])}, {mk(t['location'] or 'n/a')})", body))
         flow.append(Paragraph(mk(t.get("translation") or t.get("text", "")), body))
         flow.append(Spacer(1, 2 * mm))
 
+    follow_up = p.get("follow_up_posts", [])
+    flow.append(Paragraph("Medium Concerns — Watch for Worsening Activity", h2))
+    flow.append(Paragraph("Review these posts and monitor for wider sharing or repeated messages.", body))
+    if not follow_up:
+        flow.append(Paragraph("No medium-concern posts selected for follow-up in this period.", body))
+    for post in follow_up:
+        flow.append(Paragraph(f"<b>Medium concern: {mk(post['concern_score'])}/100</b> — {mk(post['platform'])} @{mk(post['author_handle'])}", body))
+        flow.append(Paragraph(mk(post.get("translation") or post.get("text", "")), body))
+        for reason in post.get("review_reasons", []):
+            flow.append(Paragraph(f"• {mk(reason)}", body))
+        flow.append(Paragraph(f"<b>Next step:</b> {mk(post.get('suggested_action', 'Review and monitor.'))}", body))
+        flow.append(Spacer(1, 3 * mm))
+
     clusters = p.get("coordinated_clusters", [])
     if clusters:
-        flow.append(Paragraph("Coordinated Amplification", h2))
+        flow.append(Paragraph("Accounts Posting Together", h2))
         for c in clusters[:4]:
             flow.append(Paragraph(
                 f"<b>{mk(c['id'])} — {mk(c['label'])}</b> (confidence {c['confidence']:.0%}, "
                 f"{len(c['accounts'])} accounts): {mk('; '.join(c['why']))}", body))
             flow.append(Spacer(1, 2 * mm))
 
-    flow.append(Paragraph("Recommended Actions", h2))
+    flow.append(Paragraph("Suggested Next Steps", h2))
     for a in p.get("recommended_actions", []):
         flow.append(Paragraph(f"• {mk(a)}", body))
 
@@ -392,13 +463,9 @@ def _render_pdf(report: Report) -> str:
 def _render_xlsx(report: Report) -> str:
     """The same payload as the PDF, as a workbook analysts can actually work in.
 
-    The PDF is the document of record and stays exactly as it was. This is the
-    other half of the same data: a PDF cannot be sorted, filtered or pasted
-    into a case file, and the highest-concern list is precisely the table an
-    analyst wants to re-rank. So the sheet that matters carries every scored
-    post rather than the PDF's first five, and ships with the filter, frozen
-    header and score gradient already applied — a workbook that needs three
-    manual steps before it is readable does not get used.
+    The PDF and workbook carry the same urgent posts and medium-concern
+    follow-up leads. Filters, frozen headers, and wrapped text make the
+    workbook easier to review and share during a shift.
 
     Nothing is recomputed. Every value here is reshaped from `report.payload`,
     which `_build_payload` already produced for the JSON and the PDF, so the
@@ -457,8 +524,9 @@ def _render_xlsx(report: Report) -> str:
     for label, value in [
         ("Report Title", report.title),
         ("Report Kind", report.kind),
-        ("Window (hours)", p.get("period_hours", "")),
-        ("Generated At", p.get("generated_at", "")),
+        ("Report Period", "Past " + _report_period(p.get("period_hours", report.period_hours))),
+        ("Generated At", _report_time(p.get("generated_at", ""))),
+        ("Medium Posts for Follow-Up", len(p.get("follow_up_posts", []))),
         ("Posts Processed", totals.get("posts", 0)),
         ("Negative Posts", totals.get("negative_posts", 0)),
         ("Flagged Posts", totals.get("flagged_posts", 0)),
@@ -527,6 +595,22 @@ def _render_xlsx(report: Report) -> str:
         for cell in row:
             cell.alignment = Alignment(wrap_text=True, vertical="top")
     autosize(ws, limit=50)
+
+    # Medium concerns are separate from urgent posts in every rendering.
+    ws = wb.create_sheet("Medium Concerns")
+    head(ws, 1, ["Concern Score", "Platform", "Username", "Location", "Post Text", "Why Review", "Next Step", "Source URL"])
+    for post in p.get("follow_up_posts", []):
+        ws.append([post.get("concern_score", 0), post.get("platform", ""),
+                   post.get("author_handle", ""), post.get("location", ""),
+                   post.get("translation") or post.get("text", ""),
+                   "\n".join(post.get("review_reasons", [])),
+                   post.get("suggested_action", ""), post.get("url", "")])
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = f"A1:H{ws.max_row}"
+    for row in ws.iter_rows(min_row=2):
+        for cell in row:
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+    autosize(ws, limit=55)
 
     # ── Platform & Language ─────────────────────────────────────────────────
     # Two independent distributions, side by side with a spacer column: both
@@ -610,7 +694,7 @@ def _render_xlsx(report: Report) -> str:
 def generate_report(title: str = "", period_hours: int = 24, kind: str = "incident") -> Report:
     payload = _build_payload(period_hours)
     report = Report(
-        title=title or f"Situation Report — last {period_hours}h",
+        title=title or f"Situation Report — past {_report_period(period_hours)}",
         kind=kind, period_hours=period_hours, payload=payload,
     )
     with session_scope() as s:

@@ -214,6 +214,20 @@ def _propagation(p: Post) -> float:
             + 2 * _engagement(p, "comments"))
 
 
+def _reach(p: Post) -> float:
+    eng = p.engagement or {}
+    interactions = (eng.get("likes", 0) or 0) + 2 * (eng.get("shares", 0) or 0) \
+        + (eng.get("comments", 0) or 0) + 0.001 * (eng.get("views", 0) or 0)
+    return interactions + 0.02 * (p.author_followers or 0)
+
+
+def _spread_score(p: Post, reach: float, reach_max: float) -> float:
+    """0-100 blend of audience reach, engagement and threat intensity."""
+    reach_norm = 100 * (reach / reach_max) if reach_max > 0 else 0
+    verified_boost = 15 if p.author_verified else 0   # a blue-check claim travels further
+    return round(min(100.0, 0.45 * reach_norm + 0.40 * p.concern_score + verified_boost), 1)
+
+
 def _priority_score(p: Post) -> tuple[float, float, float]:
     """0-100 triage priority, plus the propagation total and outrunning ratio.
 
@@ -323,6 +337,7 @@ def _compute(hours: int) -> dict:
         return {"items": [], "scanned": 0, "platforms": [], "locations": [],
                 "dropped": {}}
 
+    reach_max = max((_reach(post) for post in posts), default=0)
     corroborators = _corroborator_index(posts)
     # How much each account posted in this window — the broadcast-channel test.
     # Counted over the scan rather than the database so it means "in the window
@@ -387,6 +402,8 @@ def _compute(hours: int) -> dict:
             "sentiment_label": p.sentiment_label,
             "concern_score": p.concern_score,
             "priority_score": priority,
+            # Display-only legacy field; queue admission and sorting stay on priority_score.
+            "spread_score": _spread_score(p, _reach(p), reach_max),
             "intent": p.intent or "",
             "source_count": source_count,
             "url": p.url,
