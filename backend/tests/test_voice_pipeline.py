@@ -720,3 +720,9 @@ def test_realtime_survives_a_tool_that_raises_before_navigating(monkeypatch):
     # navigated.
     assert not [p for p in emitted if isinstance(p, realtime.LLMNavigatePacket)]
     assert emitted, "the officer's panel still gets the failed tool step"
+
+
+def test_router_follows_the_provider_order(monkeypatch):
+    from app.routers import voice
+    monkeypatch.setattr(settings, "VOICE_REALTIME_PROVIDERS", ["gemini", "bogus", "gemini"])
+    assert [label for _m, _c, label in voice._realtime_engines()] == ["gemini_live"]

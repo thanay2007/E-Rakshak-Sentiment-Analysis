@@ -12,7 +12,7 @@ from sqlmodel import select
 from app.config import settings
 from app.database import session_scope
 from app.data.simulator import get_simulator
-from app.ml.geo import infer_city
+from app.ml.geo import dominant_city
 from app.ml.pipeline import attach_evidence, get_pipeline
 from app.models import Alert, Post
 from app.schemas import RawPost
@@ -27,6 +27,33 @@ def content_hash(raw: RawPost) -> str:
     return hashlib.sha1(key.encode("utf-8")).hexdigest()
 
 
+def _resolve_location(raw: RawPost, translation: str) -> None:
+    """Pick the city a post is filed under, most specific evidence first.
+
+    1. The post's own geotag (`geo_verified`) — where it was actually posted.
+    2. A target city the post itself names, in its text or hashtags, or in the
+       English translation. The translation matters: the alias table only knows
+       Latin/Devanagari/Gujarati spellings, so a post in any other language
+       would otherwise never be placed.
+    3. The city of the account or parent post the collector read it from.
+
+    (3) used to win outright whenever it was set, so a Surat page's post about
+    a Rajkot protest — and every comment under it — was filed as Surat. The
+    account's city now only answers when the post itself says nothing.
+    """
+    from app.data.templates import CITIES
+
+    if not (raw.geo_verified and raw.location):
+        said = (dominant_city(" ".join([raw.text, *("#" + t for t in raw.hashtags)]))
+                or (dominant_city(translation) if translation else None))
+        if said:
+            if said[0] != raw.location or not (raw.latitude or raw.longitude):
+                raw.location, raw.latitude, raw.longitude = said
+            return
+    if raw.location and not raw.latitude and not raw.longitude:
+        raw.latitude, raw.longitude = CITIES.get(raw.location, (0.0, 0.0))
+
+
 def _make_post(raw: RawPost, nlp: dict, chash: str) -> Post:
     # Underscore-prefixed keys are pipeline-internal scratch (see
     # ml/pipeline.py) — they exist so the post-enrichment network stages can
@@ -35,19 +62,7 @@ def _make_post(raw: RawPost, nlp: dict, chash: str) -> Post:
     # simulated posts carry their own gloss; live non-English posts get a Groq
     # machine translation during enrichment
     translation = nlp.pop("translation", "") or raw.translation
-    if not raw.location:  # live-platform posts: geo-tag from city mentions
-        # Check the English translation too, not just the raw text. infer_city
-        # only knows Latin/Gujarati/Devanagari spellings of the target cities,
-        # so a post written in any other language — deliberately or not — would
-        # otherwise land with no location and drop off the geo view. Translating
-        # first and matching on both is what keeps that from being an easy gap.
-        hit = infer_city(raw.text) or (infer_city(translation) if translation else None)
-        if hit:
-            raw.location, raw.latitude, raw.longitude = hit
-    elif not raw.latitude and not raw.longitude:  # seed-source :City tag → coords
-        from app.data.templates import CITIES
-
-        raw.latitude, raw.longitude = CITIES.get(raw.location, (0.0, 0.0))
+    _resolve_location(raw, translation)
     post = Post(
         content_hash=chash,
         platform=raw.platform,

@@ -11,6 +11,7 @@ import { SkeletonRow } from "../components/Skeletons";
 import { SENTIMENT_TEXT, sentimentColor } from "../data/constants";
 import { useGsapReveal } from "../hooks/useGsapReveal";
 import { usePolling } from "../hooks/usePolling";
+import { useEnglish } from "../hooks/useEnglish";
 import { api } from "../services/api";
 import type { Post, Report } from "../services/api";
 
@@ -68,6 +69,17 @@ const TOTAL_LABELS: Record<string, string> = {
   alerts: "Alerts raised", critical_alerts: "Critical alerts", avg_concern_score: "Average concern score",
 };
 
+/** A report post's body, in English: the stored translation, or one fetched
+ *  automatically for a report generated before the post was translated. */
+function ReportPostText({ post }: { post: ReportPost }) {
+  const { english, pending } = useEnglish(post.id, post.text, post.translation, post.language);
+  return <>
+    <p className="mt-2 whitespace-pre-line break-words text-xs leading-relaxed text-slate-200">{english || post.text}</p>
+    {english && <p className="mt-1 text-[11px] uppercase tracking-wider text-slate-500">AI translation · original in {post.language}</p>}
+    {pending && <p className="mt-1 text-[11px] italic text-slate-500">Translating to English…</p>}
+  </>;
+}
+
 function ReportPosts({ posts, medium = false }: { posts: ReportPost[]; medium?: boolean }) {
   const { openPostId } = usePostDetail();
   return <div className="space-y-2">
@@ -80,7 +92,7 @@ function ReportPosts({ posts, medium = false }: { posts: ReportPost[]; medium?: 
         </span>
       </div>
       <p className="mt-1 font-mono text-xs text-slate-400">{post.language} · {post.location || "Location not available"}</p>
-      <p className="mt-2 whitespace-pre-line break-words text-xs leading-relaxed text-slate-200">{post.translation || post.text}</p>
+      <ReportPostText post={post} />
       {post.review_reasons?.length ? <div className="mt-3 border-t border-white/[0.06] pt-2">
         <h4 className="break-words font-mono text-xs font-black uppercase tracking-widest text-accent">Why this needs follow-up</h4>
         <ul className="mt-1.5 list-disc space-y-1 pl-4 text-xs leading-relaxed text-slate-300">{post.review_reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>

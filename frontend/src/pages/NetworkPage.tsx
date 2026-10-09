@@ -1,4 +1,4 @@
-import { Bot, ExternalLink, Radar, Share2, Users } from "lucide-react";
+import { ExternalLink, Radar, Share2, Users } from "lucide-react";
 import { useMemo, useState } from "react";
 import { BotChip, PlatformIcon, SentimentBadge } from "../components/Badges";
 import { usePostDetail } from "../components/PostDetailProvider";
@@ -6,7 +6,6 @@ import GlassCard, { SectionTitle } from "../components/GlassCard";
 import NetworkGraph from "../components/NetworkGraph";
 import { SkeletonChart, SkeletonRow } from "../components/Skeletons";
 import { concernColor } from "../data/constants";
-import { useGsapReveal } from "../hooks/useGsapReveal";
 import { usePolling } from "../hooks/usePolling";
 import { useUrlFilters } from "../hooks/useUrlFilters";
 import { api } from "../services/api";
@@ -47,7 +46,6 @@ export default function NetworkPage() {
     60000,
     [hours, platform]
   );
-  const revealRef = useGsapReveal<HTMLDivElement>(data?.clusters.length ?? 0);
   const counts = data?.platform_counts ?? {};
 
   const botCount = data?.nodes.filter((n) => n.is_bot).length ?? 0;
@@ -68,7 +66,6 @@ export default function NetworkPage() {
   const stats: [string, string | number, string][] = [
     ["Accounts Monitored", data?.nodes.length ?? "—", "In interaction graph"],
     ["Interaction Links", data?.links.length ?? "—", "Links between accounts and signs of posting together"],
-    ["Flagged Clusters", data?.clusters.length ?? "—", "Groups posting similar messages at the same time"],
     ["Bot-Like Accounts", botCount, "Accounts with an automated-activity score above 0.65"],
   ];
 
@@ -85,7 +82,7 @@ export default function NetworkPage() {
               Account Connections
             </h1>
             <p className="text-xs text-slate-400">
-              See connected accounts, possible automated activity, and groups posting together
+              See connected accounts and possible automated activity
             </p>
           </div>
         </div>
@@ -135,7 +132,7 @@ export default function NetworkPage() {
       </div>
 
       {/* KPI Stats Row */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {stats.map(([label, value, sub]) => (
           <GlassCard key={label} className="p-3.5 border border-white/[0.08]">
             <div className="text-xs font-bold uppercase tracking-wider text-slate-400">{label}</div>
@@ -277,81 +274,6 @@ export default function NetworkPage() {
         </div>
       </div>
 
-      {/* Coordinated Clusters */}
-      <GlassCard className="p-4 border border-white/[0.08]">
-        <SectionTitle
-          title="Groups Posting Together"
-          sub={data ? `${data.clusters.length} groups with possible automated or organized activity found` : undefined}
-          right={<Bot size={16} className="text-threat-critical" />}
-        />
-        {loading && !data ? (
-          <SkeletonRow n={2} />
-        ) : (
-          <div ref={revealRef} className="mt-3.5 grid grid-cols-1 gap-3.5 lg:grid-cols-2">
-            {data?.clusters.map((c) => (
-              <div
-                key={c.id}
-                className="reveal-item rounded-xl border border-threat-critical/30 bg-threat-critical/[0.03] p-4 shadow-sm"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-xs font-black text-threat-critical">{c.id}</span>
-                  <SentimentBadge label={c.label} />
-                  <span className="font-mono text-xs text-slate-400">
-                    {c.accounts.length} accounts · {c.posts} posts
-                  </span>
-                  <span className="ml-auto font-mono text-xs font-bold text-accent">
-                    {(c.confidence * 100).toFixed(0)}% Match
-                  </span>
-                </div>
-                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-threat-inflammatory to-threat-critical"
-                    style={{ width: `${c.confidence * 100}%` }}
-                  />
-                </div>
-                <ul className="mt-2.5 space-y-1 text-xs text-slate-300">
-                  {c.why.map((w, i) => (
-                    <li key={i} className="flex items-start gap-1.5">
-                      <span className="text-threat-critical font-bold">▸</span>
-                      <span>{w}</span>
-                    </li>
-                  ))}
-                </ul>
-                {c.sample_post_id ? (
-                  <button
-                    onClick={() => openPostId(c.sample_post_id!)}
-                    className="mt-2.5 block w-full rounded-xl border border-white/[0.06] bg-base-950/70 p-2.5 text-left text-xs italic text-slate-300 transition-colors hover:border-accent/40 hover:bg-white/[0.04]"
-                  >
-                    <span className="line-clamp-2">“{c.sample_text}”</span>
-                    <span className="mt-1 block not-italic text-xs font-semibold text-accent">
-                      open this post →
-                    </span>
-                  </button>
-                ) : (
-                  <p className="mt-2.5 line-clamp-2 rounded-xl border border-white/[0.06] bg-base-950/70 p-2.5 text-xs italic text-slate-300">
-                    “{c.sample_text}”
-                  </p>
-                )}
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {c.accounts.slice(0, 8).map((a) => (
-                    <span key={a} className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-0.5 font-mono text-xs text-slate-300">
-                      @{a}
-                    </span>
-                  ))}
-                  {c.accounts.length > 8 && (
-                    <span className="font-mono text-xs text-slate-500">+{c.accounts.length - 8} more</span>
-                  )}
-                </div>
-              </div>
-            ))}
-            {data?.clusters.length === 0 && (
-              <p className="col-span-full py-8 text-center text-xs text-slate-400">
-                No coordinated swarms detected in this time window.
-              </p>
-            )}
-          </div>
-        )}
-      </GlassCard>
     </div>
   );
 }

@@ -7,6 +7,7 @@ import GlassCard, { SectionTitle } from "../components/GlassCard";
 import { PlatformIcon, SentimentBadge } from "../components/Badges";
 import { usePostDetail } from "../components/PostDetailProvider";
 import { SkeletonRow } from "../components/Skeletons";
+import EnglishGloss from "../components/EnglishGloss";
 import { useUrlFilters } from "../hooks/useUrlFilters";
 import { api } from "../services/api";
 import type { EmergingData, EmergingItem } from "../services/api";
@@ -68,6 +69,7 @@ function Row({ it }: { it: EmergingItem }) {
           </div>
 
           <p className="mt-1.5 line-clamp-2 text-[13px] leading-snug text-slate-200">{it.text}</p>
+          <EnglishGloss id={it.post_id} text={it.text} translation={it.translation} language={it.language} className="mt-1.5 line-clamp-3" />
 
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
             {it.reasons.map((r, i) => (

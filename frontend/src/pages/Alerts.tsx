@@ -110,12 +110,12 @@ function AlertRow({ alert, onAction, onOpenPost }: {
                 onClick={() => onAction(alert.id, "escalate")}
                 className="inline-flex items-center gap-1.5 rounded-xl bg-threat-critical px-3.5 py-1.5 text-xs font-bold text-white shadow-md hover:bg-red-600 transition-all"
               >
-                <Flag size={13} /> Send to Police Cyber Cell
+                <Flag size={13} /> Escalate & file report
               </button>
             )}
             {alert.status === "escalated" && (
               <span className="inline-flex items-center gap-1.5 font-mono text-xs font-bold text-threat-inflammatory">
-                <CheckCheck size={14} /> Action report sent to the police unit
+                <CheckCheck size={14} /> Escalated — report filed in Incident Reports
               </span>
             )}
           </div>

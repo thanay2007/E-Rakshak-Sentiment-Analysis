@@ -108,50 +108,14 @@ async def test_llm() -> dict:
     return {"ok": True, "model": model, "latency_ms": ms}
 
 
-#: How many untranslated posts the backfill reads before picking its batch.
-#: Candidacy is decided by `needs_translation` on the text, which SQL cannot
-#: express — so rows are scanned newest-first and filtered here. Bounded so the
-#: endpoint stays a request rather than a table walk.
-_TRANSLATE_SCAN = 2000
-
-
 @router.post("/admin/translate-missing")
 async def translate_missing(limit: int = Query(40, ge=1, le=200)) -> dict:
     """Backfill English translations for stored posts that never got one (e.g.
-    because the LLM budget was drained at ingest time).
+    because the LLM budget was drained at ingest time). The scheduler runs the
+    same backfill after every crawl; this is the manual trigger."""
+    from app.services.translation import backfill_missing
 
-    Candidates are *not* selected as `language != 'English'`. That misses the
-    posts this most needs to catch: the ones written in English apart from the
-    Gujarati clause in the middle, which the detector labels English and an
-    officer still cannot read. The same `needs_translation` rule the ingest
-    pipeline uses decides here, so the two can never disagree.
-    """
-    from app.services.groq_verifier import needs_translation, translate_enriched
-
-    with session_scope() as s:
-        rows = s.exec(
-            select(Post.id, Post.text, Post.language)
-            .where(Post.translation == "")
-            .order_by(col(Post.created_at).desc()).limit(_TRANSLATE_SCAN)
-        ).all()
-    candidates = [r for r in rows
-                  if needs_translation(r.text, {"language": r.language})]
-    batch = candidates[:limit]
-    if not batch:
-        return {"translated": 0, "remaining_candidates": 0}
-    ids = [r.id for r in batch]
-    texts = [r.text for r in batch]
-    enriched = [{"language": r.language, "translation": ""} for r in batch]
-    n = await translate_enriched(texts, enriched)
-    with session_scope() as s:
-        for pid, e in zip(ids, enriched):
-            if e.get("translation"):
-                post = s.get(Post, pid)
-                if post:
-                    post.translation = e["translation"]
-                    s.add(post)
-        s.commit()
-    return {"translated": n, "remaining_candidates": max(0, len(candidates) - n)}
+    return await backfill_missing(limit)
 
 
 @router.post("/admin/relabel-languages")

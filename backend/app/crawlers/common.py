@@ -23,6 +23,26 @@ _MARKS = (r"̀-ͯ"              # generic combining diacriticals
 _HASHTAG_RE = re.compile(rf"#([\w{_MARKS}]+)", re.UNICODE)
 
 
+def interleave_by_city(pairs: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """(handle, city) pairs reordered round-robin across cities.
+
+    Rosters are written city by city — discovery searches Surat, then
+    Ahmedabad, and so on — and the collectors read a small rotating slice per
+    cycle. Read in file order, that slice is the same city for hundreds of
+    pages: ~300 Surat pages at 6 a cycle is a full day in which no other city
+    is read at all. Interleaving makes every slice span the cities while still
+    covering the whole roster. Order within a city is kept.
+    """
+    buckets: dict[str, list[tuple[str, str]]] = {}
+    for pair in pairs:
+        buckets.setdefault(pair[1], []).append(pair)
+    queues = list(buckets.values())
+    out: list[tuple[str, str]] = []
+    for i in range(max((len(q) for q in queues), default=0)):
+        out.extend(q[i] for q in queues if i < len(q))
+    return out
+
+
 def extract_hashtags(text: str) -> list[str]:
     """Deduped, case-folded, order preserved — platforms treat #Surat and
     #surat as one tag and so must the trend counter."""

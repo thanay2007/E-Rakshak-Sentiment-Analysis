@@ -12,6 +12,7 @@ echo "[1/4] using active Python environment..."
 echo "[2/4] installing backend deps (ML stack is ~2.5 GB on first run)..."
 python3 -m pip install -q -r "$ROOT/backend/requirements.txt"
 python3 -m pip install -q -r "$ROOT/backend/requirements-ml.txt"
+python3 -m pip install -q --no-deps -r "$ROOT/backend/requirements-nodeps.txt"
 
 if [ ! -d "$ROOT/backend/app/ml/models/threat-classifier" ] || \
    [ ! -d "$ROOT/backend/app/ml/models/sentiment-classifier" ]; then

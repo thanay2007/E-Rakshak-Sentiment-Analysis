@@ -1,16 +1,20 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Camera, ExternalLink, Fingerprint, ImageUp, Link2, MapPin, Radar, ScanSearch,
   ShieldCheck, Upload, Users,
 } from "lucide-react";
 import GlassCard, { SectionTitle } from "../GlassCard";
 import { api } from "../../services/api";
-import type { Appearance, ImageAnalysis, ImageSource, Identification, PersonFind, ReverseImage } from "../../services/api";
+import type { Appearance, ImageAnalysis, ImageSource, Identification, MediaPost, PersonFind, ReverseImage } from "../../services/api";
+import PostMedia from "../PostMedia";
 import { AccountChip, EmptyHint, FindingRow, KV, Meter, Pill, RunButton, Spinner, TextInput } from "./shared";
 import { safeHref } from "../../lib/safeUrl";
 import IdentifiedPersonsPanel, { buildFaceOutcomes } from "./PersonIdentification";
+import PersonDatabase from "./PersonDatabase";
 
 type Mode = "upload" | "url" | "feed";
+/** A post link or a post ID, as opposed to search words. */
+const LOOKS_LIKE_REF = /^https?:\/\/|^[0-9a-f-]{20,}$/i;
 interface Result {
   analysis: ImageAnalysis; reverse_image: ReverseImage; person: PersonFind;
   source?: ImageSource; preview?: string | null; thumbnail?: ImageAnalysis | null;
@@ -50,8 +54,26 @@ export default function ImageTool() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [picker, setPicker] = useState<MediaPost[] | null>(null);
+  const [pickerErr, setPickerErr] = useState<string | null>(null);
 
   function reset() { setErr(null); setResult(null); }
+
+  /** Recent feed posts with real media, filtered by the search box. */
+  async function loadPicker(q = "") {
+    setPickerErr(null);
+    try { setPicker(await api.mediaPosts(q)); }
+    catch (e) { setPickerErr((e as Error).message); setPicker([]); }
+  }
+  useEffect(() => { if (mode === "feed" && picker === null) void loadPicker(); }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** The platform image, fetched through /api/media so the CDN never sees
+   *  the officer's browser (same rule as the feed's own media). */
+  async function proxiedPreview(src?: ImageSource, a?: ImageAnalysis): Promise<string | null> {
+    if (!src?.image_url || a?.media_type === "video") return null;
+    try { return URL.createObjectURL(await api.media(src.image_url)); }
+    catch { return null; }
+  }
 
   async function fromFile(file: File) {
     reset(); setLoading(true);
@@ -69,17 +91,19 @@ export default function ImageTool() {
     try {
       const r = await api.investigateImageFromUrl(url.trim());
       if (!r.ok || !r.analysis) { setErr(r.error || "Could not resolve media from that URL."); }
-      else setResult({ analysis: r.analysis, reverse_image: r.reverse_image!, person: r.person!, source: r.source, preview: r.analysis.media_type === "video" ? null : r.source?.image_url, thumbnail: r.thumbnail, identification: r.identification });
+      else setResult({ analysis: r.analysis, reverse_image: r.reverse_image!, person: r.person!, source: r.source, preview: await proxiedPreview(r.source, r.analysis), thumbnail: r.thumbnail, identification: r.identification });
     } catch (e) { setErr((e as Error).message); }
     finally { setLoading(false); }
   }
 
-  async function fromFeed() {
+  /** `ref` is a post ID or post URL; blank takes the most concerning recent
+   *  post that has media. */
+  async function fromFeed(ref?: string) {
     reset(); setLoading(true);
     try {
-      const r = await api.investigatePostMedia(postId.trim() || "top");
+      const r = await api.investigatePostMedia((ref ?? postId).trim() || "top");
       if (!r.ok || !r.analysis) { setErr(r.error || "That post has no attached media."); }
-      else setResult({ analysis: r.analysis, reverse_image: r.reverse_image!, person: r.person!, source: r.source, preview: r.analysis.media_type === "video" ? null : r.source?.image_url, thumbnail: r.thumbnail, identification: r.identification });
+      else setResult({ analysis: r.analysis, reverse_image: r.reverse_image!, person: r.person!, source: r.source, preview: await proxiedPreview(r.source, r.analysis), thumbnail: r.thumbnail, identification: r.identification });
     } catch (e) { setErr((e as Error).message); }
     finally { setLoading(false); }
   }
@@ -145,13 +169,38 @@ export default function ImageTool() {
         )}
 
         {mode === "feed" && (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <div className="flex-1"><TextInput value={postId} onChange={setPostId} onEnter={fromFeed}
-                placeholder="Post ID (blank = latest flagged post carrying media)" mono /></div>
-              <RunButton onClick={fromFeed} disabled={loading}><Radar size={15} /> Pull from feed</RunButton>
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="min-w-[220px] flex-1"><TextInput value={postId} onChange={setPostId}
+                onEnter={() => (LOOKS_LIKE_REF.test(postId.trim()) ? fromFeed() : loadPicker(postId.trim()))}
+                placeholder="Search by handle, words or city — or paste a post link / ID" /></div>
+              <RunButton onClick={() => (LOOKS_LIKE_REF.test(postId.trim()) ? fromFeed() : loadPicker(postId.trim()))} disabled={loading}><ScanSearch size={15} /> Search</RunButton>
+              <RunButton onClick={() => fromFeed("top")} disabled={loading}><Radar size={15} /> Most concerning</RunButton>
             </div>
-            <p className="text-[13px] text-slate-600">Takes the image attached to a monitored post automatically and traces its sources.</p>
+            {pickerErr && <p className="text-[13px] text-red-400">{pickerErr}</p>}
+            {picker === null ? <Spinner label="Loading recent posts with media…" /> : picker.length === 0 ? (
+              <EmptyHint>No recent feed posts with media{postId.trim() ? " match that search" : ""}.</EmptyHint>
+            ) : (
+              <div className="grid max-h-[420px] gap-2 overflow-y-auto pr-1 sm:grid-cols-2 xl:grid-cols-3">
+                {picker.map((p) => (
+                  <button key={p.post_id} onClick={() => fromFeed(p.post_id)} disabled={loading}
+                    className="flex gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] p-2 text-left transition-colors hover:border-accent/40 disabled:opacity-50">
+                    <PostMedia url={p.media_url} maxHeight={72} className="w-[72px] shrink-0 overflow-hidden" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 text-[12px]">
+                        <span className="font-semibold text-slate-300">{p.platform}</span>
+                        <span className="truncate font-mono text-slate-500">@{p.author_handle}</span>
+                      </div>
+                      <div className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-slate-400">{p.text || "(no caption)"}</div>
+                      <div className="mt-1 text-[11px] text-slate-600">
+                        concern {p.concern_score}{p.location ? ` · ${p.location}` : ""}{p.media_count > 1 ? ` · ${p.media_count} media` : ""}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+            <p className="text-[13px] text-slate-600">Pick a monitored post — its attached image or video is downloaded and analyzed. Only real attachments are used.</p>
           </div>
         )}
 
@@ -162,6 +211,8 @@ export default function ImageTool() {
           </div>
         )}
       </GlassCard>
+
+      <PersonDatabase />
 
       {src && (
         <GlassCard className="flex flex-wrap items-center gap-2 p-3 text-[12px] text-slate-400">

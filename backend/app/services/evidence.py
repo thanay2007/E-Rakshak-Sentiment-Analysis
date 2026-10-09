@@ -28,7 +28,7 @@ import httpx
 from app.config import settings
 from app.database import session_scope
 from app.models import Post
-from app.services.fact_check import _query_for, check_claim
+from app.services.fact_check import _query_for, check_claim, revalidate
 
 log = logging.getLogger("sentinel.evidence")
 
@@ -120,7 +120,7 @@ async def generate_report(post_id: str) -> dict:
         if not post:
             return {"ok": False, "error": "Post not found"}
         payload = _post_payload(post)
-        fact = dict(post.fact_check or {})
+        fact = revalidate(post.fact_check, post.translation or post.text)
         keywords = list(post.keywords or [])
         text_for_query = post.translation or post.text
 
@@ -131,7 +131,8 @@ async def generate_report(post_id: str) -> dict:
             query = _query_for({"keywords": keywords}, text_for_query)
             if query:
                 try:
-                    fact = await check_claim(client, query, deep=True)
+                    fact = await check_claim(client, query, deep=True,
+                                             text=text_for_query)
                 except Exception as exc:
                     log.warning("evidence: news lookup failed (%s)", exc)
         payload["news_search_results"] = {

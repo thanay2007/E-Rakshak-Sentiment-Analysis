@@ -1,6 +1,8 @@
-import { ExternalLink, Radio, TrendingUp } from "lucide-react";
+import { ArrowRight, ExternalLink, Radio } from "lucide-react";
+import { Link } from "react-router-dom";
 import GlassCard, { SectionTitle } from "./GlassCard";
 import { PlatformIcon } from "./Badges";
+import EnglishGloss from "./EnglishGloss";
 import { usePostDetail } from "./PostDetailProvider";
 import { usePolling } from "../hooks/usePolling";
 import { api } from "../services/api";
@@ -18,14 +20,22 @@ export default function EmergingPanel() {
       <SectionTitle
         title="Fast-Spreading Posts to Review"
         right={
-          <div className="flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-[13px] font-bold text-amber-300">
-            <Radio size={12} className="animate-pulse text-amber-400" />
-            <span>EARLY WARNING</span>
-            {items.length > 0 && (
-              <span className="ml-1 rounded-full bg-amber-500/30 px-1.5 py-0.2 font-mono text-xs text-amber-200">
-                {items.length}
-              </span>
-            )}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-[13px] font-bold text-amber-300">
+              <Radio size={12} className="animate-pulse text-amber-400" />
+              <span>EARLY WARNING</span>
+              {(data?.total ?? items.length) > 0 && (
+                <span className="ml-1 rounded-full bg-amber-500/30 px-1.5 py-0.2 font-mono text-xs text-amber-200">
+                  {data?.total ?? items.length}
+                </span>
+              )}
+            </div>
+            <Link
+              to="/app/unverified"
+              className="inline-flex items-center gap-1 rounded-full border border-white/[0.1] px-3 py-1 text-[13px] font-semibold text-accent hover:bg-white/[0.04]"
+            >
+              View all <ArrowRight size={13} />
+            </Link>
           </div>
         }
       />
@@ -49,9 +59,9 @@ export default function EmergingPanel() {
                     openPostId(it.post_id);
                   }
                 }}
-                className="flex h-[215px] cursor-pointer flex-col justify-between rounded-2xl border border-amber-500/25 bg-base-800/90 dark:bg-base-950/80 p-4 backdrop-blur-md transition-all hover:border-amber-500/50 hover:bg-base-800/95 dark:hover:bg-base-950/95 shadow-md"
+                className="flex h-full min-h-[215px] cursor-pointer flex-col rounded-2xl border border-amber-500/25 bg-base-800/90 dark:bg-base-950/80 p-4 backdrop-blur-md transition-all hover:border-amber-500/50 hover:bg-base-800/95 dark:hover:bg-base-950/95 shadow-md"
               >
-                <div>
+                <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2 border-b border-white/[0.06] pb-2.5">
                     <div className="flex items-center gap-2 min-w-0">
                       <PlatformIcon platform={it.platform} size={18} />
@@ -60,14 +70,12 @@ export default function EmergingPanel() {
                       </span>
                       {it.author_verified && <span className="text-xs text-sky-400 font-bold">✔</span>}
                     </div>
-                    <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 font-mono text-xs font-black text-amber-300">
-                      <TrendingUp size={11} /> spread {it.spread_score}
-                    </span>
                   </div>
 
-                  <p className="mt-2.5 line-clamp-2 text-xs leading-relaxed text-slate-200">
+                  <p className="mt-2.5 line-clamp-2 break-words text-xs leading-relaxed text-slate-200">
                     {it.text}
                   </p>
+                  <EnglishGloss id={it.post_id} text={it.text} translation={it.translation} language={it.language} className="mt-1.5 line-clamp-2 break-words" />
 
                   <div className="mt-2.5 space-y-1">
                     {it.reasons.slice(0, 2).map((r, i) => (
@@ -79,12 +87,12 @@ export default function EmergingPanel() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between border-t border-white/[0.06] pt-2.5 text-[13px]">
-                  <span className="font-mono text-xs text-slate-400">
+                <div className="mt-3 flex shrink-0 items-center justify-between gap-2 border-t border-white/[0.06] pt-2.5 text-[13px]">
+                  <span className="truncate font-mono text-xs text-slate-400">
                     {it.source_count} single source
                   </span>
-                  <div className="flex items-center gap-2.5">
-                    {it.url && (
+                  <div className="flex shrink-0 items-center gap-2.5">
+                    {it.url ? (
                       <a
                         href={safeHref(it.url)}
                         target="_blank"
@@ -94,6 +102,10 @@ export default function EmergingPanel() {
                       >
                         source <ExternalLink size={11} />
                       </a>
+                    ) : (
+                      <span className="text-[13px] text-slate-600" title="The platform gave no public link for this post">
+                        no link
+                      </span>
                     )}
                     <span className="text-[13px] font-semibold text-accent">full detail →</span>
                   </div>

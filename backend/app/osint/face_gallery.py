@@ -78,6 +78,13 @@ _SCAN_INTERVAL = 10.0
 
 _lock = threading.RLock()
 _cache: dict = {"at": 0.0, "rows": []}
+
+#: ArcFace embedding per reference row id. Not a column: the photo itself is
+#: stored, so the embedding is derived from it once per process — which keeps
+#: the shared database's schema unchanged for consoles still on older code.
+#: Rows are immutable once enrolled, so entries never go stale; a None entry
+#: records a photo ArcFace could not use, so it is not retried every search.
+_arc: dict[str, list[float] | None] = {}
 _scan: dict = {"at": 0.0, "last": None}
 
 
@@ -192,6 +199,8 @@ def enrol(session: Session, data: bytes, *, name: str, source_file: str = "",
     session.add(row)
     session.commit()
     session.refresh(row)
+    if result.get("arcface"):
+        _arc[row.id] = result["arcface"]
     _invalidate()
     return {"ok": True, "id": row.id, "person_name": name,
             "quality": row.quality}
@@ -320,11 +329,36 @@ def _rows(session: Session) -> list[dict]:
                 continue
             out.append({"id": r.id, "name": r.person_name,
                         "key": r.person_key or person_key(r.person_name),
-                        "encoding": vec, "source_file": r.source_file,
+                        "encoding": vec, "arcface": _arcface_of(r),
+                        "source_file": r.source_file,
                         "quality": r.quality or {}, "row": r})
         _cache["rows"] = out
         _cache["at"] = now
         return out
+
+
+def _arcface_of(row: ReferenceFace) -> list[float] | None:
+    """The row's ArcFace embedding, derived from its stored photo on first use."""
+    from app.osint import face_embed
+
+    if row.id in _arc:
+        return _arc[row.id]
+    if not face_embed.available():
+        return None                     # not cached: retry once the model loads
+    vec = None
+    try:
+        from PIL import Image
+
+        uri = crypto.open_(row.image_enc or "")
+        if uri.startswith("data:image"):
+            raw = base64.b64decode(uri.split(",", 1)[1])
+            with Image.open(io.BytesIO(raw)) as img:
+                img.load()
+                vec = face_embed.embed_largest_face(img)
+    except Exception as exc:
+        log.warning("ArcFace embedding of reference %s failed: %s", row.id, exc)
+    _arc[row.id] = vec
+    return vec
 
 
 def _thumb(row: ReferenceFace) -> str:
@@ -396,15 +430,19 @@ def confidence_for(distance: float) -> float:
 
 # ── matching ───────────────────────────────────────────────────────────────
 
-def match(session: Session, encoding: list[float], *, top_k: int = 3) -> dict:
-    """Search one probe embedding against every reference in the gallery.
+def match(session: Session, encoding: list[float] | None, *,
+          arcface: list[float] | None = None, top_k: int = 3) -> dict:
+    """Search one probe against every reference in the gallery.
 
     The closest person wins on their best photo — someone with five references
     is scored by whichever pose actually resembles the probe, not by their
     average — and nothing past the "possible" band is ever called an
-    identification.
+    identification. Scored with `face_db.compare`, so ArcFace decides wherever
+    both sides have it, exactly as in the registry.
     """
-    if not encoding or len(encoding) != 128:
+    from app.osint.face_db import AMBIGUITY_MARGIN, compare, evidence_text
+
+    if not ((encoding and len(encoding) == 128) or arcface):
         return {"identified": False, "searched": False, "candidates": [],
                 "reason": "No usable embedding for this face."}
 
@@ -428,31 +466,32 @@ def match(session: Session, encoding: list[float], *, top_k: int = 3) -> dict:
                        f"and put a folder of photos in it for each person."),
         }
 
-    try:
-        import numpy as np
-    except Exception:
-        return {"identified": False, "searched": False, "candidates": [],
-                "reason": "numpy unavailable"}
-
-    vectors = np.asarray([r["encoding"] for r in rows], dtype="float64")
-    dists = np.linalg.norm(vectors - np.asarray(encoding, dtype="float64"), axis=1)
-
     best: dict[str, dict] = {}
     counts: dict[str, int] = {}
-    for r, d in zip(rows, dists):
-        d = float(d)
+    for r in rows:
         counts[r["key"]] = counts.get(r["key"], 0) + 1
+        c = compare(encoding, arcface, r["encoding"], r.get("arcface"))
+        if c is None:
+            continue
         cur = best.get(r["key"])
-        if cur is None or d < cur["distance"]:
-            best[r["key"]] = {"name": r["name"], "distance": d,
-                              "file": r["source_file"], "row": r["row"]}
+        if cur is None or c["confidence"] > cur["confidence"]:
+            best[r["key"]] = {**c, "name": r["name"], "file": r["source_file"],
+                              "row": r["row"]}
 
-    ranked = sorted(best.items(), key=lambda kv: kv[1]["distance"])[:max(1, top_k)]
+    if not best:
+        return {"identified": False, "searched": True, "candidates": [],
+                "people": len(counts), "photos": len(rows),
+                "reason": "No reference shares an embedding type with this face."}
+
+    ranked = sorted(best.items(), key=lambda kv: kv[1]["confidence"],
+                    reverse=True)[:max(1, top_k)]
     candidates = [{
         "name": v["name"],
-        "distance": round(v["distance"], 4),
-        "confidence": confidence_for(v["distance"]),
-        "band": band_for(v["distance"]),
+        "distance": v["distance"],
+        "similarity": v["similarity"],
+        "metric": v["metric"],
+        "confidence": v["confidence"],
+        "band": v["band"],
         "matched_photo": v["file"],
         "thumb": _thumb(v["row"]),
         "reference_photos": counts.get(k, 1),
@@ -462,7 +501,7 @@ def match(session: Session, encoding: list[float], *, top_k: int = 3) -> dict:
     identified = top["band"] in ("confirmed", "probable")
     # Two different people this close means the photo does not separate them.
     ambiguous = (len(candidates) > 1
-                 and candidates[1]["distance"] - top["distance"] < 0.06
+                 and top["confidence"] - candidates[1]["confidence"] < AMBIGUITY_MARGIN
                  and candidates[1]["band"] != "no_match")
 
     return {
@@ -478,10 +517,10 @@ def match(session: Session, encoding: list[float], *, top_k: int = 3) -> dict:
             f"({candidates[0]['name']} and {candidates[1]['name']}) — add a "
             f"clearer reference photo for each."
             if ambiguous else
-            f"Matched {top['name']} at distance {top['distance']} ({top['band']}), "
+            f"Matched {top['name']} at {evidence_text(top)} ({top['band']}), "
             f"against {top['reference_photos']} reference photo(s)."
             if identified else
-            f"Closest is {top['name']} at distance {top['distance']} — below the "
+            f"Closest is {top['name']} at {evidence_text(top)} — below the "
             f"identification threshold, treat as a resemblance only."
             if top["band"] == "possible" else
             f"No one in the reference gallery ({len(counts)} people, {len(rows)} "

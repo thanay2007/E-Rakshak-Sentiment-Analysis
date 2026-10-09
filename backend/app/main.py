@@ -9,6 +9,7 @@ Boot sequence (all automatic, zero configuration):
 Run:  uvicorn app.main:app --reload --port 8000  (from backend/)
 """
 import logging
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request, status
@@ -89,6 +90,20 @@ def _seed_watchlist() -> None:
         s.commit()
 
 
+def _warm_face_matcher() -> None:
+    """Load ArcFace (fetching its weights on a fresh install) and give any
+    registry photo enrolled before it an ArcFace embedding — off the request
+    path, so the first face search after a restart is not the one that pays."""
+    from app.osint import face_db, face_embed
+
+    try:
+        if face_embed.available():
+            with session_scope() as session:
+                face_db.backfill_arcface(session)
+    except Exception as exc:
+        log.warning("face matcher warm-up failed: %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
@@ -105,6 +120,7 @@ async def lifespan(app: FastAPI):
     # after seed_if_empty: the demo suspect records bind their known handles to
     # accounts that actually exist in the corpus, so they need it populated
     seed_suspects_if_empty()
+    threading.Thread(target=_warm_face_matcher, name="face-warmup", daemon=True).start()
     start_scheduler()
     log.info("SENTINEL online")
     yield

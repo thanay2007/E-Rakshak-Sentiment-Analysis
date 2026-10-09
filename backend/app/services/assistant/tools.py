@@ -571,7 +571,7 @@ def _h_emerging(ctx: ToolContext, args: dict) -> ToolResult:
         payload={"window_hours": hours, "count": found.get("count", len(items)),
                  "unverified_claims_spreading": summary},
         display={"items": [{**i, "text": guard.sanitise_untrusted(
-            str(i.get("text", "")))} for i in items]})
+            str(i.get("translation") or i.get("text", "")))} for i in items]})
 
 
 def _h_model_status(ctx: ToolContext, args: dict) -> ToolResult:

@@ -293,7 +293,8 @@ async def identify_faces(session: Session, analysis: dict, *,
 
     for face in faces:
         encoding = face.pop("encoding", None)
-        if not encoding:
+        arcface = face.pop("arcface", None)
+        if not (encoding or arcface):
             face["identity"] = {
                 "identified": False,
                 "searched": False,
@@ -304,14 +305,14 @@ async def identify_faces(session: Session, analysis: dict, *,
             }
             continue
 
-        result = match_encoding(session, encoding)
+        result = match_encoding(session, encoding, arcface=arcface)
         result["searched"] = True
 
         # The reference gallery, searched for every face regardless of what the
         # registry found: a record hit and a known name are complementary, and
         # an analyst wants both ("this is Ronaldo" AND "he is not on record").
         try:
-            known = face_gallery.match(session, encoding)
+            known = face_gallery.match(session, encoding, arcface=arcface)
         except Exception as exc:
             log.warning("reference gallery search failed: %s", exc)
             known = {"identified": False, "searched": False, "reason": str(exc),
@@ -332,14 +333,16 @@ async def identify_faces(session: Session, analysis: dict, *,
                 identified_ids.append(top["suspect_id"])
             log_rows.append({"suspect_id": top["suspect_id"],
                              "name": top["full_name"],
-                             "distance": top["distance"], "band": top["band"]})
+                             "distance": top["distance"], "band": top["band"],
+                             "metric": top.get("metric")})
         elif top:                                   # "possible" band — a lead
             candidate_count += 1
             face["matched_suspect"] = None
             face["confidence"] = top["confidence"]
             log_rows.append({"suspect_id": top["suspect_id"],
                              "name": top["full_name"],
-                             "distance": top["distance"], "band": top["band"]})
+                             "distance": top["distance"], "band": top["band"],
+                             "metric": top.get("metric")})
 
     identities: dict[str, dict] = {}
     for sid in identified_ids:
@@ -374,10 +377,11 @@ def strip_encodings(analysis: dict | None) -> None:
 
     Any path that returns an analysis to a client must call this (or
     `identify_faces`, which does it as part of matching) — otherwise the 128-d
-    biometric vectors ride along in the JSON.
+    and 512-d biometric vectors ride along in the JSON.
     """
     for face in (((analysis or {}).get("forensics") or {}).get("face_matches") or []):
         face.pop("encoding", None)
+        face.pop("arcface", None)
 
 
 async def identify_media(session: Session, payload: dict, *, deep: bool = True,

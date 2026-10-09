@@ -250,6 +250,9 @@ class GeminiLiveSession:
         #: and then died is only evidence against the engine if it never
         #: actually worked — see `_read`.
         self._healthy = False
+        #: Set when the Live socket dies under us; the router closes the
+        #: browser's channel on seeing it, which is what makes it reconnect.
+        self.dropped = False
         self._tools = assistant_tools.for_role(user.role)
         self._names = [t.name for t in self._tools]
         #: What the officer has said this turn, and when the turn began. The
@@ -457,6 +460,12 @@ class GeminiLiveSession:
             raise
         except Exception as exc:
             log.warning("realtime: stream ended (%s)", exc)
+            # The socket is gone for good: stop feeding it, and tell the router
+            # so it closes the browser's channel. The client reconnects on
+            # close — announcing "Reconnecting" while holding the channel open
+            # leaves the microphone pouring into a dead socket indefinitely.
+            self.dropped = True
+            self._session = None
             if not self._closed:
                 # A drop on a session that never produced a single message is
                 # an unwell engine — count it, so the reconnect this error is
@@ -579,13 +588,11 @@ class GeminiLiveSession:
 
 
 async def execute_tool(owner, name: str, args: dict) -> dict:
-    """Run one tool for a realtime engine and forward its effects; returns the
-    payload for the model.
+    """Run one tool for the realtime engine and forward its effects; returns
+    the payload for the model.
 
-    Shared by both realtime engines (Gemini Live here, OpenAI Realtime in
-    openai_realtime.py) so the tool path, the confirmation check and the
-    screen effects are identical whichever engine is answering. `owner` is the
-    engine session: it supplies db, user, config, context_id, _emit and the
+    Goes through the same tool path, confirmation check and screen effects as
+    the typed assistant. `owner` is the engine session: it supplies db, user, config, context_id, _emit and the
     officer's words for this turn (_turn_text, _turn_started).
     """
     log.info("realtime: tool %s(%s)", name, args)

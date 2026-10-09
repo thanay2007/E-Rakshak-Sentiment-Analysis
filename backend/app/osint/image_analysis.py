@@ -379,6 +379,7 @@ def _detect(img: "Image.Image", *, deep: bool = False) -> dict:
             "area_ratio": f["area_ratio"],
             "quality": f["quality"],
             "encoding": f["encoding"],
+            "arcface": f.get("arcface"),
             "matched_suspect": None,   # filled in by face_intel.identify_faces
             "confidence": None,
         } for f in report.get("faces", [])],

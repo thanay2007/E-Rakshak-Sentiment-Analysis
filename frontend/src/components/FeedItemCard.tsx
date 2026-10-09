@@ -2,6 +2,7 @@ import { ChevronRight, MapPin, Repeat2, ThumbsUp } from "lucide-react";
 import type { Post } from "../services/api";
 import { BotChip, LanguageChip, PlatformIcon, SentimentBadge } from "./Badges";
 import { PostMediaGrid } from "./PostMedia";
+import EnglishGloss from "./EnglishGloss";
 
 export function timeAgo(iso: string): string {
   const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
@@ -59,15 +60,8 @@ export default function FeedItemCard({
             {post.text}
           </p>
 
-          {/* AI Translation Callout */}
-          {post.translation && post.translation !== post.text && (
-            <div className="mt-2 rounded-xl border border-accent/20 bg-accent/[0.05] px-2.5 py-1.5 text-[11.5px] text-slate-200">
-              <span className="mr-1.5 font-bold uppercase tracking-wider text-accent text-[13px]">
-                AI Translation:
-              </span>
-              <span className="italic">{post.translation}</span>
-            </div>
-          )}
+          {/* AI Translation Callout — fetched automatically when missing */}
+          <EnglishGloss id={post.id} text={post.text} translation={post.translation} language={post.language} className="mt-2" />
 
           {/* Attachments — relayed through /api/media, never loaded from the
               platform CDN, so opening the feed does not tell those platforms

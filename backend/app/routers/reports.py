@@ -1,6 +1,4 @@
 """Reports: list, generate (JSON + PDF + XLSX), download."""
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlmodel import Session, col, select
@@ -8,7 +6,7 @@ from sqlmodel import Session, col, select
 from app.database import get_session
 from app.models import Report
 from app.schemas import ReportRequest
-from app.services.report_service import generate_report
+from app.services.report_service import generate_report, local_file
 from app.services.serializers import iso
 
 router = APIRouter()
@@ -72,10 +70,13 @@ def download_report(report_id: str, session: Session = Depends(get_session)):
     r = session.get(Report, report_id)
     if not r:
         raise HTTPException(404, "Report not found")
-    if not r.pdf_path or not Path(r.pdf_path).exists():
+    # Rendered here from the stored payload when the file lives on another
+    # host — see local_file.
+    path = local_file(r, "pdf")
+    if not path:
         raise HTTPException(404, "PDF not available for this report")
     log_action(session, "report_downloaded", report_id)
-    return FileResponse(r.pdf_path, media_type="application/pdf",
+    return FileResponse(path, media_type="application/pdf",
                         filename=f"SENTINEL_{r.kind}_{r.id}.pdf")
 
 
@@ -91,9 +92,10 @@ def download_report_xlsx(report_id: str, session: Session = Depends(get_session)
     r = session.get(Report, report_id)
     if not r:
         raise HTTPException(404, "Report not found")
-    if not r.xlsx_path or not Path(r.xlsx_path).exists():
+    path = local_file(r, "xlsx")
+    if not path:
         raise HTTPException(404, "Excel export not available for this report")
     log_action(session, "report_downloaded_xlsx", report_id)
-    return FileResponse(r.xlsx_path, media_type=XLSX_MEDIA_TYPE,
+    return FileResponse(path, media_type=XLSX_MEDIA_TYPE,
                         filename=f"SENTINEL_{r.kind}_{r.id}.xlsx")
 

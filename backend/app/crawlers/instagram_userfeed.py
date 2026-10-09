@@ -60,7 +60,7 @@ import requests
 from app.config import settings
 from app.crawlers import instagram_public, roster
 from app.crawlers.base import Collector
-from app.crawlers.common import extract_hashtags
+from app.crawlers.common import extract_hashtags, interleave_by_city
 from app.crawlers.common import rotate as _rotate
 from app.schemas import RawPost
 from app.services.watch_targets import watched_accounts
@@ -447,7 +447,7 @@ class InstagramUserFeedCollector(Collector):
         """Seed, watched and discovered accounts, appended to `harvest` as they
         are read — so a refusal halfway through keeps what came before it."""
 
-        seeds = settings.IG_SEED_USERNAMES
+        seeds = interleave_by_city(settings.IG_SEED_USERNAMES)
         if settings.IG_SEEDS_PER_CYCLE > 0:
             seeds, self._seed_cursor = _rotate(seeds, self._seed_cursor,
                                                settings.IG_SEEDS_PER_CYCLE)

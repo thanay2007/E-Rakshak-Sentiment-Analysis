@@ -331,7 +331,7 @@ def _enrol(session, suspect: Suspect, supply: FaceSupply) -> bool:
     added = face_db.add_template(session, suspect, encoding=ref["encoding"],
                                  quality=ref["quality"],
                                  source="synthetic reference (StyleGAN)",
-                                 thumb=thumb)
+                                 thumb=thumb, arcface=ref.get("arcface"))
     if not added.get("ok"):
         log.warning("could not enrol %s: %s", suspect.full_name, added.get("error"))
         return False

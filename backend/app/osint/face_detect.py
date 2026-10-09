@@ -100,9 +100,11 @@ def available() -> bool:
 
 
 def engine_status() -> dict:
+    from app.osint import face_embed
+
     e = _load()
     return {"available": e["fr"] is not None, "cnn_available": bool(e["cnn"]),
-            "reason": e["reason"] or None}
+            "reason": e["reason"] or None, **face_embed.status()}
 
 
 # ── geometry helpers ───────────────────────────────────────────────────────
@@ -288,8 +290,10 @@ def detect_faces(img, *, want_encodings: bool = True, deep: bool = False) -> dic
     turned / partially occluded faces but ~50x slower — it is opt-in per request
     rather than a default, so bulk feed analysis stays responsive.
 
-    Returns a JSON-safe report; `faces[i]["encoding"]` is the 128-d embedding
-    (or None when the face is too poor to embed) that `face_db` matches on.
+    Returns a JSON-safe report; `faces[i]["encoding"]` is the 128-d dlib
+    embedding and `faces[i]["arcface"]` the 512-d ArcFace one (each None when
+    the face is too poor to embed or that model is unavailable). `face_db`
+    matches on ArcFace wherever both sides have it.
     """
     e = _load()
     fr, np = e["fr"], e["np"]
@@ -374,6 +378,7 @@ def detect_faces(img, *, want_encodings: bool = True, deep: bool = False) -> dic
             "quality": quality,
             "landmarks_found": i < len(landmarks),
             "encoding": None,
+            "arcface": None,
         })
 
     if want_encodings:
@@ -398,6 +403,18 @@ def detect_faces(img, *, want_encodings: bool = True, deep: bool = False) -> dic
                     f["encoding"] = [round(float(x), 6) for x in enc]
             except Exception as exc:
                 log.warning("face_encodings failed: %s", exc)
+
+            # ArcFace on the same faces, aligned from the landmarks already
+            # computed above. This is the embedding identity is decided on
+            # when the model is loaded; the dlib one is the fallback.
+            if landmarks:
+                from app.osint import face_embed
+
+                arcs = face_embed.embed_faces(
+                    full_np, [landmarks[f["index"]] if f["index"] < len(landmarks) else None
+                              for f in wanted])
+                for f, vec in zip(wanted, arcs):
+                    f["arcface"] = vec
 
     return {
         "available": True,
@@ -449,9 +466,20 @@ def encode_reference(img, *, deep: bool = True) -> dict:
     if not encs:
         return {"ok": False, "error": "Encoder returned no embedding for that face."}
 
+    arcface = None
+    try:
+        from app.osint import face_embed
+
+        lms = fr.face_landmarks(full_np, [(b["top"], b["right"], b["bottom"], b["left"])])
+        if lms:
+            arcface = face_embed.embed_faces(full_np, lms)[0]
+    except Exception as exc:
+        log.warning("ArcFace reference embedding failed: %s", exc)
+
     return {
         "ok": True,
         "encoding": [round(float(x), 6) for x in encs[0]],
+        "arcface": arcface,
         "quality": face["quality"],
         "bounding_box": face["bounding_box"],
         "other_faces_ignored": others,

@@ -304,7 +304,8 @@ async def enroll_photo(suspect_id: str, file: UploadFile = File(...),
     thumb = face_db.crop_thumb(img, ref["bounding_box"])
     added = face_db.add_template(session, s, encoding=ref["encoding"],
                                  quality=ref["quality"],
-                                 source=file.filename or "upload", thumb=thumb)
+                                 source=file.filename or "upload", thumb=thumb,
+                                 arcface=ref.get("arcface"))
     if not added.get("ok"):
         raise HTTPException(409, added.get("error") or "Could not add that template.")
 
@@ -337,12 +338,22 @@ async def enroll_new(file: UploadFile = File(...), full_name: str = Form(...),
                      aliases: str = Form(""), case_ids: str = Form(""),
                      jurisdiction: str = Form(""), last_known_location: str = Form(""),
                      notes: str = Form(""), social_handles: str = Form(""),
+                     gender: str = Form(""), age: int = Form(0),
+                     height_cm: int = Form(0), occupation: str = Form(""),
+                     nationality: str = Form(""), identifying_marks: str = Form(""),
+                     allow_duplicate: bool = Form(False),
                      session: Session = Depends(get_session)) -> dict:
     """Create a record and enrol its first reference photo in one request.
 
     `aliases`, `case_ids` and `social_handles` are comma-separated; a handle may
     be written `platform:handle` (e.g. `X:desh_sachai_4471`) to record which
     platform it belongs to.
+
+    Refuses (409) when the face already matches an enrolled record, unless
+    `allow_duplicate` is set: two records for one person split that person's
+    photos between them, and every later search of them comes back "ambiguous"
+    instead of identified. The answer names the existing record so the photo
+    can be added to it instead.
     """
     if not full_name.strip():
         raise HTTPException(422, "full_name is required.")
@@ -353,6 +364,19 @@ async def enroll_new(file: UploadFile = File(...), full_name: str = Form(...),
     ref = encode_reference(img)
     if not ref.get("ok"):
         raise HTTPException(422, ref.get("error") or "Could not enrol that photo.")
+
+    if not allow_duplicate:
+        existing = face_db.match_encoding(session, ref["encoding"],
+                                          arcface=ref.get("arcface"))
+        top = existing.get("match")
+        if top and top["band"] in ("confirmed", "probable"):
+            raise HTTPException(409, {
+                "message": f"This face already matches '{top['full_name']}' "
+                           f"({face_db.evidence_text(top)}). Add the photo to that "
+                           f"record instead of creating a second one.",
+                "suspect_id": top["suspect_id"],
+                "full_name": top["full_name"],
+            })
 
     def split(raw: str) -> list[str]:
         return [x.strip() for x in raw.split(",") if x.strip()]
@@ -368,6 +392,9 @@ async def enroll_new(file: UploadFile = File(...), full_name: str = Form(...),
         risk_level=risk_level, status=status, case_ids=split(case_ids),
         jurisdiction=jurisdiction.strip(), last_known_location=last_known_location.strip(),
         notes=notes.strip(), social_handles=handles, source="analyst",
+        gender=gender.strip(), age=max(0, age), height_cm=max(0, height_cm),
+        occupation=occupation.strip(), nationality=nationality.strip(),
+        identifying_marks=identifying_marks.strip(),
     )
     session.add(s)
     session.commit()
@@ -375,7 +402,8 @@ async def enroll_new(file: UploadFile = File(...), full_name: str = Form(...),
 
     thumb = face_db.crop_thumb(img, ref["bounding_box"])
     face_db.add_template(session, s, encoding=ref["encoding"], quality=ref["quality"],
-                         source=file.filename or "upload", thumb=thumb)
+                         source=file.filename or "upload", thumb=thumb,
+                         arcface=ref.get("arcface"))
     log_action(session, "face_registry_enroll_new", s.id,
                {"name": s.full_name, "quality": ref["quality"]["score"]})
     return {"ok": True, "quality": ref["quality"],

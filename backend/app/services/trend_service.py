@@ -110,21 +110,75 @@ def watch_suggestions(hours: int = 24) -> list[dict]:
         existing = {(w.kind, w.value.lower())
                     for w in s.exec(select(WatchlistItem)).all()}
 
-    out = []
+    def _priority(concern: float) -> str:
+        return "critical" if concern >= 70 else "high" if concern >= 50 else "medium"
+
+    terms = []
     for t in data["hashtags"] + data["keywords"]:
-        if not t["spiking"] or t["top_label"] != "negative":
+        # Spiking and mostly negative, or steadily loud and overwhelmingly
+        # negative. Two-letter fragments are never worth a rule.
+        loud = t["count"] >= 5 and t["negative_share"] >= 0.6
+        if len(t["term"]) < 3 or not ((t["spiking"] and t["negative_share"] >= 0.4) or loud):
             continue
         if (t["kind"], t["term"].lower()) in existing:
             continue
-        out.append({
+        terms.append({
             "kind": t["kind"], "value": t["term"], "count": t["count"],
             "spike_z": t["spike_z"], "change_pct": t["change_pct"],
             "negative_share": t["negative_share"],
+            "priority": "high" if t["spiking"] and t["negative_share"] >= 0.6 else "medium",
             "reason": (f"{t['count']} posts, {t['spike_z']}σ above its own baseline, "
                        f"{int(t['negative_share'] * 100)}% negative"),
         })
-    out.sort(key=lambda x: -x["spike_z"])
-    return out[:12]
+    terms.sort(key=lambda x: (-x["spike_z"], -x["count"]))
+
+    locations = []
+    for r in data["regions"]:
+        share = r["threats"] / max(r["count"], 1)
+        if r["threats"] < 3 or (share < 0.3 and r["avg_concern"] < 40):
+            continue
+        if ("location", r["name"].lower()) in existing:
+            continue
+        locations.append({
+            "kind": "location", "value": r["name"], "count": r["count"],
+            "spike_z": 0.0, "change_pct": 0, "negative_share": round(share, 2),
+            "priority": _priority(r["avg_concern"]),
+            "reason": (f"{r['threats']} negative of {r['count']} posts, "
+                       f"average concern {r['avg_concern']}"),
+        })
+    locations.sort(key=lambda x: -x["negative_share"])
+
+    # Accounts repeatedly posting high-concern material in the window.
+    since = _now() - timedelta(hours=hours)
+    with session_scope() as s:
+        rows = s.exec(
+            select(Post.author_handle, Post.platform, Post.concern_score,
+                   Post.sentiment_label)
+            .where(Post.created_at >= since, Post.concern_score >= 40)
+        ).all()
+    by_author: dict[tuple[str, str], list] = defaultdict(list)
+    for r in rows:
+        if r.author_handle:
+            by_author[(r.author_handle, r.platform)].append(r)
+    accounts = []
+    for (handle, platform), ps in by_author.items():
+        negative = sum(1 for p in ps if p.sentiment_label == "negative")
+        peak = max(p.concern_score for p in ps)
+        if negative < 2 and peak < 65:
+            continue
+        if ("account", handle.lower()) in existing or ("account", f"@{handle}".lower()) in existing:
+            continue
+        accounts.append({
+            "kind": "account", "value": handle, "count": len(ps),
+            "spike_z": 0.0, "change_pct": 0,
+            "negative_share": round(negative / len(ps), 2),
+            "priority": _priority(peak),
+            "reason": (f"{len(ps)} concerning post(s) on {platform}, "
+                       f"{negative} negative, peak concern {round(peak)}"),
+        })
+    accounts.sort(key=lambda x: (-x["count"], -x["negative_share"]))
+
+    return terms[:10] + accounts[:8] + locations[:4]
 
 
 def get_trends(hours: int = 24) -> dict:

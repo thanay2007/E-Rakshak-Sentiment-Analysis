@@ -83,6 +83,19 @@ async def _crawl_tick_inner() -> None:
     # multi-second scan: the emerging-rumour queue (every post's engagement and
     # fact-check payload) and the fake-PR campaign count (a shingle overlap
     # plus a bot score per author).
+    # Catch up on English translations ingestion skipped (budget drained, or
+    # more non-English posts than its per-batch cap), so officers and reports
+    # see English without anyone pressing "Backfill translations".
+    from app.services.translation import backfill_missing
+
+    try:
+        done = await backfill_missing()
+        if done["translated"]:
+            log.info("Backfilled %d translation(s), %d still pending",
+                     done["translated"], done["remaining_candidates"])
+    except Exception as exc:                      # noqa: BLE001 — never stall ingestion
+        log.debug("translation backfill skipped: %s", exc)
+
     from app.osint.pr_analysis import prime_count_cache
     from app.services.emerging import prime_cache
 

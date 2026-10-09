@@ -115,6 +115,18 @@ class Settings(BaseSettings):
     # the registry, which is encrypted at rest.
     FACE_GALLERY_DIR: Path = BASE_DIR.parent / "pics"
 
+    # ArcFace recogniser (osint/face_embed.py). dlib's 128-d model still finds
+    # and quality-grades faces, but identity is decided by InsightFace's
+    # w600k_r50 when it is available: it separates two photos of the same
+    # person from two different people far more reliably, especially on South
+    # Asian faces, which dlib's training set barely covered. The weights (~170
+    # MB) are fetched from the Hugging Face hub into its cache on first use;
+    # FACE_ARCFACE_MODEL points at a local .onnx instead for offline installs.
+    FACE_ARCFACE: bool = True
+    FACE_ARCFACE_REPO: str = "public-data/insightface"
+    FACE_ARCFACE_FILE: str = "models/buffalo_l/w600k_r50.onnx"
+    FACE_ARCFACE_MODEL: str = ""
+
     # ── automatic reverse-image search (osint/lens_search.py) ───────────────
     # Runs Google Lens for the officer instead of handing them a link to it.
     # Lens has no API and its results page needs JavaScript, so this drives the
@@ -232,23 +244,9 @@ class Settings(BaseSettings):
     #: a degraded assistant beats a dead panel.
     VOICE_REALTIME_REQUIRED: bool = True
     #: Realtime engines in preference order: the first one that is configured,
-    #: not cooling down and connects gets the session; the next is the
-    #: fallback. "gemini" = Gemini Live (realtime.py), "openai" = OpenAI
-    #: Realtime (openai_realtime.py, dormant: it needs OPENAI_API_KEY and
-    #: "openai" added here). Gemini only by choice; to compare the two, run
-    #: `python -m app.services.voice.benchmark`.
+    #: not cooling down and connects gets the session. "gemini" = Gemini Live
+    #: (realtime.py) is the only engine.
     VOICE_REALTIME_PROVIDERS: list[str] = ["gemini"]
-
-    # OpenAI Realtime — the second realtime engine. Same tools, same guard,
-    # same confirmation rule as Gemini Live; only the socket differs.
-    OPENAI_REALTIME_MODEL: str = "gpt-realtime-2.1-mini"
-    OPENAI_REALTIME_VOICE: str = "marin"
-    #: Transcribes the officer for the console, the audit log, the denylist and
-    #: the spoken-yes check. The answer itself does not wait for it.
-    OPENAI_TRANSCRIBE_MODEL: str = "gpt-4o-mini-transcribe"
-    #: semantic_vad judges "finished" from the words (no answering half a
-    #: question); eagerness trades that against speed: low | medium | high | auto.
-    OPENAI_REALTIME_EAGERNESS: str = "auto"
 
     VOICE_STT_PROVIDER: str = "auto"
     VOICE_STT_MODEL: str = "whisper-large-v3-turbo"
@@ -509,19 +507,10 @@ class Settings(BaseSettings):
         "gemini-3.5-flash",
     ]
     GEMINI_TIMEOUT_SECONDS: int = 30
-    #: Which provider the assistant tries FIRST: "gemini" or "openai". The other
-    #: one is next, then Groq, so a dead key degrades the assistant rather than
-    #: switching it off.
+    #: Which provider the assistant tries FIRST: "gemini" puts Gemini ahead of
+    #: Groq; anything else runs Groq first. The other is the fallback, so a dead
+    #: key degrades the assistant rather than switching it off.
     ASSISTANT_LLM_PROVIDER: str = "gemini"
-
-    # OpenAI chat completions — a provider for the assistant's text answers
-    # (typed console and the voice cascade), alongside Gemini. Non-reasoning
-    # models on purpose: the assistant picks a tool and says what it returned,
-    # and reasoning tokens are latency an officer waits through.
-    OPENAI_API_KEY: str = ""
-    OPENAI_BASE_URL: str = "https://api.openai.com/v1"
-    OPENAI_TOOL_MODELS: list[str] = ["gpt-4.1-mini", "gpt-4.1-nano"]
-    OPENAI_TIMEOUT_SECONDS: int = 30
 
     # There is deliberately no local-model tier. An Ollama leg used to sit at
     # the end of the chain for air-gapped installs; this deployment is a hosted
