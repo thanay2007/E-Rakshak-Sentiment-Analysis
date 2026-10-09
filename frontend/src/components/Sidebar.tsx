@@ -10,6 +10,7 @@ import {
   Share2,
   ShieldCheck,
   TrendingUp,
+  Zap,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
@@ -45,6 +46,7 @@ const NAV_GROUPS: { name: string; items: NavEntry[] }[] = [
         badge: "HIGH",
         badgeColor: "bg-red-600/20 text-red-800 border-red-600/50 dark:bg-red-500/20 dark:text-red-300 dark:border-red-500/40 font-black",
       },
+      { to: "/app/unverified", label: "Fast-Spreading Posts", icon: Zap },
     ],
   },
   {

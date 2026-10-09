@@ -13,11 +13,13 @@ the database or computes anything; `_render_pdf` and `_render_xlsx` reshape
 what it returned and nothing else. That is what stops the document of record
 and the working copy from disagreeing about the same window.
 """
+import copy
 import logging
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from statistics import mean
+from types import SimpleNamespace
 from xml.sax.saxutils import escape
 from zoneinfo import ZoneInfo
 
@@ -691,8 +693,52 @@ def _render_xlsx(report: Report) -> str:
     return str(path)
 
 
+def local_file(report: Report, fmt: str) -> str:
+    """A path on *this* host to the report's PDF ("pdf") or workbook ("xlsx"),
+    rendering it from the stored payload if it is not here. "" when the
+    renderer's library is missing.
+
+    The stored path is only where the file was written by whichever backend
+    generated the report. The database is shared between deployments, so a
+    report generated on one machine carries a path like /home/<someone>/... that
+    does not exist on another, and every download of it 404'd. The payload is
+    in the database, so any host can rebuild an identical file on demand; the
+    stored path is deliberately left alone so the generating host keeps using
+    its own copy.
+    """
+    stored = report.pdf_path if fmt == "pdf" else report.xlsx_path
+    if stored and Path(stored).exists():
+        return stored
+    local = settings.REPORTS_DIR / f"{report.id}.{fmt}"
+    if local.exists():
+        return str(local)
+    settings.REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    # Rendered from a copy, so translations filled in for older reports reach
+    # the file without rewriting the stored payload under the caller's session.
+    payload = copy.deepcopy(report.payload or {})
+    _translate_payload_posts(payload)
+    snapshot = SimpleNamespace(id=report.id, title=report.title, kind=report.kind,
+                               period_hours=report.period_hours, payload=payload)
+    return _render_pdf(snapshot) if fmt == "pdf" else _render_xlsx(snapshot)
+
+
+def _translate_payload_posts(payload: dict) -> None:
+    """Give every post quoted in the report an English translation before it
+    is rendered — the PDF and workbook print `translation or text`, so a post
+    ingestion never got round to translating was printed in the original."""
+    from app.services.translation import translate_posts_sync
+
+    posts = payload.get("top_concern", []) + payload.get("follow_up_posts", [])
+    missing = [p["id"] for p in posts if p.get("id") and not p.get("translation")]
+    english = translate_posts_sync(missing)
+    for p in posts:
+        if p.get("id") in english:
+            p["translation"] = english[p["id"]]
+
+
 def generate_report(title: str = "", period_hours: int = 24, kind: str = "incident") -> Report:
     payload = _build_payload(period_hours)
+    _translate_payload_posts(payload)
     report = Report(
         title=title or f"Situation Report — past {_report_period(period_hours)}",
         kind=kind, period_hours=period_hours, payload=payload,

@@ -2,6 +2,7 @@
 from datetime import datetime
 
 from app.models import Alert, Post
+from app.services.fact_check import revalidate
 
 
 def iso(dt: datetime | None) -> str:
@@ -31,7 +32,7 @@ def post_to_dict(p: Post, full: bool = False) -> dict:
         "is_amplified": p.is_amplified,
         "cluster_id": p.cluster_id,
         "llm_verification": p.llm_verification or {},
-        "fact_check": p.fact_check or {},
+        "fact_check": revalidate(p.fact_check, p.translation or p.text),
         "evidence_report": p.evidence_report or {},
         "media_urls": p.media_urls or [],
         "url": p.url,

@@ -120,6 +120,7 @@ from app.crawlers import instagram_public, roster
 from app.crawlers.base import Collector
 from app.crawlers.common import extract_hashtags as _hashtags
 from app.crawlers.common import rotate as _rotate
+from app.ml.geo import infer_city
 from app.schemas import RawPost
 from app.services.watch_targets import watched_accounts
 
@@ -538,6 +539,8 @@ class InstagrapiCollector(Collector):
         # carries real coordinates the Graph adapter never gets.
         lat = float(getattr(loc, "lat", 0) or 0) if loc else 0.0
         lng = float(getattr(loc, "lng", 0) or 0) if loc else 0.0
+        tagged = infer_city(" ".join(str(getattr(loc, a, "") or "")
+                                     for a in ("name", "address", "city"))) if loc else None
 
         # A resolved profile is authoritative; the media's embedded user is a
         # UserShort whose is_verified is frequently absent (None -> False).
@@ -554,7 +557,8 @@ class InstagrapiCollector(Collector):
             author_verified=verified,
             text=text[:1000],
             hashtags=_hashtags(text),
-            location=city,
+            location=tagged[0] if tagged else city,
+            geo_verified=bool(tagged),
             latitude=lat,
             longitude=lng,
             engagement={"likes": getattr(m, "like_count", 0) or 0, "shares": 0,
@@ -872,6 +876,13 @@ class InstagrapiCollector(Collector):
         places: list[tuple[int, str, str]] = []
         for city in settings.TARGET_CITIES:
             places.extend(self._places_sync(client, city))
+        # Round-robin by city, so each cycle's few places span the cities
+        # instead of reading one city's six before the next is touched.
+        by_city: dict[str, list] = {}
+        for place in places:
+            by_city.setdefault(place[1], []).append(place)
+        places = [q[i] for i in range(max((len(q) for q in by_city.values()), default=0))
+                  for q in by_city.values() if i < len(q)]
         if not places:
             return []
         slice_, self._location_cursor = _rotate(places, self._location_cursor, budget)

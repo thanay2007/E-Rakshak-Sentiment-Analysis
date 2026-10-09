@@ -83,3 +83,50 @@ def test_a_probe_with_no_embedding_is_never_a_match():
 def test_confidence_never_leaves_zero_to_one():
     for d in (0.0, 0.25, 0.5, 0.75, 1.2):
         assert 0.0 <= face_gallery.confidence_for(d) <= 1.0
+
+
+# ── ArcFace scoring (face_db.compare) ──────────────────────────────────────
+
+def _unit(v):
+    import math
+    n = math.sqrt(sum(x * x for x in v))
+    return [x / n for x in v]
+
+
+def _arc(seed: int, near: list[float] | None = None, mix: float = 0.0):
+    import random
+    rng = random.Random(seed)
+    v = [rng.gauss(0, 1) for _ in range(512)]
+    if near is not None:
+        v = [mix * a + (1 - mix) * b for a, b in zip(near, _unit(v))]
+    return _unit(v)
+
+
+def test_arcface_decides_when_both_sides_have_it():
+    """dlib distance says stranger, ArcFace says same person: ArcFace wins,
+    because it is the model that is actually right about that case."""
+    a = _arc(1)
+    same = _arc(2, near=a, mix=0.8)
+    c = face_db.compare([0.0] * 128, a, [0.1] * 128, same)
+    assert c["metric"] == "arcface"
+    assert c["band"] == "confirmed"
+
+
+def test_falls_back_to_dlib_without_arcface_on_one_side():
+    c = face_db.compare([0.0] * 128, _arc(1), [0.02] * 128, None)
+    assert c["metric"] == "dlib"
+    assert c["band"] == face_db.band_for(c["distance"])
+
+
+def test_no_shared_embedding_is_not_a_comparison():
+    assert face_db.compare(None, _arc(1), [0.0] * 128, None) is None
+
+
+def test_two_strangers_are_not_a_match_on_arcface():
+    c = face_db.compare(None, _arc(1), None, _arc(99))
+    assert c["band"] == "no_match"
+
+
+def test_arcface_reason_names_the_metric():
+    c = face_db.compare(None, _arc(1), None, _arc(1))
+    assert "ArcFace" in face_db.evidence_text(c)

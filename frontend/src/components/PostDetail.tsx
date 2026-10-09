@@ -5,16 +5,18 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Link } from "react-router-dom";
 import {
   concernBand, concernColor, sentimentColor,
 } from "../data/constants";
 import type { EvidenceReport, EvidenceSource, Post, PostImageReport } from "../services/api";
-import { api, API_BASE } from "../services/api";
+import { api } from "../services/api";
 import { BotChip, LanguageChip, PlatformIcon, SentimentBadge } from "./Badges";
 import { PostMediaGrid } from "./PostMedia";
 import { safeHref } from "../lib/safeUrl";
 import { newsStatusLabel } from "../lib/newsStatus";
 import { useModalDialog } from "../hooks/useModalDialog";
+import { useEnglish } from "../hooks/useEnglish";
 import IdentifiedPersonsPanel, { buildFaceOutcomes } from "./investigate/PersonIdentification";
 import { Spinner } from "./investigate/shared";
 
@@ -123,6 +125,7 @@ export default function PostDetail({
   onClose: () => void;
 }) {
   const [escalated, setEscalated] = useState<string | null>(null);
+  const [escalateError, setEscalateError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [factCheck, setFactCheck] = useState<Post["fact_check"] | null>(null);
   const [checking, setChecking] = useState(false);
@@ -132,10 +135,14 @@ export default function PostDetail({
   const [faceReport, setFaceReport] = useState<PostImageReport | null>(null);
   const [faceChecking, setFaceChecking] = useState(false);
   const [facePreviewUrl, setFacePreviewUrl] = useState<string | null>(null);
+  // English appears on its own: the stored translation, or one requested the
+  // moment the drawer opens on a post that has none.
+  const { english, pending: translating } = useEnglish(post?.id, post?.text, post?.translation, post?.language);
 
   useEffect(() => {
     setFactCheck(null);
     setEscalated(null);
+    setEscalateError(null);
     setDossier(null);
     setDossierError(false);
     setFaceReport(null);
@@ -211,12 +218,14 @@ export default function PostDetail({
   const escalate = async () => {
     if (!post || busy) return;
     setBusy(true);
+    setEscalateError(null);
     try {
-      const r = await fetch(`${API_BASE}/api/feed/${post.id}/escalate`, { method: "POST" });
-      const data = await r.json();
-      setEscalated(data.id);
-    } catch {
-      /* surfaced via disabled state */
+      // Through the API client, not a bare fetch: the bare one carried no
+      // login token, so every click was a silent 401 and nothing happened.
+      const report = await api.escalatePost(post.id);
+      setEscalated(report.id);
+    } catch (e) {
+      setEscalateError((e as Error).message || "Could not file the report");
     } finally {
       setBusy(false);
     }
@@ -394,21 +403,18 @@ export default function PostDetail({
                     </div>
                     <p className="glass p-3 text-[13.5px] leading-relaxed text-slate-200">{post.text}</p>
                   </div>
-                  {post.translation && post.translation !== post.text ? (
+                  {english ? (
                     <div>
                       <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
                         <Languages size={11} /> English translation
                       </div>
                       <p className="glass p-3 text-[13px] italic leading-relaxed text-slate-400">
-                        {post.translation}
+                        {english}
                       </p>
                     </div>
                   ) : (
-                    post.language !== "English" && (
-                      <p className="text-xs italic text-slate-600">
-                        No English translation on record for this post yet — run
-                        “Backfill translations” from Settings to fill the gap.
-                      </p>
+                    translating && (
+                      <p className="text-xs italic text-slate-500">Translating to English…</p>
                     )
                   )}
                   {(post.media_urls?.length ?? 0) > 0 && (
@@ -657,6 +663,18 @@ export default function PostDetail({
                         ))}
                       </p>
                     )}
+                    {(fc.matches?.length ?? 0) === 0 && (
+                      <div className="mt-2 rounded-lg border border-dashed border-white/[0.1] px-3 py-4 text-center text-[13px] text-slate-400">
+                        No related news reports found for this post.
+                      </div>
+                    )}
+                    <button
+                      onClick={runFactCheck}
+                      disabled={checking}
+                      className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-white/[0.1] px-2.5 py-1 text-xs text-slate-400 hover:text-slate-200 disabled:opacity-50"
+                    >
+                      <Newspaper size={12} /> {checking ? "Searching…" : "Search again"}
+                    </button>
                     {(fc.matches?.length ?? 0) > 0 && (
                       <div className="mt-2 space-y-1.5">
                         {fc.matches!.map((m) => (
@@ -877,18 +895,26 @@ export default function PostDetail({
                   >
                     {escalated ? (
                       <>
-                        <ShieldCheck size={13} /> Sent for action
+                        <ShieldCheck size={13} /> Escalated
                       </>
                     ) : (
                       <>
-                        <Flag size={13} /> {busy ? "Filing…" : "Send for action"}
+                        <Flag size={13} /> {busy ? "Filing…" : "Escalate & file report"}
                       </>
                     )}
                   </button>
                 </div>
                 {escalated && (
-                  <p className="mt-1 text-right font-mono text-xs text-slate-500">
-                    Action report {escalated} saved → Reports
+                  <p className="mt-1 text-right text-xs text-slate-500">
+                    Escalation report filed —{" "}
+                    <Link to="/app/reports" onClick={onClose} className="text-accent hover:underline">
+                      open in Incident Reports
+                    </Link>
+                  </p>
+                )}
+                {escalateError && (
+                  <p className="mt-1 text-right text-xs text-red-400">
+                    Could not file the report: {escalateError}
                   </p>
                 )}
               </>

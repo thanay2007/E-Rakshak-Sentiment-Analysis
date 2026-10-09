@@ -83,7 +83,10 @@ export interface EmergingItem {
   author_name: string;
   author_followers: number;
   author_verified: boolean;
+  /** The post as written. */
   text: string;
+  /** Its English, when it is not English ("" otherwise). */
+  translation?: string;
   sentiment_label: string;
   concern_score: number;
   /** Triage rank, 0-100. How alarming the claim is, whether it carries rumour
@@ -307,9 +310,10 @@ export interface Trends {
 
 /** A spiking negative term not yet watched — offered to the analyst, never auto-added. */
 export interface WatchSuggestion {
-  kind: "keyword" | "hashtag";
+  kind: "keyword" | "hashtag" | "account" | "location";
   value: string; count: number; spike_z: number;
   change_pct: number; negative_share: number; reason: string;
+  priority: "low" | "medium" | "high" | "critical";
 }
 
 export interface NetNode {
@@ -391,8 +395,14 @@ export interface WatchItem {
   active: boolean;
   created_at: string;
   hits_7d: number;
+  hits_24h: number;
   last_hit: string | null;
+  /** Worst concern score in the 7-day window — kept for exports; the page shows peak_24h. */
   top_threat: number;
+  peak_24h: number;
+  /** 0-100: current activity, current severity and recency combined; fades as a term goes quiet. */
+  relevance: number;
+  status: "rising" | "active" | "cooling" | "dormant";
 }
 
 export interface WatchPreset { slug: string; title: string; description: string; count: number }
@@ -494,6 +504,8 @@ export interface Charge { section: string; description: string; status: string; 
 export interface SocialHandle { platform: string; handle: string; url: string; note: string }
 export interface FaceTemplate {
   id: string; quality: FaceQuality; source: string; thumb: string; added_at: string;
+  /** Whether this photo carries an ArcFace embedding (the accurate matcher). */
+  arcface?: boolean;
 }
 export interface Suspect {
   id: string; full_name: string; aliases: string[];
@@ -537,6 +549,29 @@ export interface IdentityDossier {
   linked_alerts: { id: string; post_id: string; severity: string; status: string; title: string; summary: string; category: string; location: string; platform: string; concern_score: number; created_at: string }[];
   timeline: { kind: "charge" | "post" | "alert"; at: string; title: string; detail: string; status: string; ref?: string }[];
 }
+export interface MediaPost {
+  post_id: string; platform: string; author_handle: string; text: string;
+  sentiment_label: string; url: string; media_url: string; media_count: number;
+  concern_score: number; location: string; created_at: string;
+}
+
+/** Description fields an officer fills in when adding a person to the database. */
+export interface PersonEnrolFields {
+  full_name: string; notes?: string; record_type?: string; risk_level?: string;
+  status?: string; aliases?: string; last_known_location?: string;
+  social_handles?: string; gender?: string; age?: number; occupation?: string;
+  identifying_marks?: string; allow_duplicate?: boolean;
+}
+export type PersonEnrolResult =
+  | { ok: true; suspect: Suspect; quality: FaceQuality; other_faces_ignored: number }
+  /** The face already belongs to an enrolled record. */
+  | { ok: false; duplicate: { suspect_id: string; full_name: string; message: string } };
+export interface FaceEngine {
+  available: boolean; arcface?: boolean; arcface_downloading?: boolean;
+  arcface_reason?: string | null; reason?: string | null;
+  registry: { active_records: number; enrolled_records: number; templates: number };
+}
+
 export interface GalleryStats {
   directory: string; exists: boolean; people: number; photos: number;
   stored_in?: string;
@@ -707,14 +742,6 @@ export interface PrReport {
   posts_scanned: number; clusters_found: number; neutral_clusters_ignored: number; min_accounts: number;
   syndication_ignored?: number; syndication?: PrSyndication[];
   weak_clusters_ignored?: number; min_confidence?: number;
-}
-
-export interface UrlFinding { level: string; text: string; on?: string }
-export interface UrlReport {
-  url: string; valid: boolean; error?: string; risk_score?: number; risk_level?: string;
-  meta?: Record<string, unknown>;
-  redirect?: { resolved: boolean; hops?: number; chain: { url: string; status: number }[]; final_url: string | null; reason?: string };
-  findings?: UrlFinding[];
 }
 
 export interface AnalyzedComment {
@@ -1012,6 +1039,11 @@ export const api = {
     http<NonNullable<Post["fact_check"]>>(`/api/feed/${id}/fact-check`, { method: "POST" }),
   translatePost: (id: string) =>
     http<{ translation: string; cached: boolean }>(`/api/feed/${id}/translate`, { method: "POST" }),
+  /** English for each listed post that needs one; translated and stored server-side. */
+  translatePosts: (ids: string[]) =>
+    http<{ translations: Record<string, string>; available: boolean }>("/api/feed/translations", {
+      method: "POST", body: JSON.stringify({ ids }),
+    }),
   evidenceReport: (id: string) =>
     http<EvidenceReport>(`/api/feed/${id}/evidence-report`, { method: "POST" }),
   trends: (hours = 24) => http<Trends>(`/api/trends?hours=${hours}`),
@@ -1021,6 +1053,10 @@ export const api = {
     http<Alert[]>(`/api/alerts${qs(params)}`),
   acknowledgeAlert: (id: string) => http<Alert>(`/api/alerts/${id}/acknowledge`, { method: "POST" }),
   escalateAlert: (id: string) => http<Alert>(`/api/alerts/${id}/escalate`, { method: "POST" }),
+  /** Files an escalation report from a post (detail drawer "Escalate"). */
+  escalatePost: (id: string) =>
+    http<{ id: string; title: string; kind: string; created_at: string }>(
+      `/api/feed/${encodeURIComponent(id)}/escalate`, { method: "POST" }),
   reports: () => http<Report[]>("/api/reports"),
   report: (id: string) => http<Report>(`/api/reports/${id}`),
   generateReport: (body: { title?: string; period_hours?: number; kind?: string }) =>
@@ -1132,6 +1168,44 @@ export const api = {
   },
   reverseImageSearchUrl: (url: string) =>
     http<LensSearch>("/api/investigate/reverse-image-url", { method: "POST", body: JSON.stringify({ url }) }),
+  // ── facial identification registry ─────────────────────────────────────
+  faceEngine: () => http<FaceEngine>("/api/faces/engine"),
+  listPeople: (q = "") =>
+    http<Suspect[]>(`/api/faces/suspects${qs({ q, enrolled_only: true })}`),
+  /** Creates the record and enrols its first photo. A face that already
+   *  matches someone comes back as `duplicate` rather than a thrown error, so
+   *  the form can offer to add the photo to that person instead. */
+  enrolPerson: async (file: File, fields: PersonEnrolFields): Promise<PersonEnrolResult> => {
+    const fd = new FormData();
+    fd.append("file", file);
+    for (const [k, v] of Object.entries(fields)) {
+      if (v !== undefined && v !== null && v !== "") fd.append(k, String(v));
+    }
+    const res = await fetch(`${API_BASE}/api/faces/enroll`, {
+      method: "POST", body: fd, headers: authHeaders(),
+    });
+    if (res.status === 401) {
+      onUnauthorized();
+      throw new UnauthorizedError(await describeError(res, "/api/faces/enroll"));
+    }
+    if (res.status === 409) {
+      const body = await res.json().catch(() => null);
+      if (body?.detail?.suspect_id) return { ok: false, duplicate: body.detail };
+    }
+    if (!res.ok) throw new Error(await describeError(res, "/api/faces/enroll"));
+    return { ok: true, ...(await res.json()) };
+  },
+  addPersonPhoto: (suspectId: string, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return upload<{ ok: boolean; templates: number; quality: FaceQuality; suspect: Suspect }>(
+      `/api/faces/suspects/${encodeURIComponent(suspectId)}/photo`, fd);
+  },
+  deletePerson: (suspectId: string) =>
+    http<void>(`/api/faces/suspects/${encodeURIComponent(suspectId)}`, { method: "DELETE" }),
+  /** Recent feed posts that carry real media — the live-feed picker. */
+  mediaPosts: (q = "", limit = 24) =>
+    http<MediaPost[]>(`/api/investigate/media-posts${qs({ q, limit })}`),
   investigatePostMedia: (postId: string) =>
     http<PostImageReport>(`/api/investigate/post-media/${encodeURIComponent(postId)}`),
   /** `deep` runs the ~480-site sweep as well as the platform APIs. It is the
@@ -1141,8 +1215,6 @@ export const api = {
   /** Model commentary on a report already on screen. The report is posted back
    *  rather than recomputed, so the explanation describes what the officer is
    *  actually looking at. */
-  investigateUrl: (url: string, resolve = true) =>
-    http<UrlReport>("/api/investigate/url", { method: "POST", body: JSON.stringify({ url, resolve }) }),
   investigatePostComments: (postId: string) =>
     http<CommentReport>(`/api/investigate/comments/${encodeURIComponent(postId)}`),
   investigateComments: (comments: { author_handle: string; text: string; followers?: number; account_age_days?: number }[]) =>

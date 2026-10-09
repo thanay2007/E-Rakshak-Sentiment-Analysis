@@ -98,6 +98,12 @@ export default defineConfig(({ mode }) => {
     })
   ],
   server: { port: 5173 },
+  // Tests only. Vitest runs on Vite 8, whose native resolver follows reparse
+  // points while resolving packages — and inside a OneDrive folder every
+  // directory is one (cloud-file tags 0x9000…1a), so every bare import
+  // resolved to nothing. Not following links sidesteps that; the dev server
+  // and builds run on Vite 5 and are unaffected either way.
+  ...(mode === "test" ? { resolve: { preserveSymlinks: true } } : {}),
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/setupTests.ts'],

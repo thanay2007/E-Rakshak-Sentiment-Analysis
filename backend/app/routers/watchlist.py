@@ -7,11 +7,14 @@ days, when, and the worst threat score it touched), curated preset packs
 """
 import csv
 import io
+import json
+import math
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import Text, cast
 from sqlmodel import Session, col, func, select
 
 from app.database import get_session
@@ -41,10 +44,62 @@ def _match(w: WatchlistItem):
     if w.kind == "location":
         return (func.lower(Post.location) == w.value.lower()) | \
                func.lower(Post.text).like(f"%{w.value.lower()}%")
-    # keyword | hashtag — hashtags always appear inline in the text
+    if w.kind == "hashtag":
+        # An exact element of the post's hashtag list, not a substring of its
+        # text: as a substring, a watched "#Su" fired on every post mentioning
+        # Surat. The list is stored as JSON, where a non-ASCII tag is escaped,
+        # so the needle is JSON-encoded the same way before matching.
+        tag = json.dumps(w.value.strip().lstrip("#").lower())
+        return func.lower(cast(Post.hashtags, Text)).like(
+            f"%{_like_literal(tag)}%", escape="!")
+    # keyword — matched anywhere in the text or its English translation
     needle = f"%{w.value.lower()}%"
     return func.lower(Post.text).like(needle) | \
            func.lower(Post.translation).like(needle)
+
+
+def _like_literal(text: str) -> str:
+    """`text` with LIKE's wildcards escaped, for use with escape="!"."""
+    return text.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+
+
+#: How fast a term's relevance fades once it stops firing, in hours. A term
+#: last seen a day ago keeps ~37% of its recency weight, three days ago ~5%.
+RELEVANCE_DECAY_HOURS = 24
+
+
+def _relevance(hits_24h: int, hits_7d: int, peak_24h: float, top_7d: float,
+               last: datetime | None, now: datetime,
+               volume_ratio: float = 1 / 7) -> tuple[int, str]:
+    """(0-100 relevance, status) for one term — what it means *now*.
+
+    The card used to show the worst score a term touched in seven days, so a
+    term that fired once at 70 on Monday still read "Peak 70" the following
+    Sunday. This weighs current activity, current severity and how recently
+    it last fired, so a term that has gone quiet sinks on its own.
+
+    `volume_ratio` is the share of the week's posts collected in the last 24h.
+    Rising/cooling is judged against it, so a crawler that simply collected
+    more today does not make every term look like it is rising.
+    """
+    if not hits_7d or last is None:
+        return 0, "dormant"
+    idle_h = max(0.0, (now - last).total_seconds() / 3600)
+    recency = math.exp(-idle_h / RELEVANCE_DECAY_HOURS)
+    activity = min(1.0, math.log1p(hits_24h) / math.log1p(25))
+    severity = max(peak_24h, top_7d * recency) / 100
+    score = round(100 * (0.45 * activity + 0.35 * severity + 0.20 * recency))
+
+    expected = hits_7d * volume_ratio      # 24h hits if the term held steady
+    if idle_h >= 72:
+        status = "dormant"
+    elif hits_24h >= 3 and hits_24h > 1.5 * max(expected, 1):
+        status = "rising"
+    elif not hits_24h or hits_24h < 0.5 * expected:
+        status = "cooling"
+    else:
+        status = "active"
+    return score, status
 
 
 def _hit_stats_bulk(session: Session, items: list[WatchlistItem],
@@ -60,25 +115,40 @@ def _hit_stats_bulk(session: Session, items: list[WatchlistItem],
     """
     if not items:
         return {}
-    columns = []
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    recent = Post.created_at >= now - timedelta(hours=24)
+    per_term = 5
+    columns = [func.count(), func.count().filter(recent)]
     for w in items:
         cond = _match(w)
         columns += [func.count().filter(cond),
                     func.max(Post.created_at).filter(cond),
-                    func.max(Post.concern_score).filter(cond)]
+                    func.max(Post.concern_score).filter(cond),
+                    func.count().filter(cond & recent),
+                    func.max(Post.concern_score).filter(cond & recent)]
 
     row = session.exec(select(*columns).where(Post.created_at >= since)).one()
     # A SQLAlchemy `Row` is tuple-*like* but is not a tuple subclass, so it has
     # to be converted rather than type-checked. There are always at least three
     # columns here (one term, three aggregates), so this is never a bare scalar.
     values = list(row)
+    total, total_24h = int(values[0] or 0), int(values[1] or 0)
+    values = values[2:]
+    volume_ratio = total_24h / total if total else 1 / 7
 
     stats: dict[int, dict] = {}
     for i, w in enumerate(items):
-        n, last, top = values[i * 3:i * 3 + 3]
-        stats[w.id] = {"hits_7d": int(n or 0),
+        n, last, top, n24, peak24 = values[i * per_term:(i + 1) * per_term]
+        n, n24 = int(n or 0), int(n24 or 0)
+        top, peak24 = float(top or 0), float(peak24 or 0)
+        score, status = _relevance(n24, n, peak24, top, last, now, volume_ratio)
+        stats[w.id] = {"hits_7d": n,
+                       "hits_24h": n24,
                        "last_hit": iso(last) if last else None,
-                       "top_threat": round(float(top), 1) if top else 0.0}
+                       "top_threat": round(top, 1),
+                       "peak_24h": round(peak24, 1),
+                       "relevance": score,
+                       "status": status}
     return stats
 
 

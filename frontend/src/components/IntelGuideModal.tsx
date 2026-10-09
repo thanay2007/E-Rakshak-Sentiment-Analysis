@@ -297,11 +297,7 @@ export default function IntelGuideModal({ open, onClose }: Props) {
                       <span>Searches public sites for a username and compares the profiles found.</span>
                     </div>
                     <div className="flex items-start gap-2">
-                      <span className="font-mono text-accent">3. Suspicious Link Check:</span>
-                      <span>Finds where a shortened link leads and checks the destination for signs of fraud or harmful content.</span>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <span className="font-mono text-accent">4. Organized Online Campaigns:</span>
+                      <span className="font-mono text-accent">3. Organized Online Campaigns:</span>
                       <span>Looks for accounts posting together to influence public opinion on law-and-order issues.</span>
                     </div>
                   </div>

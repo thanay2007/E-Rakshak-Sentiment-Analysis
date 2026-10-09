@@ -21,9 +21,9 @@ import type { AssistantAnswer } from "../services/api";
  * microphone stays open until it is switched off, including across answers and
  * pauses; off, nothing is sent from this terminal's microphone at all.
  *
- * Critical alerts are read out regardless. That is deliberately not wired to
- * this button: standing the microphone down is about what the console *hears*,
- * and silencing what it *says* about a critical alert is not something a duty
+ * New high and critical alerts are read out regardless. That is deliberately
+ * not wired to this button: standing the microphone down is about what the
+ * console *hears*, and silencing what it *says* about an alert is not something a duty
  * terminal should be able to do by accident.
  *
  * One consequence of dropping the transcript, stated because it is a real
@@ -202,7 +202,10 @@ export default function Sentinel() {
     micOn && (needsBrowserStt ? browserListening : voice.connected && !voice.speaking);
   const error = voice.error ?? browserError;
 
-  // ── read new critical alerts aloud ───────────────────────────────────
+  // ── read new high and critical alerts aloud ──────────────────────────
+  // Every alert the backend raises is at least `high` (medium only exists for
+  // the targets_official / mobilization carve-out), so this is "every real
+  // alert"; restricting it to critical left most arrivals silent.
   const announced = useRef<Set<string>>(new Set());
   const primed = useRef(false);
 
@@ -216,15 +219,19 @@ export default function Sentinel() {
     }
 
     const fresh = liveAlerts.filter(
-      (a) => !announced.current.has(a.id) && a.severity === "critical"
+      (a) =>
+        !announced.current.has(a.id) &&
+        (a.severity === "critical" || a.severity === "high")
     );
     if (!fresh.length) return;
     fresh.forEach((a) => announced.current.add(a.id));
 
-    const newest = fresh[0];
+    // Lead with a critical one when a burst mixes bands.
+    const newest = fresh.find((a) => a.severity === "critical") ?? fresh[0];
+    const label = newest.severity === "critical" ? "Critical alert" : "High alert";
     const extra = fresh.length > 1 ? ` And ${fresh.length - 1} more.` : "";
     void speak(
-      `Critical alert. ${newest.title}. ` +
+      `${label}. ${newest.title}. ` +
       `${newest.location ? `In ${newest.location}. ` : ""}` +
       `Threat score ${Math.round(newest.concern_score)}.${extra}`
     );
@@ -255,7 +262,7 @@ export default function Sentinel() {
   };
 
   const title = !micOn
-    ? "Microphone off — click to unmute. Critical alerts are still read out."
+    ? "Microphone off — click to unmute. New alerts are still read out."
     : voice.micBlocked
       ? voice.micBlocked
       : voice.needsGesture

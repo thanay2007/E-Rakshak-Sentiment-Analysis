@@ -1,9 +1,8 @@
 import { useUrlFilters } from "../hooks/useUrlFilters";
-import { Image, Link2, Megaphone, AtSign, ShieldCheck } from "lucide-react";
+import { Image, Megaphone, AtSign, ShieldCheck } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import ImageTool from "../components/investigate/ImageTool";
 import UsernameTool from "../components/investigate/UsernameTool";
-import UrlTool from "../components/investigate/UrlTool";
 import PrTool from "../components/investigate/PrTool";
 
 interface Tool {
@@ -30,13 +29,6 @@ const TOOLS: Tool[] = [
     el: <UsernameTool />,
   },
   {
-    id: "url",
-    label: "Suspicious Link Check",
-    desc: "Find where a link leads and check for signs of fraud or hidden destinations",
-    icon: Link2,
-    el: <UrlTool />,
-  },
-  {
     id: "pr",
     label: "Organized Online Campaigns",
     desc: "Look for accounts working together to spread messages that may affect law and order",
@@ -57,7 +49,7 @@ export default function Investigate() {
   return (
     <div className="space-y-4">
       {/* Tool Selector Tabs */}
-      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         {TOOLS.map(({ id, label, icon: Icon }) => {
           const isActive = tool.id === id;
           return (

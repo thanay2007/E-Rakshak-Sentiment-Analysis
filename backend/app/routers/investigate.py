@@ -5,6 +5,8 @@ Covers the analyst-tool features:
   personality filter), cross-platform username lookup with account correlation,
   and fake-PR campaign detection.
 """
+import asyncio
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlmodel import Session
@@ -18,7 +20,7 @@ from app.osint.explain import explain_report
 from app.osint.face_intel import identify_faces, identify_media
 from app.osint.image_analysis import analyze_image
 from app.osint.media_intel import find_person, reverse_lookup
-from app.osint.post_media import analyze_from_post, analyze_from_url
+from app.osint.post_media import analyze_from_post, analyze_from_url, media_posts
 from app.osint.pr_analysis import detect_pr_campaigns
 from app.osint.username_lookup import lookup_username
 from app.security.ratelimit import Expensive
@@ -168,7 +170,14 @@ async def investigate_audio(file: UploadFile = File(...), session: Session = Dep
     return result
 
 
-@router.get("/post-media/{post_id}", dependencies=[Expensive])
+@router.get("/media-posts")
+def investigate_media_posts(limit: int = 24, q: str = "") -> list[dict]:
+    """Recent feed posts that carry real media — what the live-feed mode of
+    the Image & Video Check offers to pick from."""
+    return media_posts(limit=limit, q=q)
+
+
+@router.get("/post-media/{post_id:path}", dependencies=[Expensive])
 async def investigate_post_media(post_id: str, session: Session = Depends(get_session)) -> dict:
     """Resolve and analyze the media attached to a feed post (or the latest post
     with media when post_id is 'top')."""
@@ -212,12 +221,27 @@ async def investigate_explain(req: ExplainRequest,
 
 
 @router.get("/pr-campaigns", dependencies=[Expensive])
-def investigate_pr_campaigns(hours: int = 48, min_accounts: int = 3,
-                             session: Session = Depends(get_session)) -> dict:
+async def investigate_pr_campaigns(hours: int = 48, min_accounts: int = 3,
+                                   session: Session = Depends(get_session)) -> dict:
     from app.services.audit import log_action
+    from app.services.translation import translate_posts
+
     log_action(session, "osint_pr_campaigns", str(hours))
-    return detect_pr_campaigns(hours=max(1, min(hours, 168)),
-                               min_accounts=max(2, min(min_accounts, 20)))
+    report = await asyncio.to_thread(detect_pr_campaigns, hours=max(1, min(hours, 168)),
+                                     min_accounts=max(2, min(min_accounts, 20)))
+    # The quoted copy is what an officer judges a campaign by, so it is shown
+    # in English: anything still untranslated is translated (and stored) now.
+    groups = report.get("campaigns", []) + report.get("syndication", [])
+    ids = [g["sample_post_id"] for g in groups if g.get("sample_post_id")]
+    ids += [p["id"] for c in report.get("campaigns", []) for p in c.get("sample_posts", [])]
+    english = await translate_posts(ids)
+    for g in groups:
+        if g.get("sample_post_id") in english:
+            g["sample_text"] = english[g["sample_post_id"]][:220]
+        for p in g.get("sample_posts", []):
+            if p["id"] in english:
+                p["text"] = english[p["id"]][:180]
+    return report
 
 
 # Compatibility routes for the retained investigation screens.

@@ -37,6 +37,7 @@ from datetime import datetime, timezone
 from typing import Iterable
 
 from app.config import BASE_DIR, settings
+from app.crawlers.common import interleave_by_city
 
 log = logging.getLogger("sentinel.crawlers")
 
@@ -91,7 +92,9 @@ def merged(platform: str, seeds: Iterable[tuple[str, str]]) -> list[tuple[str, s
     """
     out: list[tuple[str, str]] = []
     seen: set[str] = set()
-    for handle, city in list(seeds) + handles(platform):
+    # Discoveries are interleaved by city so a rotating slice of them never
+    # reads one city for a whole day (see interleave_by_city).
+    for handle, city in list(seeds) + interleave_by_city(handles(platform)):
         key = handle.strip().lstrip("@").casefold()
         if not key or key in seen:
             continue

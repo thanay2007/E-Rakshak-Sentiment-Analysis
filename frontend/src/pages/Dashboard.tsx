@@ -458,13 +458,13 @@ export default function Dashboard() {
             </div>
             <div className="flex flex-wrap items-center gap-3 text-xs">
               <span className="inline-flex items-center gap-1.5 font-semibold text-rose-400">
-                <span className="h-2 w-2 rounded-full bg-rose-500 shadow-sm" /> Negative / Hostile
+                <span className="h-2 w-2 rounded-full bg-rose-500 shadow-sm" /> Negative
               </span>
               <span className="inline-flex items-center gap-1.5 font-semibold text-slate-300">
-                <span className="h-2 w-2 rounded-full bg-slate-400 shadow-sm" /> Neutral / Factual
+                <span className="h-2 w-2 rounded-full bg-slate-400 shadow-sm" /> Neutral
               </span>
               <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-400">
-                <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-sm" /> Positive / Constructive
+                <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-sm" /> Positive
               </span>
             </div>
           </div>
@@ -489,7 +489,7 @@ export default function Dashboard() {
                   <Tooltip contentStyle={TOOLTIP_STYLE} />
                   <Area
                     type="monotone"
-                    name="Negative / Hostile"
+                    name="Negative"
                     dataKey="negative"
                     stroke={SENTIMENT_COLORS.negative}
                     fill="url(#grad-negative)"
@@ -497,7 +497,7 @@ export default function Dashboard() {
                   />
                   <Area
                     type="monotone"
-                    name="Neutral / Factual"
+                    name="Neutral"
                     dataKey="neutral"
                     stroke={SENTIMENT_COLORS.neutral}
                     fill="url(#grad-neutral)"
@@ -505,7 +505,7 @@ export default function Dashboard() {
                   />
                   <Area
                     type="monotone"
-                    name="Positive / Constructive"
+                    name="Positive"
                     dataKey="positive"
                     stroke={SENTIMENT_COLORS.positive}
                     fill="url(#grad-positive)"

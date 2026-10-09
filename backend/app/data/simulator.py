@@ -149,7 +149,7 @@ class Simulator:
             author_account_age_days=author["age_days"],
             text=text, translation=gloss,
             hashtags=tags,
-            location=slots["city"],
+            location=slots["city"], geo_verified=True,
             latitude=round(lat + r.uniform(-0.05, 0.05), 4),
             longitude=round(lon + r.uniform(-0.05, 0.05), 4),
             engagement=self._engagement(theme, amplified),

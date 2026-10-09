@@ -28,6 +28,7 @@ The verdict informs, it never overrides a label.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date, datetime, timedelta, timezone
 from urllib.parse import quote_plus
 
@@ -148,11 +149,125 @@ async def _newsapi(client: httpx.AsyncClient, query: str) -> list[dict]:
     } for a in r.json().get("articles", [])]
 
 
+_STOP = set("""
+a about above after again against all also am an and any are as at be because been
+before being below between both but by can could did do does doing down during each
+even ever every few for from further had has have having he her here hers him his how
+i if in into is it its itself just like make many may me more most much must my never
+no nor not now of off often on once one only or other our out over own same she should
+so some such than that the their them then there these they this those through to too
+under until up upon us very was we were what when where which while who whom why will
+with would you your yours always time times fully full can't cannot dont don't
+""".split())
+
+#: Hashtags that name a channel, a year or a mood rather than the subject —
+#: `#indialivenews2024`, `#viral`, `#breaking`. Searching on them finds the
+#: channel's other stories, which is how unrelated headlines got in.
+_GENERIC_TAG = re.compile(
+    r"(news|live|viral|trend|breaking|update|latest|today|video|reels?|shorts|"
+    r"explore|fyp|foryou|follow|like|share|subscribe|\d{4})", re.I)
+
+_HASHTAG = re.compile(r"#(\w{3,})", re.UNICODE)
+_WORD = re.compile(r"[A-Za-z][A-Za-z'’]+")
+
+
+def _split_tag(tag: str) -> str:
+    """`NanaPatekar` → `Nana Patekar`. An all-lowercase tag cannot be split
+    reliably and is kept whole; `_relevant` matches it with spaces removed."""
+    return re.sub(r"(?<=[a-z])(?=[A-Z])", " ", tag)
+
+
+def _norm(text: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", (text or "").lower())
+
+
+def _entities(text: str) -> list[str]:
+    """What the post is specifically about: subject hashtags, then names.
+
+    A name is a run of capitalised words that does not start a sentence —
+    "Harish Rana", "Surat Police". Sentence-initial words are skipped because
+    every sentence starts with a capital, and "Losing" is not a name.
+    """
+    out: list[str] = []
+    for tag in _HASHTAG.findall(text or ""):
+        if not _GENERIC_TAG.search(tag) and not tag.isdigit():
+            out.append(_split_tag(tag))
+    body = _HASHTAG.sub(" ", text or "")
+    for sentence in re.split(r"(?<=[.!?।])\s+|\n+", body):
+        words = sentence.split()
+        run: list[str] = []
+        for i, raw in enumerate(words + [""]):
+            w = raw.strip(".,;:!?\"'()[]—–-“”‘’")
+            if i > 0 and w[:1].isupper() and w.lower() not in _STOP and _WORD.fullmatch(w):
+                run.append(w)
+                continue
+            if run:
+                out.append(" ".join(run))
+                run = []
+    seen, uniq = set(), []
+    for e in out:
+        k = _norm(e)
+        if len(k) >= 3 and k not in seen:
+            seen.add(k)
+            uniq.append(e)
+    return uniq
+
+
+def _content_words(text: str) -> list[str]:
+    body = _HASHTAG.sub(" ", text or "")
+    words = [w.lower().strip("'’") for w in _WORD.findall(body)]
+    out: list[str] = []
+    for w in words:
+        if len(w) > 3 and w not in _STOP and w not in out:
+            out.append(w)
+    return out
+
+
 def _query_for(nlp: dict, text: str) -> str:
-    terms = [k for k in (nlp.get("keywords") or []) if len(k) > 2][:4]
-    if not terms:  # fall back to the first few words of the post itself
-        terms = [w for w in text.split() if len(w) > 3][:5]
+    """Search terms for a post, most specific first.
+
+    Entities (subject hashtags, names) when the post has any — those are what
+    a news report about the same event would also contain. Otherwise the
+    post's content words, never its first five words verbatim: that used to
+    send "Losing father deep trauma son—an" to the news indexes, and every
+    result was about something else.
+    """
+    ents = _entities(text)
+    if ents:
+        return " ".join(ents[:3])
+    terms = [k for k in (nlp.get("keywords") or []) if len(k) > 2][:2]
+    for w in _content_words(text):
+        if len(terms) >= 4:
+            break
+        if w not in terms:
+            terms.append(w)
     return " ".join(terms)
+
+
+def _stem(w: str) -> str:
+    return w[:5] if len(w) > 5 else w
+
+
+def _relevant(article: dict, query: str, entities: list[str]) -> bool:
+    """Is this article about the post, or did the index just return something?
+
+    The commercial indexes answer every query — NewsAPI will hand back an anime
+    listing for "losing father deep trauma" — so a hit is not evidence until
+    the headline/description actually shares the subject. When the post names
+    something (`entities`), at least one name must appear, compared with spaces
+    removed so the hashtag `nanapatekar` finds "Nana Patekar". Otherwise most
+    of the query's words must — three of them, or all if there are fewer.
+    """
+    blob = f"{article.get('title', '')} {article.get('description', '')}"
+    if entities:
+        flat = _norm(blob)
+        return any(_norm(e) in flat for e in entities)
+    stems = {_stem(w.lower()) for w in _WORD.findall(blob)}
+    words = [_norm(w) for w in query.lower().split() if w not in _STOP and _norm(w)]
+    if not words:
+        return False
+    hits = sum(_stem(w) in stems for w in words)
+    return hits >= min(3, len(words))
 
 
 def _needs_check(nlp: dict) -> bool:
@@ -169,13 +284,68 @@ def _needs_check(nlp: dict) -> bool:
             and nlp.get("concern_score", 0) >= settings.ALERT_THRESHOLD)
 
 
-async def check_claim(client: httpx.AsyncClient, query: str, deep: bool = False) -> dict:
+def _verdict(n: int, n_apis: int, returned: int) -> tuple[str, str]:
+    """Verdict and analyst note for `n` relevant articles from `n_apis` indexes,
+    out of `returned` articles the indexes handed back in total."""
+    # Independent APIs agreeing is stronger than one index returning a lot.
+    if n >= 2 and n_apis >= 2:
+        return "corroborated", (
+            f"{n} reports across {n_apis} independent news indexes cover this post's "
+            "subject — the underlying event appears real (the post may still frame "
+            "it misleadingly).")
+    if n >= 2:
+        return "corroborated", (
+            f"{n} news reports cover this post's subject — the underlying event "
+            "appears real (the post may still frame it misleadingly).")
+    if n == 1:
+        return "partially corroborated", "Only one related news report found — treat as unconfirmed."
+    if returned:
+        return "uncorroborated", (
+            f"No related news found. The indexes returned {returned} article(s) for "
+            "these terms, but none is about this post's subject.")
+    return "uncorroborated", ("No related news found — consistent with an "
+                              "unverified or purely local claim.")
+
+
+def revalidate(record: dict | None, text: str) -> dict:
+    """Re-apply the relevance rules to a stored fact_check record.
+
+    Records saved before `_relevant` existed carry whatever the indexes
+    returned — an anime listing filed as evidence for a post about a death.
+    Running every stored record through the same filter on the way out fixes
+    all of them at once, with no network calls, and is a no-op on records the
+    current code produced.
+    """
+    if not record or not record.get("checked"):
+        return record or {}
+    entities = _entities(text or "")
+    old = record.get("matches") or []
+    kept = [m for m in old if _relevant(m, record.get("query", ""), entities)]
+    if len(kept) == len(old):
+        return record
+    returned = len(old) + int(record.get("unrelated_dropped") or 0)
+    sources = []
+    for m in kept:
+        if m.get("api") and m["api"] not in sources:
+            sources.append(m["api"])
+    verdict, note = _verdict(len(kept), len(sources), returned)
+    return {**record, "matches": kept, "sources": sources, "verdict": verdict,
+            "note": note, "unrelated_dropped": returned - len(kept)}
+
+
+async def check_claim(client: httpx.AsyncClient, query: str, deep: bool = False,
+                      text: str = "") -> dict:
     """One corroboration lookup → a fact_check record.
 
     deep=True (analyst-triggered paths only) additionally queries GNews and
     NewsAPI and merges their articles in — richer metadata and a second
     independent index, at one unit each from the 100/day free tiers.
+
+    Only articles that pass `_relevant` count: an index returning ten
+    unrelated stories is not ten reports of the event. `text` is the post the
+    query was built from; the names in it are what an article must mention.
     """
+    entities = _entities(text) if text else []
     by_api: dict[str, list[dict]] = {}
     sources: list[str] = []
     attempted: list[str] = []
@@ -206,6 +376,9 @@ async def check_claim(client: httpx.AsyncClient, query: str, deep: bool = False)
     matches: list[dict] = []
     seen: set[str] = set()
     order = [a for a in attempted if by_api.get(a)]
+    returned = sum(len(v) for v in by_api.values())
+    for api in by_api:
+        by_api[api] = [a for a in by_api[api] if _relevant(a, query, entities)]
     for rank in range(max((len(v) for v in by_api.values()), default=0)):
         for api in order:
             bucket = by_api[api]
@@ -220,28 +393,11 @@ async def check_claim(client: httpx.AsyncClient, query: str, deep: bool = False)
             if api not in sources:
                 sources.append(api)
 
-    n = len(matches)
-    # Independent APIs agreeing is stronger than one index returning a lot.
-    n_apis = len(sources)
-    if n >= 2 and n_apis >= 2:
-        verdict = "corroborated"
-        note = (f"{n} reports across {n_apis} independent news indexes match these "
-                "terms — the underlying event appears real (the post may still "
-                "frame it misleadingly).")
-    elif n >= 2:
-        verdict = "corroborated"
-        note = (f"{n} news reports match these terms — the underlying event appears "
-                "real (the post may still frame it misleadingly).")
-    elif n == 1:
-        verdict = "partially corroborated"
-        note = "Only one news report found — treat as unconfirmed."
-    else:
-        verdict = "uncorroborated"
-        note = ("No independent news coverage found for these terms — consistent "
-                "with an unverified or purely local claim.")
+    verdict, note = _verdict(len(matches), len(sources), returned)
     return {
         "checked": True, "query": query, "verdict": verdict, "note": note,
         "sources": sources, "attempted": attempted, "matches": matches[:8],
+        "unrelated_dropped": returned - len(matches),
         "checked_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -250,7 +406,7 @@ async def _check_one(client: httpx.AsyncClient, nlp: dict, text: str) -> None:
     query = _query_for(nlp, text)
     if not query:
         return
-    nlp["fact_check"] = await check_claim(client, query)
+    nlp["fact_check"] = await check_claim(client, query, text=text)
 
 
 async def corroborate_enriched(texts: list[str], enriched: list[dict]) -> int:

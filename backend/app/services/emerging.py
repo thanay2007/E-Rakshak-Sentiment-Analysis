@@ -63,6 +63,7 @@ from sqlmodel import select
 
 from app.database import session_scope
 from app.models import Post
+from app.services.fact_check import revalidate
 from app.services.network_service import _jaccard, _shingles
 
 SIM_THRESHOLD = 0.5      # near-duplicate similarity
@@ -365,7 +366,7 @@ def _compute(hours: int) -> dict:
 
         priority, passed_on, outrunning = _priority_score(p)
 
-        fc = p.fact_check or {}
+        fc = revalidate(p.fact_check, p.translation or p.text)
         news_ok = fc.get("verdict") == "corroborated"
         source_count = 1 + len(corroborators.get(p.id, ()))
 
@@ -398,7 +399,11 @@ def _compute(hours: int) -> dict:
             "author_name": p.author_name,
             "author_followers": p.author_followers,
             "author_verified": p.author_verified,
-            "text": (p.translation or p.text)[:220],
+            "text": (p.text or "")[:220],
+            # Separate from `text`, so a card can show the original and its
+            # English once each instead of the English twice.
+            "translation": (p.translation or "")[:220]
+            if p.translation and p.translation != p.text else "",
             "sentiment_label": p.sentiment_label,
             "concern_score": p.concern_score,
             "priority_score": priority,

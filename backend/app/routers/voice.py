@@ -37,7 +37,7 @@ from fastapi import (APIRouter, HTTPException, WebSocket, WebSocketDisconnect,
 from app.config import settings
 from app.database import session_scope
 from app.security.deps import authenticate
-from app.services.voice import openai_realtime, realtime
+from app.services.voice import realtime
 from app.services.voice import types as voice_types
 from app.services.voice.session import SessionConfig, VoiceSession
 from app.services.voice.transformer import stt as stt_module
@@ -50,8 +50,6 @@ router = APIRouter()
 #: label, model setting). Order of use comes from VOICE_REALTIME_PROVIDERS.
 _ENGINES = {
     "gemini": (realtime, realtime.GeminiLiveSession, "gemini_live", "GEMINI_LIVE_MODEL"),
-    "openai": (openai_realtime, openai_realtime.OpenAIRealtimeSession,
-               "openai_realtime", "OPENAI_REALTIME_MODEL"),
 }
 
 
@@ -196,7 +194,7 @@ async def voice_channel(ws: WebSocket) -> None:
                      user.username, label, config.input_sample_rate)
             break
         if session is None and not failure and settings.VOICE_REALTIME_REQUIRED:
-            failure = ("realtime is unavailable: no Gemini or OpenAI key, the SDK "
+            failure = ("realtime is unavailable: no Gemini key, the SDK "
                        "is missing, or every engine is in its post-failure cooldown")
             log.warning("realtime unavailable and the cascade is disabled (%s)",
                         failure)
@@ -259,6 +257,15 @@ async def _talk(ws: WebSocket, session: VoiceSession) -> None:
         message = await ws.receive()
 
         if message.get("type") == "websocket.disconnect":
+            return
+
+        # A realtime engine whose upstream socket died cannot recover in
+        # place. Closing the channel is what makes the browser reconnect and
+        # get a fresh engine (or the fallback, if this one is cooling down).
+        if getattr(session, "dropped", False):
+            log.info("upstream voice stream dropped — closing channel so the "
+                     "client reconnects")
+            await ws.close(code=status.WS_1012_SERVICE_RESTART)
             return
 
         audio = message.get("bytes")

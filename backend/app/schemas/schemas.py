@@ -21,6 +21,11 @@ class RawPost(BaseModel):
     translation: str = ""          # simulated posts carry their own gloss; real ones get MT in full mode
     hashtags: list[str] = []
     location: str = ""
+    # True only when `location` came from the post itself — a platform geotag,
+    # or the simulator's own city. A city a collector copied from the *account*
+    # it read (a seed page's :City tag, a comment's parent) is a fallback: the
+    # post's own text and hashtags overrule it at ingestion.
+    geo_verified: bool = False
     latitude: float = 0.0
     longitude: float = 0.0
     engagement: dict = {}

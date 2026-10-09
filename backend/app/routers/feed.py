@@ -4,6 +4,8 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+from pydantic import Field as PydField
 from sqlalchemy import String, cast, func, or_
 from sqlmodel import Session, col, select
 
@@ -96,6 +98,24 @@ def get_post(post_id: str, session: Session = Depends(get_session)) -> dict:
     return post_to_dict(post, full=True)
 
 
+class TranslationRequest(BaseModel):
+    ids: list[str] = PydField(default_factory=list, max_length=120)
+
+
+@router.post("/feed/translations")
+async def translate_many(req: TranslationRequest) -> dict:
+    """English for every listed post that needs one — what the UI calls for
+    the non-English posts it is about to show without a translation, so the
+    English appears on its own instead of behind a button. Translations are
+    stored, so each post is only ever translated once."""
+    from app.services.groq_verifier import enabled
+    from app.services.translation import translate_posts
+
+    if not enabled():
+        return {"translations": {}, "available": False}
+    return {"translations": await translate_posts(req.ids), "available": True}
+
+
 @router.post("/feed/{post_id}/translate")
 async def translate_post(post_id: str) -> dict:
     """Translate one post to English on demand, from the detail drawer.
@@ -150,13 +170,13 @@ async def fact_check_post(post_id: str) -> dict:
         post = s.get(Post, post_id)
         if not post:
             raise HTTPException(404, "Post not found")
-        query = _query_for({"keywords": post.keywords or []},
-                           post.translation or post.text)
+        text = post.translation or post.text
+        query = _query_for({"keywords": post.keywords or []}, text)
     if not query:
         raise HTTPException(422, "Post has no usable terms to check")
     try:
         async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-            record = await check_claim(client, query, deep=True)
+            record = await check_claim(client, query, deep=True, text=text)
     except Exception:
         raise HTTPException(502, "News corroboration lookup failed — try again")
     with session_scope() as s:
@@ -202,6 +222,8 @@ def escalate_post(post_id: str, session: Session = Depends(get_session)) -> dict
     session.add(report)
     session.commit()
     session.refresh(report)
+    from app.services.audit import log_action
+    log_action(session, "post_escalated", post.id, {"report_id": report.id})
     return {"id": report.id, "title": report.title, "kind": report.kind,
             "created_at": iso(report.created_at), "has_pdf": False,
             "payload": report.payload}

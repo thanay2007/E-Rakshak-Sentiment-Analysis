@@ -44,6 +44,7 @@ from datetime import datetime, timezone
 import requests
 
 from app.crawlers.common import extract_hashtags
+from app.ml.geo import infer_city
 from app.schemas import RawPost
 
 log = logging.getLogger("sentinel.crawlers")
@@ -136,6 +137,10 @@ def _to_post(node: dict, city: str, handle: str = "", followers: int = 0,
     comments = node.get("comment_count")
     if comments is None:
         comments = (node.get("edge_media_to_comment") or {}).get("count", 0)
+    # The media's own geotag, when the response carries one, outranks the city
+    # of the account it was read from (see ingestion._resolve_location).
+    place = node.get("location") or {}
+    tagged = infer_city(" ".join(str(place.get(k) or "") for k in ("name", "slug", "address_json")))         if isinstance(place, dict) and place else None
     return str(node.get("id") or code), RawPost(
         platform="Instagram",
         author_handle=handle,
@@ -148,7 +153,8 @@ def _to_post(node: dict, city: str, handle: str = "", followers: int = 0,
         author_verified=verified or bool(user.get("is_verified")),
         text=text[:1000],
         hashtags=extract_hashtags(text),
-        location=city,
+        location=tagged[0] if tagged else city,
+        geo_verified=bool(tagged),
         engagement={"likes": int(likes or 0), "shares": 0,
                     "comments": int(comments or 0),
                     "views": int(node.get("play_count") or 0)},

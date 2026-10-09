@@ -264,12 +264,12 @@ ENTRIES: list[Entry] = [
         "investigate",
         "The investigation toolkit",
         "Investigate is the hands-on side of the product: reverse image "
-        "analysis, URL and domain checks, username lookups across platforms, "
+        "analysis, username lookups across platforms, "
         "comment-thread analysis, audio and media intelligence, and a face "
         "search against the suspect registry. All of it is deliberately "
         "keyboard-only — the voice assistant will not run any of it, because "
         "these are the searches that name individuals.",
-        ("investigate", "investigation", "osint", "toolkit", "image", "url",
+        ("investigate", "investigation", "osint", "toolkit", "image",
          "username", "lookup", "reverse", "media", "tools"),
     ),
     Entry(

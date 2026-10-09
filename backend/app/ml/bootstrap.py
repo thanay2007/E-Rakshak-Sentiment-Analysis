@@ -89,6 +89,10 @@ def main() -> None:
 
     if not args.no_install:
         run("1/5 base dependencies", [py, "-m", "pip", "install", "-r", "requirements.txt"])
+        # --no-deps: face_recognition's `dlib` requirement is a source build;
+        # requirements.txt already provides dlib (as dlib-bin on Windows).
+        run("1/5 base dependencies (no-deps)",
+            [py, "-m", "pip", "install", "--no-deps", "-r", "requirements-nodeps.txt"])
         ensure_torch()
         run("1/5 ML dependencies", [py, "-m", "pip", "install", "-r", "requirements-ml.txt"])
         try:
