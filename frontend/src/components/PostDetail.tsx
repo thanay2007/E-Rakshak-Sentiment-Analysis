@@ -43,7 +43,7 @@ function Section({
       style={accent ? { borderColor: `${accent}40`, borderWidth: 1 } : undefined}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+        <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
           {Icon && <Icon size={11} />} {title}
         </span>
         {right}
@@ -62,23 +62,23 @@ function EvidenceTrail({ sources }: { sources: EvidenceSource[] }) {
         return (
           <div key={`${e.source}-${i}`} className="rounded-lg bg-white/[0.03] p-2.5">
             <div className="flex items-start justify-between gap-2">
-              <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-200">
+              <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-slate-200">
                 <Icon size={11} className="shrink-0 text-slate-400" />
                 {e.source}
               </span>
               {e.verdict && (
-                <span className="rounded-md bg-white/[0.06] px-1.5 py-0.5 font-mono text-[9.5px] text-slate-300">
+                <span className="rounded-md bg-white/[0.06] px-1.5 py-0.5 font-mono text-[13px] text-slate-300">
                   {newsStatusLabel(e.verdict)}
                 </span>
               )}
             </div>
             {e.detail && (
-              <p className="mt-0.5 text-[10.5px] leading-relaxed text-slate-500">{e.detail}</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{e.detail}</p>
             )}
             {(e.items?.length ?? 0) > 0 && (
               <ul className="mt-1.5 space-y-0.5">
                 {e.items!.map((it, j) => (
-                  <li key={j} className="flex gap-1.5 text-[10.5px] leading-relaxed text-slate-400">
+                  <li key={j} className="flex gap-1.5 text-xs leading-relaxed text-slate-400">
                     <span className="text-slate-600">·</span>
                     <span>{it}</span>
                   </li>
@@ -93,7 +93,7 @@ function EvidenceTrail({ sources }: { sources: EvidenceSource[] }) {
                     href={safeHref(m.link)}
                     target="_blank"
                     rel="noreferrer"
-                    className="block truncate text-[10.5px] text-sky-400 hover:underline"
+                    className="block truncate text-xs text-sky-400 hover:underline"
                   >
                     {m.source ? `${m.source} — ` : ""}{m.title}
                   </a>
@@ -268,7 +268,7 @@ export default function PostDetail({
                 {[0, 1, 2].map((i) => (
                   <div key={i} className="h-20 animate-pulse rounded-xl bg-white/[0.05]" />
                 ))}
-                <p className="text-center text-[11px] text-slate-500">Loading the post record…</p>
+                <p className="text-center text-[13px] text-slate-500">Loading the post record…</p>
               </div>
             )}
 
@@ -288,7 +288,7 @@ export default function PostDetail({
                       </span>
                       {post.is_amplified && <BotChip />}
                     </div>
-                    <div className="font-mono text-[11px] text-slate-500">
+                    <div className="font-mono text-[13px] text-slate-500">
                       @{post.author_handle} · {post.author_followers.toLocaleString()} followers ·{" "}
                       {post.author_account_age_days ?? "?"}d old
                       {post.author_verified && " · verified"}
@@ -300,12 +300,12 @@ export default function PostDetail({
                 {/* ── the tag and the score ─────────────────────────────── */}
                 <div className="glass mt-4 p-4">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                       Sentiment tag
                     </span>
                     <SentimentBadge label={post.sentiment_label} size="lg" />
                   </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-[13px]">
                     <div className="rounded-lg bg-white/[0.03] p-2">
                       <div className="text-slate-500">Polarity</div>
                       <div
@@ -315,14 +315,14 @@ export default function PostDetail({
                         {post.sentiment_score > 0 ? "+" : ""}
                         {post.sentiment_score.toFixed(2)}
                       </div>
-                      <div className="text-[9.5px] text-slate-600">−1 negative … +1 positive</div>
+                      <div className="text-[13px] text-slate-600">−1 negative … +1 positive</div>
                     </div>
                     <div className="rounded-lg bg-white/[0.03] p-2">
                       <div className="text-slate-500">Model confidence</div>
                       <div className="font-mono text-lg font-bold text-slate-200">
                         {((post.sentiment_confidence ?? consensus?.confidence ?? 0) * 100).toFixed(0)}%
                       </div>
-                      <div className="text-[9.5px] text-slate-600">
+                      <div className="text-[13px] text-slate-600">
                         {consensus?.agreement ? `${consensus.agreement} models agreed` : "—"}
                       </div>
                     </div>
@@ -330,11 +330,11 @@ export default function PostDetail({
 
                   <div className="mt-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                         Concern score
                       </span>
                       <span
-                        className="font-mono text-[10px] font-bold uppercase"
+                        className="font-mono text-xs font-bold uppercase"
                         style={{ color: concernColor(post.concern_score) }}
                       >
                         {concernBand(post.concern_score)}
@@ -363,12 +363,12 @@ export default function PostDetail({
                   {/* how the score was built */}
                   {(consensus?.score_breakdown?.length ?? 0) > 0 && (
                     <div className="mt-3 space-y-1.5 border-t border-white/[0.06] pt-3">
-                      <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                         How this score was built
                       </div>
                       {consensus!.score_breakdown!.map((p) => (
                         <div key={p.factor} className="flex items-center gap-2" title={p.detail}>
-                          <span className="w-28 shrink-0 text-[10.5px] text-slate-400">
+                          <span className="w-28 shrink-0 text-xs text-slate-400">
                             {p.factor}
                           </span>
                           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
@@ -377,7 +377,7 @@ export default function PostDetail({
                               style={{ width: `${Math.min(100, p.points)}%` }}
                             />
                           </div>
-                          <span className="w-14 text-right font-mono text-[10.5px] text-slate-500">
+                          <span className="w-14 text-right font-mono text-xs text-slate-500">
                             {p.points.toFixed(1)} pts
                           </span>
                         </div>
@@ -389,14 +389,14 @@ export default function PostDetail({
                 {/* ── original + translation ────────────────────────────── */}
                 <div className="mt-4 space-y-3">
                   <div>
-                    <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    <div className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
                       Original <LanguageChip language={post.language} mixed={post.code_mixed} />
                     </div>
                     <p className="glass p-3 text-[13.5px] leading-relaxed text-slate-200">{post.text}</p>
                   </div>
                   {post.translation && post.translation !== post.text ? (
                     <div>
-                      <div className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
                         <Languages size={11} /> English translation
                       </div>
                       <p className="glass p-3 text-[13px] italic leading-relaxed text-slate-400">
@@ -405,7 +405,7 @@ export default function PostDetail({
                     </div>
                   ) : (
                     post.language !== "English" && (
-                      <p className="text-[10.5px] italic text-slate-600">
+                      <p className="text-xs italic text-slate-600">
                         No English translation on record for this post yet — run
                         “Backfill translations” from Settings to fill the gap.
                       </p>
@@ -413,7 +413,7 @@ export default function PostDetail({
                   )}
                   {(post.media_urls?.length ?? 0) > 0 && (
                     <div>
-                      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">
                         Attached media ({post.media_urls!.length})
                       </div>
                       <PostMediaGrid urls={post.media_urls!} maxHeight={160} />
@@ -423,7 +423,7 @@ export default function PostDetail({
 
                 {/* ── automatic face verification ───────────────────────── */}
                 {faceChecking && (
-                  <div className="glass mt-4 flex items-center justify-center gap-2 p-3 text-[11px] text-slate-500">
+                  <div className="glass mt-4 flex items-center justify-center gap-2 p-3 text-[13px] text-slate-500">
                     <Fingerprint size={13} className="text-accent" />
                     <Spinner label="Checking faces against the suspect registry…" />
                   </div>
@@ -448,7 +448,7 @@ export default function PostDetail({
                     icon={Brain}
                     accent="#38BDF8"
                     right={
-                      <span className="font-mono text-[10px] text-slate-400">
+                      <span className="font-mono text-xs text-slate-400">
                         agreement {consensus!.agreement}
                       </span>
                     }
@@ -459,11 +459,11 @@ export default function PostDetail({
                         const c = sentimentColor(v.label);
                         return (
                           <div key={v.model} className="flex items-center gap-2">
-                            <span className="w-20 shrink-0 font-mono text-[10.5px] capitalize text-slate-400">
+                            <span className="w-20 shrink-0 font-mono text-xs capitalize text-slate-400">
                               {v.model}
                             </span>
                             <span
-                              className="w-14 shrink-0 text-[11px] font-semibold capitalize"
+                              className="w-14 shrink-0 text-[13px] font-semibold capitalize"
                               style={{ color: c }}
                             >
                               {v.label}
@@ -474,18 +474,18 @@ export default function PostDetail({
                                 style={{ width: `${v.confidence * 100}%`, backgroundColor: c }}
                               />
                             </div>
-                            <span className="w-9 text-right font-mono text-[10.5px] text-slate-500">
+                            <span className="w-9 text-right font-mono text-xs text-slate-500">
                               {(v.confidence * 100).toFixed(0)}%
                             </span>
-                            {isWinner && <span className="text-[10px] text-accent">✓</span>}
+                            {isWinner && <span className="text-xs text-accent">✓</span>}
                           </div>
                         );
                       })}
                     </div>
                     <div className="mt-2 flex items-center justify-between gap-2 rounded-lg bg-white/[0.03] px-2 py-1.5">
-                      <span className="shrink-0 text-[10.5px] text-slate-500">Chosen</span>
+                      <span className="shrink-0 text-xs text-slate-500">Chosen</span>
                       <span
-                        className="text-right font-mono text-[10.5px] font-semibold capitalize"
+                        className="text-right font-mono text-xs font-semibold capitalize"
                         style={{ color: sentimentColor(consensus!.label) }}
                       >
                         {consensus!.label} · {consensus!.chosen_by}
@@ -494,24 +494,24 @@ export default function PostDetail({
 
                     {(consensus!.context_adjustments?.length ?? 0) > 0 && (
                       <div className="mt-2 space-y-1">
-                        <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                        <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                           Context adjustments (confidence only)
                         </div>
                         {consensus!.context_adjustments!.map((a, i) => (
                           <div key={i} className="rounded-lg bg-white/[0.03] px-2 py-1.5">
                             <div className="flex flex-wrap items-center justify-between gap-2">
-                              <span className="text-[10.5px] font-semibold text-slate-300">
+                              <span className="text-xs font-semibold text-slate-300">
                                 {a.factor}
                               </span>
                               <span
-                                className={`font-mono text-[10px] font-bold ${
+                                className={`font-mono text-xs font-bold ${
                                   a.delta >= 0 ? "text-threat-neutral" : "text-threat-high"
                                 }`}
                               >
                                 {a.delta >= 0 ? "+" : ""}{a.delta.toFixed(2)}
                               </span>
                             </div>
-                            <p className="mt-0.5 text-[10px] leading-relaxed text-slate-500">
+                            <p className="mt-0.5 text-xs leading-relaxed text-slate-500">
                               {a.reason}
                             </p>
                           </div>
@@ -530,15 +530,15 @@ export default function PostDetail({
                         }`}
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-slate-200">
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-slate-200">
                             <Sparkles size={10} /> Groq final check
                           </span>
-                          <span className="font-mono text-[10px] font-bold text-slate-300">
+                          <span className="font-mono text-xs font-bold text-slate-300">
                             {consensus!.groq_check.label} ·{" "}
                             {((consensus!.groq_check.confidence ?? 0) * 100).toFixed(0)}%
                           </span>
                         </div>
-                        <p className="mt-0.5 text-[10px] font-semibold text-slate-400">
+                        <p className="mt-0.5 text-xs font-semibold text-slate-400">
                           {consensus!.groq_check.overrode
                             ? "Overrode the model consensus"
                             : consensus!.groq_check.agrees
@@ -546,7 +546,7 @@ export default function PostDetail({
                               : "Dissents — not confident enough to override"}
                         </p>
                         {consensus!.groq_check.reason && (
-                          <p className="mt-1 text-[10px] italic leading-relaxed text-slate-500">
+                          <p className="mt-1 text-xs italic leading-relaxed text-slate-500">
                             “{consensus!.groq_check.reason}”
                           </p>
                         )}
@@ -562,7 +562,7 @@ export default function PostDetail({
                     icon={BookOpen}
                     accent="#F59E0B"
                     right={
-                      <span className="font-mono text-[10px] text-slate-400">
+                      <span className="font-mono text-xs text-slate-400">
                         {consensus!.evidence!.length} sources
                       </span>
                     }
@@ -573,7 +573,7 @@ export default function PostDetail({
 
                 {/* ── other signals ─────────────────────────────────────── */}
                 <Section title="Other signals">
-                  <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-[13px]">
                     <div className="rounded-lg bg-white/[0.03] p-2">
                       <div className="text-slate-500">Intent</div>
                       <div className="font-mono text-slate-300">{post.intent ?? "—"}</div>
@@ -600,7 +600,7 @@ export default function PostDetail({
                       {post.hate_flags!.map((f) => (
                         <span
                           key={f}
-                          className="inline-flex items-center gap-1 rounded-md border border-threat-critical/40 bg-threat-critical/10 px-2 py-0.5 text-[10px] font-semibold text-threat-critical"
+                          className="inline-flex items-center gap-1 rounded-md border border-threat-critical/40 bg-threat-critical/10 px-2 py-0.5 text-xs font-semibold text-threat-critical"
                         >
                           <AlertTriangle size={9} /> {f}
                         </span>
@@ -608,7 +608,7 @@ export default function PostDetail({
                     </div>
                   )}
                   {(post.keywords?.length ?? 0) > 0 && (
-                    <div className="mt-2 text-[11px] text-slate-500">
+                    <div className="mt-2 text-[13px] text-slate-500">
                       Matched terms:{" "}
                       <span className="font-mono text-slate-400">{post.keywords!.join(" · ")}</span>
                     </div>
@@ -623,7 +623,7 @@ export default function PostDetail({
                     accent={fc.verdict === "uncorroborated" ? "#EA580C" : "#059669"}
                     right={
                       <span
-                        className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-mono text-[10px] font-bold ${
+                        className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-mono text-xs font-bold ${
                           fc.verdict === "corroborated"
                             ? "bg-threat-neutral/15 text-threat-neutral"
                             : "bg-threat-high/15 text-threat-high"
@@ -633,20 +633,20 @@ export default function PostDetail({
                       </span>
                     }
                   >
-                    <p className="mt-2 text-[11px] leading-relaxed text-slate-400">{fc.note}</p>
+                    <p className="mt-2 text-[13px] leading-relaxed text-slate-400">{fc.note}</p>
                     {fc.query && (
-                      <p className="mt-1 text-[10px] text-slate-500">
+                      <p className="mt-1 text-xs text-slate-500">
                         Searched terms:{" "}
                         <span className="font-mono text-slate-400">{fc.query}</span>
                       </p>
                     )}
                     {(fc.attempted?.length ?? 0) > 0 && (
-                      <p className="mt-1 text-[10px] text-slate-500">
+                      <p className="mt-1 text-xs text-slate-500">
                         Sources searched:{" "}
                         {fc.attempted!.map((a) => (
                           <span
                             key={a}
-                            className={`mr-1 inline-block rounded px-1.5 py-px font-mono text-[9.5px] ${
+                            className={`mr-1 inline-block rounded px-1.5 py-px font-mono text-[13px] ${
                               fc.sources?.includes(a)
                                 ? "bg-threat-neutral/15 text-threat-neutral"
                                 : "bg-white/[0.06] text-slate-500"
@@ -665,11 +665,11 @@ export default function PostDetail({
                               href={safeHref(m.link)}
                               target="_blank"
                               rel="noreferrer"
-                              className="block text-[11px] text-sky-400 hover:underline"
+                              className="block text-[13px] text-sky-400 hover:underline"
                             >
                               {m.title}
                             </a>
-                            <div className="mt-0.5 flex items-center gap-1.5 text-[9.5px] text-slate-500">
+                            <div className="mt-0.5 flex items-center gap-1.5 text-[13px] text-slate-500">
                               {m.source && <span>{m.source}</span>}
                               {m.api && (
                                 <span className="rounded bg-white/[0.06] px-1 py-px font-mono">
@@ -678,7 +678,7 @@ export default function PostDetail({
                               )}
                             </div>
                             {m.description && (
-                              <p className="mt-0.5 text-[10px] leading-relaxed text-slate-500">
+                              <p className="mt-0.5 text-xs leading-relaxed text-slate-500">
                                 {m.description}
                               </p>
                             )}
@@ -707,7 +707,7 @@ export default function PostDetail({
                     icon={ScrollText}
                     accent="#38BDF8"
                     right={
-                      <span className="font-mono text-[10px] font-bold text-sky-400">
+                      <span className="font-mono text-xs font-bold text-sky-400">
                         confidence {((report.confidence ?? 0) * 100).toFixed(0)}%
                       </span>
                     }
@@ -720,16 +720,16 @@ export default function PostDetail({
 
                     {(report.claims?.length ?? 0) > 0 && (
                       <div className="mt-3">
-                        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                        <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">
                           Claims assessed
                         </div>
                         <div className="space-y-2">
                           {report.claims!.map((c, i) => (
                             <div key={i} className="rounded-lg bg-white/[0.03] p-2">
                               <div className="flex items-start justify-between gap-2">
-                                <span className="text-[11px] text-slate-300">{c.claim}</span>
+                                <span className="text-[13px] text-slate-300">{c.claim}</span>
                                 <span
-                                  className={`shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[9.5px] font-bold uppercase ${
+                                  className={`shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[13px] font-bold uppercase ${
                                     c.assessment === "supported"
                                       ? "bg-threat-neutral/15 text-threat-neutral"
                                       : c.assessment === "contradicted"
@@ -740,7 +740,7 @@ export default function PostDetail({
                                   {c.assessment}
                                 </span>
                               </div>
-                              <p className="mt-1 text-[10.5px] leading-relaxed text-slate-500">
+                              <p className="mt-1 text-xs leading-relaxed text-slate-500">
                                 <span className="font-mono text-slate-600">[{c.type}]</span> {c.basis}
                               </p>
                             </div>
@@ -751,7 +751,7 @@ export default function PostDetail({
 
                     {(report.evidence_phrases?.length ?? 0) > 0 && (
                       <div className="mt-3">
-                        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                        <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">
                           Verbatim evidence
                         </div>
                         <div className="space-y-1.5">
@@ -760,8 +760,8 @@ export default function PostDetail({
                               key={i}
                               className="rounded-lg border-l-2 border-sky-500/40 bg-white/[0.03] px-2 py-1.5"
                             >
-                              <p className="text-[11px] text-slate-200">“{e.quote}”</p>
-                              <p className="mt-0.5 text-[10.5px] text-slate-500">{e.significance}</p>
+                              <p className="text-[13px] text-slate-200">“{e.quote}”</p>
+                              <p className="mt-0.5 text-xs text-slate-500">{e.significance}</p>
                             </div>
                           ))}
                         </div>
@@ -771,15 +771,15 @@ export default function PostDetail({
                     {report.corroboration?.verdict && (
                       <div className="mt-3 rounded-lg bg-white/[0.03] p-2">
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                          <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                             Source Check
                           </span>
-                          <span className="font-mono text-[10px] font-bold text-slate-300">
+                          <span className="font-mono text-xs font-bold text-slate-300">
                             {newsStatusLabel(report.corroboration.verdict)}
                           </span>
                         </div>
                         {report.corroboration.explanation && (
-                          <p className="mt-1 text-[10.5px] leading-relaxed text-slate-400">
+                          <p className="mt-1 text-xs leading-relaxed text-slate-400">
                             {report.corroboration.explanation}
                           </p>
                         )}
@@ -791,7 +791,7 @@ export default function PostDetail({
                                 href={safeHref(m.link)}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="block truncate text-[10.5px] text-sky-400 hover:underline"
+                                className="block truncate text-xs text-sky-400 hover:underline"
                               >
                                 {m.source ? `${m.source} — ` : ""}{m.title}
                               </a>
@@ -801,7 +801,7 @@ export default function PostDetail({
                       </div>
                     )}
 
-                    <div className="mt-3 grid gap-2 text-[10.5px]">
+                    <div className="mt-3 grid gap-2 text-xs">
                       {report.account_assessment && (
                         <div className="rounded-lg bg-white/[0.03] p-2">
                           <div className="text-slate-500">Account assessment</div>
@@ -835,7 +835,7 @@ export default function PostDetail({
                         </div>
                       )}
                     </div>
-                    <p className="mt-2 text-right font-mono text-[9.5px] text-slate-600">
+                    <p className="mt-2 text-right font-mono text-[13px] text-slate-600">
                       {report.model} · {report.generated_at?.slice(0, 19).replace("T", " ")} UTC
                     </p>
                   </Section>
@@ -887,7 +887,7 @@ export default function PostDetail({
                   </button>
                 </div>
                 {escalated && (
-                  <p className="mt-1 text-right font-mono text-[10px] text-slate-500">
+                  <p className="mt-1 text-right font-mono text-xs text-slate-500">
                     Action report {escalated} saved → Reports
                   </p>
                 )}

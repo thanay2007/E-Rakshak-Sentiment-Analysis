@@ -30,7 +30,7 @@ export const SENT_COLORS: Record<string, string> = {
 export function Pill({ color, children }: { color: string; children: ReactNode }) {
   return (
     <span
-      className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold"
+      className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[13px] font-semibold"
       style={{ color, borderColor: `${color}55`, backgroundColor: `${color}14` }}
     >
       {children}
@@ -46,7 +46,7 @@ export function FindingRow({ level, text, on }: { level: string; text: string; o
       <div className="text-[13px] leading-snug text-slate-300">
         {text}
         {on === "destination" && (
-          <span className="ml-1.5 rounded bg-white/[0.06] px-1 py-0.5 text-[10px] uppercase tracking-wide text-slate-500">
+          <span className="ml-1.5 rounded bg-white/[0.06] px-1 py-0.5 text-xs uppercase tracking-wide text-slate-500">
             on destination
           </span>
         )}
@@ -58,7 +58,7 @@ export function FindingRow({ level, text, on }: { level: string; text: string; o
 export function Meter({ value, color, label }: { value: number; color: string; label?: string }) {
   return (
     <div className="space-y-1">
-      {label && <div className="flex justify-between text-[11px] text-slate-500"><span>{label}</span><span className="font-mono text-slate-300">{value}</span></div>}
+      {label && <div className="flex justify-between text-[13px] text-slate-500"><span>{label}</span><span className="font-mono text-slate-300">{value}</span></div>}
       <div className="h-2 overflow-hidden rounded-full bg-white/[0.06]">
         <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(value, 100)}%`, backgroundColor: color }} />
       </div>
@@ -132,13 +132,13 @@ export function AccountChip({
           {verified && <span className="text-accent" title="verified">✓</span>}
         </div>
         {(name || followers !== undefined) && (
-          <div className="truncate text-[11px] text-slate-500">
+          <div className="truncate text-[13px] text-slate-500">
             {name}{followers !== undefined ? ` · ${followers.toLocaleString()} followers` : ""}
           </div>
         )}
       </div>
       {botScore !== undefined && (
-        <span className="shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-mono font-semibold"
+        <span className="shrink-0 rounded-full border px-2 py-0.5 text-xs font-mono font-semibold"
           style={{ color, borderColor: `${color}55`, backgroundColor: `${color}14` }}>
           bot {botScore}
         </span>

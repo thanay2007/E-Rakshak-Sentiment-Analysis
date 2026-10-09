@@ -88,7 +88,7 @@ export default function Investigate() {
         <span className="text-slate-400">
           <strong className="text-slate-200">{tool.label}</strong>: {tool.desc}
         </span>
-        <span className="hidden md:inline-flex items-center gap-1 font-mono text-[11px] text-accent">
+        <span className="hidden md:inline-flex items-center gap-1 font-mono text-[13px] text-accent">
           <ShieldCheck size={13} /> Investigation Tool Ready
         </span>
       </div>

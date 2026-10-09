@@ -14,7 +14,7 @@ export default function Landing() {
           <Logo size={88} />
         </div>
         <p className="landing-eyebrow">DIGITAL VIGILANCE</p>
-        <h1 id="landing-title">E-RAKSHAK</h1>
+        <h1 id="landing-title">SENTINEL</h1>
         <p className="landing-description">
           Monitor online threats and understand public opinion.<br />
           A clearer view. A safer community.

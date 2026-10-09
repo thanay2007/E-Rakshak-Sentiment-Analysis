@@ -113,20 +113,23 @@ export async function login(username: string, password: string): Promise<LoginRe
 
 export async function logout(): Promise<void> {
   const token = getToken();
-  if (token) {
-    // Best-effort: tell the server to revoke the token family. Even if this
-    // fails (offline, server down), the local session is cleared regardless —
-    // a sign-out must never appear to fail and leave the officer signed in.
-    try {
-      await fetch(`${API_BASE}/api/auth/logout`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-    } catch {
-      /* ignore */
-    }
-  }
+  // Local session goes first and unconditionally. Waiting on the server here
+  // made the button look dead for as long as the API took to answer (or
+  // forever, if it was down) — a sign-out must take effect on the click.
   clearSession();
+  if (token) {
+    // Best-effort, in the background: tell the server to revoke the token
+    // family. keepalive lets it finish even as the page navigates away; the
+    // timeout stops a hung server from holding the request open.
+    fetch(`${API_BASE}/api/auth/logout`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      keepalive: true,
+      signal: AbortSignal.timeout(8000),
+    }).catch(() => {
+      /* ignore */
+    });
+  }
 }
 
 export async function changePassword(current: string, next: string): Promise<LoginResult> {

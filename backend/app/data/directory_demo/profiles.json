@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "purpose": "Fictional directory photo-display fixtures",
+  "profiles": [
+    {
+      "id": "demo-milo-muffin",
+      "full_name": "Milo Muffin",
+      "role": "Chief Snack Officer",
+      "bio": "Runs the imaginary office snack club. Maintains that a muffin is simply a cupcake with a sensible career plan.",
+      "is_fictional": true,
+      "image_path": "images/milo-muffin.png",
+      "image_alt": "AI-generated cartoon portrait of fictional character Milo Muffin",
+      "image_source_id": "generated-milo-muffin"
+    },
+    {
+      "id": "demo-tessa-teacup",
+      "full_name": "Tessa Teacup",
+      "role": "Tea Quality Inspector",
+      "bio": "Tests imaginary tea blends and schedules very serious biscuit breaks. Can settle any meeting with a fresh pot of tea.",
+      "is_fictional": true,
+      "image_path": "images/tessa-teacup.png",
+      "image_alt": "AI-generated cartoon portrait of fictional character Tessa Teacup",
+      "image_source_id": "generated-tessa-teacup"
+    },
+    {
+      "id": "demo-otto-noodle",
+      "full_name": "Otto Noodle",
+      "role": "Pasta Researcher",
+      "bio": "Studies imaginary pasta shapes. Claims that every problem can be solved with a bow tie and a bowl of noodles.",
+      "is_fictional": true,
+      "image_path": "images/otto-noodle.png",
+      "image_alt": "AI-generated cartoon portrait of fictional character Otto Noodle",
+      "image_source_id": "generated-otto-noodle"
+    }
+  ]
+}

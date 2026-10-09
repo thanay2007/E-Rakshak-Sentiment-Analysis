@@ -85,10 +85,10 @@ export default function PostMedia({
         style={{ height: maxHeight, minWidth: maxHeight }}
       >
         <FileWarning size={16} className="text-amber-400" />
-        <span className="text-[10px] leading-tight text-amber-200/80">
+        <span className="text-xs leading-tight text-amber-200/80">
           Media unavailable
         </span>
-        <span className="inline-flex items-center gap-1 text-[10px] text-sky-400">
+        <span className="inline-flex items-center gap-1 text-xs text-sky-400">
           open at source <ExternalLink size={9} />
         </span>
       </a>

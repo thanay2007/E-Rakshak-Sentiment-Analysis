@@ -19,6 +19,7 @@ the same migrations.
 from __future__ import annotations
 
 import logging
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -26,7 +27,8 @@ from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
+from sqlalchemy.exc import OperationalError
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.config import BASE_DIR, settings
@@ -82,6 +84,23 @@ def _head_revision() -> str | None:
     return script.get_current_head()
 
 
+def _wait_for_db(attempts: int = 5, delay: float = 2.0) -> None:
+    """Retry the first connection so a transient DNS/network blip at boot
+    (common on WSL right after resume) doesn't abort startup outright."""
+    for attempt in range(1, attempts + 1):
+        try:
+            with engine.connect() as connection:
+                connection.execute(text("SELECT 1"))
+            return
+        except OperationalError as exc:
+            if attempt == attempts:
+                raise
+            log.warning("database not reachable (attempt %d/%d): %s — retrying in %.0fs",
+                        attempt, attempts, exc.orig, delay)
+            time.sleep(delay)
+            delay *= 2
+
+
 def init_db() -> None:
     """Bring the database up to the latest migration.
 
@@ -112,6 +131,8 @@ def init_db() -> None:
     if not settings.AUTO_MIGRATE:
         log.warning("AUTO_MIGRATE is off — run 'alembic upgrade head' yourself.")
         return
+
+    _wait_for_db()
 
     with engine.begin() as connection:
         context = MigrationContext.configure(connection)

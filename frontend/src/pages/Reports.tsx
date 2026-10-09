@@ -74,19 +74,19 @@ function ReportPosts({ posts, medium = false }: { posts: ReportPost[]; medium?: 
     {posts.map(post => <article key={post.id} className={`rounded-xl border p-3 transition-colors ${medium ? "border-accent/30 bg-accent/[0.04]" : "border-white/[0.06] bg-base-950/60"}`}>
       <div className="flex flex-wrap items-center gap-2">
         <SentimentBadge label={post.sentiment_label} />
-        <div className="min-w-0 break-words font-mono text-[11px] text-slate-400">{post.platform} · <span className="break-all">@{post.author_handle}</span></div>
-        <span className={`ml-auto rounded-md border px-2 py-0.5 font-mono text-[10px] font-bold ${medium ? "border-accent/30 bg-accent/10 text-accent" : "border-white/10 bg-white/[0.06] text-slate-200"}`}>
+        <div className="min-w-0 break-words font-mono text-[13px] text-slate-400">{post.platform} · <span className="break-all">@{post.author_handle}</span></div>
+        <span className={`ml-auto rounded-md border px-2 py-0.5 font-mono text-xs font-bold ${medium ? "border-accent/30 bg-accent/10 text-accent" : "border-white/10 bg-white/[0.06] text-slate-200"}`}>
           {medium ? "Medium concern" : (post.concern_level ?? "Priority")} · {Math.round(post.concern_score)}/100
         </span>
       </div>
-      <p className="mt-1 font-mono text-[10px] text-slate-400">{post.language} · {post.location || "Location not available"}</p>
+      <p className="mt-1 font-mono text-xs text-slate-400">{post.language} · {post.location || "Location not available"}</p>
       <p className="mt-2 whitespace-pre-line break-words text-xs leading-relaxed text-slate-200">{post.translation || post.text}</p>
       {post.review_reasons?.length ? <div className="mt-3 border-t border-white/[0.06] pt-2">
-        <h4 className="break-words font-mono text-[10px] font-black uppercase tracking-widest text-accent">Why this needs follow-up</h4>
+        <h4 className="break-words font-mono text-xs font-black uppercase tracking-widest text-accent">Why this needs follow-up</h4>
         <ul className="mt-1.5 list-disc space-y-1 pl-4 text-xs leading-relaxed text-slate-300">{post.review_reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>
       </div> : null}
       {post.suggested_action && <p className="mt-2 text-xs leading-relaxed text-slate-300"><strong>Next step: </strong>{post.suggested_action}</p>}
-      <button onClick={() => openPostId(post.id)} className="mt-2 inline-flex items-center gap-1 text-[10.5px] font-semibold text-accent hover:underline">View full post details <ArrowUpRight size={13} /></button>
+      <button onClick={() => openPostId(post.id)} className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline">View full post details <ArrowUpRight size={13} /></button>
     </article>)}
   </div>;
 }
@@ -122,7 +122,7 @@ function ReportModal({ report, onClose, onNotice }: { report: Report; onClose: (
       <motion.div ref={dialogRef} tabIndex={-1} className="relative z-10 max-h-[calc(100dvh-2rem)] w-full min-w-0 max-w-2xl overflow-y-auto overscroll-contain rounded-2xl border border-white/[0.12] bg-base-900/95 p-4 shadow-2xl backdrop-blur-2xl focus:outline-none sm:max-h-[calc(100dvh-3rem)] sm:p-6" initial={{ opacity: 0, y: 16, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 16, scale: 0.98 }} role="dialog" aria-modal="true" aria-label="Report preview">
         <header className="flex items-start justify-between gap-3 border-b border-white/[0.08] pb-4">
           <div className="min-w-0">
-            <p className="break-words font-mono text-[10px] font-black uppercase tracking-widest text-accent">E-RAKSHAK · {report.kind === "escalation" ? "Police Action Report" : "Incident Report"}</p>
+            <p className="break-words font-mono text-xs font-black uppercase tracking-widest text-accent">SENTINEL · {report.kind === "escalation" ? "Police Action Report" : "Incident Report"}</p>
             <h2 className="mt-1 break-words text-base font-black leading-snug text-white sm:text-lg">{readableReportText(report.title, report.period_hours)}</h2>
             <p className="mt-1 font-mono text-xs leading-relaxed text-slate-400">Generated {new Date(report.created_at).toLocaleString("en-IN", { hour12: true, timeZone: "Asia/Kolkata" })} IST · Past {reportPeriod(report.period_hours)}</p>
           </div>
@@ -135,7 +135,7 @@ function ReportModal({ report, onClose, onNotice }: { report: Report; onClose: (
         </section>}
         {p.totals && <dl className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
           {Object.entries(p.totals).map(([key, value]) => <div key={key} className="flex flex-col rounded-xl border border-white/[0.06] bg-base-950/70 p-3 text-center">
-            <dt className="order-2 mt-0.5 text-[9.5px] font-bold uppercase tracking-wider text-slate-400">{TOTAL_LABELS[key] ?? key.replaceAll("_", " ")}</dt>
+            <dt className="order-2 mt-0.5 text-[13px] font-bold uppercase tracking-wider text-slate-400">{TOTAL_LABELS[key] ?? key.replaceAll("_", " ")}</dt>
             <dd className="order-1 font-mono text-xl font-black text-slate-100">{value.toLocaleString()}</dd>
           </div>)}
         </dl>}
@@ -149,12 +149,12 @@ function ReportModal({ report, onClose, onNotice }: { report: Report; onClose: (
         </section>}
         <section className="mt-4" aria-labelledby="report-priority-title">
           <h3 id="report-priority-title" className="text-xs font-bold uppercase tracking-wider text-slate-300">Priority posts — review first</h3>
-          <p className="mb-2.5 mt-1 text-[11px] leading-relaxed text-slate-400">Posts with the highest concern levels in this period.</p>
+          <p className="mb-2.5 mt-1 text-[13px] leading-relaxed text-slate-400">Posts with the highest concern levels in this period.</p>
           {urgent.length ? <ReportPosts posts={urgent} /> : <p className="text-xs text-slate-400">No priority posts selected for this period.</p>}
         </section>
         {p.follow_up_posts && <section className="mt-4" aria-labelledby="report-medium-title">
           <h3 id="report-medium-title" className="text-xs font-bold uppercase tracking-wider text-accent">Medium concerns to monitor</h3>
-          <p className="mb-2.5 mt-1 text-[11px] leading-relaxed text-slate-400">{p.concern_thresholds && `Scores ${p.concern_thresholds.medium}–${p.concern_thresholds.high - 1}. `}Review these posts and watch for wider sharing or repeated messages.</p>
+          <p className="mb-2.5 mt-1 text-[13px] leading-relaxed text-slate-400">{p.concern_thresholds && `Scores ${p.concern_thresholds.medium}–${p.concern_thresholds.high - 1}. `}Review these posts and watch for wider sharing or repeated messages.</p>
           {medium.length ? <ReportPosts posts={medium} medium /> : <p className="text-xs text-slate-400">No medium-concern posts selected for follow-up.</p>}
         </section>}
         {esc && <section className="mt-4 rounded-xl border border-threat-inflammatory/40 bg-threat-inflammatory/[0.06] p-4">
@@ -283,7 +283,7 @@ export default function Reports() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span
-                          className={`rounded-md border px-2 py-0.2 font-mono text-[9.5px] font-black uppercase tracking-wider ${
+                          className={`rounded-md border px-2 py-0.2 font-mono text-[13px] font-black uppercase tracking-wider ${
                             escalation
                               ? "border-threat-inflammatory/50 bg-threat-inflammatory/15 text-threat-inflammatory"
                               : "border-accent/50 bg-accent/15 text-accent"
@@ -300,7 +300,7 @@ export default function Reports() {
                 </div>
 
                 <div className="mt-4 flex items-center justify-between border-t border-white/[0.06] pt-3">
-                  <span className="font-mono text-[11px] text-slate-400">
+                  <span className="font-mono text-[13px] text-slate-400">
                     {new Date(r.created_at).toLocaleString("en-IN", { hour12: true })}
                     {r.period_hours > 0 && ` · Past ${reportPeriod(r.period_hours)}`}
                   </span>

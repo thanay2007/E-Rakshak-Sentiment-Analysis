@@ -189,7 +189,7 @@ export default function ThreatFeed() {
           </select>
 
           <div className="flex items-center gap-2 rounded-xl border border-white/[0.1] bg-base-800/80 px-3 py-1.5 text-xs text-slate-300">
-            <span className="text-[11px] font-medium text-slate-400">Min Score:</span>
+            <span className="text-[13px] font-medium text-slate-400">Min Score:</span>
             <input
               type="range"
               min={0}
@@ -244,7 +244,7 @@ export default function ThreatFeed() {
             title="Refresh feed"
           >
             <RefreshCw size={12} className={loading ? "animate-spin text-accent" : ""} />
-            <span className="hidden sm:inline font-mono text-[11px]">{loading ? "Syncing…" : "Sync"}</span>
+            <span className="hidden sm:inline font-mono text-[13px]">{loading ? "Syncing…" : "Sync"}</span>
           </button>
         </div>
 

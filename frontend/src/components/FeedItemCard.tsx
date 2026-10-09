@@ -42,10 +42,10 @@ export default function FeedItemCard({
             <span className="truncate text-xs font-bold text-slate-100">
               {post.author_name || post.author_handle}
             </span>
-            <span className="truncate font-mono text-[11px] text-slate-400">
+            <span className="truncate font-mono text-[13px] text-slate-400">
               @{post.author_handle}
             </span>
-            <span className="font-mono text-[10.5px] text-slate-400">
+            <span className="font-mono text-xs text-slate-400">
               · {timeAgo(post.created_at)}
             </span>
             <div className="ml-auto flex items-center gap-1.5">
@@ -62,7 +62,7 @@ export default function FeedItemCard({
           {/* AI Translation Callout */}
           {post.translation && post.translation !== post.text && (
             <div className="mt-2 rounded-xl border border-accent/20 bg-accent/[0.05] px-2.5 py-1.5 text-[11.5px] text-slate-200">
-              <span className="mr-1.5 font-bold uppercase tracking-wider text-accent text-[9.5px]">
+              <span className="mr-1.5 font-bold uppercase tracking-wider text-accent text-[13px]">
                 AI Translation:
               </span>
               <span className="italic">{post.translation}</span>
@@ -79,17 +79,17 @@ export default function FeedItemCard({
           )}
 
           {/* Metadata & Tag Row */}
-          <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] pt-2 text-[11px] text-slate-300">
+          <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] pt-2 text-[13px] text-slate-300">
             <div className="flex flex-wrap items-center gap-1.5">
               <LanguageChip language={post.language} mixed={post.code_mixed} />
               {post.location && (
-                <span className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-0.2 text-[10.5px] text-slate-300">
+                <span className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-0.2 text-xs text-slate-300">
                   <MapPin size={10} className="text-threat-inflammatory" /> {post.location}
                 </span>
               )}
             </div>
 
-            <div className="flex items-center gap-2.5 font-mono text-[10.5px] text-slate-300">
+            <div className="flex items-center gap-2.5 font-mono text-xs text-slate-300">
               <span className="inline-flex items-center gap-1" title="Likes">
                 <ThumbsUp size={10} className="text-slate-400" /> {post.engagement.likes?.toLocaleString() ?? 0}
               </span>

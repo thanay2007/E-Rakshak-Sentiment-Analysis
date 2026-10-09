@@ -221,7 +221,7 @@ export default function NetworkGraph({
         ctx.setLineDash([]);
         const cy = Math.min(...members.map((m) => m.y! - m.r));
         const cx = members.reduce((s, m) => s + m.x!, 0) / members.length;
-        ctx.font = "bold 11px 'JetBrains Mono', monospace";
+        ctx.font = "bold 13px Inter, system-ui, sans-serif";
         ctx.fillStyle = "rgba(239,68,68,0.9)";
         ctx.textAlign = "center";
         ctx.fillText(`⚠ CLUSTER ${cid}`, cx, cy - 14);
@@ -282,7 +282,7 @@ export default function NetworkGraph({
         // label every account — dark halo so it stays readable on any color
         if (!dimmed && (st.scale >= 0.75 || n.r >= 12 || focus?.id === n.id)) {
           const label = `@${n.id.length > 18 ? n.id.slice(0, 17) + "…" : n.id}`;
-          ctx.font = `${focus?.id === n.id ? "bold " : ""}10px 'JetBrains Mono', monospace`;
+          ctx.font = `${focus?.id === n.id ? "bold " : ""}12px Inter, system-ui, sans-serif`;
           ctx.textAlign = "center";
           ctx.lineWidth = 3;
           ctx.strokeStyle = "rgba(7,11,22,0.9)";
@@ -418,7 +418,7 @@ export default function NetworkGraph({
       <canvas ref={canvasRef} className="rounded-2xl" aria-label="Account interaction network" />
 
       {/* board header chip */}
-      <div className="absolute left-3 top-3 flex items-center gap-2 rounded-xl border border-white/[0.07] bg-base-900/80 px-3 py-1.5 font-mono text-[10px] text-slate-400 backdrop-blur">
+      <div className="absolute left-3 top-3 flex items-center gap-2 rounded-xl border border-white/[0.07] bg-base-900/80 px-3 py-1.5 font-mono text-xs text-slate-400 backdrop-blur">
         <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
         LINK ANALYSIS · {nodes.length} accounts · {links.length} links ·{" "}
         <span className={clusterCount ? "font-bold text-threat-critical" : ""}>
@@ -446,7 +446,7 @@ export default function NetworkGraph({
 
       {hover && (
         <div
-          className="pointer-events-none absolute z-10 min-w-[190px] rounded-xl border border-white/10 bg-base-800/95 p-2.5 text-[11px] shadow-xl backdrop-blur-xl"
+          className="pointer-events-none absolute z-10 min-w-[190px] rounded-xl border border-white/10 bg-base-800/95 p-2.5 text-[13px] shadow-xl backdrop-blur-xl"
           style={{ left: Math.min(hover.px + 14, (wrapRef.current?.clientWidth ?? 300) - 210), top: hover.py + 10 }}
         >
           <div className="font-semibold text-slate-200">{hover.n.label}</div>
@@ -458,7 +458,7 @@ export default function NetworkGraph({
             <span>{hover.n.followers.toLocaleString()} fol</span>
           </div>
           {hover.n.cluster && (
-            <div className="mt-1 font-mono text-[10px] text-threat-critical">cluster {hover.n.cluster}</div>
+            <div className="mt-1 font-mono text-xs text-threat-critical">cluster {hover.n.cluster}</div>
           )}
           {hover.n.is_bot && (
             <div className="mt-1 font-bold text-threat-critical">⚠ suspected coordinated account</div>
@@ -467,7 +467,7 @@ export default function NetworkGraph({
       )}
 
       {/* legend */}
-      <div className="absolute bottom-3 left-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-white/[0.06] bg-base-900/80 px-3 py-1.5 text-[10px] text-slate-500 backdrop-blur">
+      <div className="absolute bottom-3 left-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-white/[0.06] bg-base-900/80 px-3 py-1.5 text-xs text-slate-500 backdrop-blur">
         <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-threat-critical" />high threat</span>
         <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-threat-inflammatory" />elevated</span>
         <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-threat-neutral" />benign</span>

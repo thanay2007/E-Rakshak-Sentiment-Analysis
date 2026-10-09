@@ -39,7 +39,7 @@ export default function UsernameTool() {
           </div>
           <RunButton onClick={run} disabled={loading || !u.trim()}><Search size={15} /> Search</RunButton>
         </div>
-        <p className="mt-2 text-[11px] text-slate-600">
+        <p className="mt-2 text-[13px] text-slate-600">
           Public, unauthenticated profile-URL probes only (no login, no scraping). Rate-limited sites resolve to “unknown”.
         </p>
       </GlassCard>
@@ -54,7 +54,7 @@ export default function UsernameTool() {
             {(["found", "not_found", "blocked", "unknown"] as const).map((k) => (
               <GlassCard key={k} className="p-3 text-center">
                 <div className="font-mono text-2xl font-semibold" style={{ color: STATUS_META[k].color }}>{data.summary[k]}</div>
-                <div className="mt-0.5 text-[11px] uppercase tracking-wide text-slate-500">{STATUS_META[k].label}</div>
+                <div className="mt-0.5 text-[13px] uppercase tracking-wide text-slate-500">{STATUS_META[k].label}</div>
               </GlassCard>
             ))}
           </div>
@@ -68,7 +68,7 @@ export default function UsernameTool() {
                     className="flex items-center justify-between gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 hover:border-white/[0.15]">
                     <div className="min-w-0">
                       <div className="truncate text-[13px] text-slate-200">{r.site}</div>
-                      <div className="truncate text-[11px] text-slate-600">{r.category}</div>
+                      <div className="truncate text-[13px] text-slate-600">{r.category}</div>
                     </div>
                     <span className="inline-flex shrink-0 items-center gap-1 text-[12px] font-medium leading-none [&>svg]:shrink-0" style={{ color: m.color }}>
                       {m.icon} {m.label} <ExternalLink size={11} className="text-slate-600" />

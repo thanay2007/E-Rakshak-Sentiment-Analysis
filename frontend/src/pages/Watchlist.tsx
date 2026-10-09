@@ -27,7 +27,7 @@ function PriorityBadge({ p }: { p: string }) {
   const meta = PRIORITY_META[p] ?? PRIORITY_META.medium;
   return (
     <span
-      className="inline-flex items-center gap-1 rounded-md border px-2 py-0.2 font-mono text-[9.5px] font-bold uppercase tracking-wider"
+      className="inline-flex items-center gap-1 rounded-md border px-2 py-0.2 font-mono text-[13px] font-bold uppercase tracking-wider"
       style={{ color: meta.color, borderColor: `${meta.color}55`, backgroundColor: `${meta.color}14` }}
     >
       {p}
@@ -177,7 +177,7 @@ export default function Watchlist() {
           ["Critical Priority", stats.critical, "#EF4444"],
         ].map(([label, n, color]) => (
           <GlassCard key={label as string} className="p-3.5 border border-white/[0.08]">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</div>
+            <div className="text-xs font-bold uppercase tracking-wider text-slate-400">{label}</div>
             <div className="mt-1 font-mono text-2xl font-black" style={{ color: color as string }}>
               {n as number}
             </div>
@@ -203,7 +203,7 @@ export default function Watchlist() {
             >
               <Layers size={13} />
               {busy === p.slug ? "Adding…" : p.title}
-              <span className="rounded-md bg-accent/20 px-1.5 py-0.2 font-mono text-[10px] font-extrabold">{p.count}</span>
+              <span className="rounded-md bg-accent/20 px-1.5 py-0.2 font-mono text-xs font-extrabold">{p.count}</span>
             </button>
           ))}
         </div>
@@ -340,7 +340,7 @@ export default function Watchlist() {
                         </button>
                       </div>
 
-                      <div className="mt-2 flex flex-wrap items-center gap-3 pl-9 text-[11px] text-slate-400">
+                      <div className="mt-2 flex flex-wrap items-center gap-3 pl-9 text-[13px] text-slate-400">
                         <span className={`inline-flex items-center gap-1 font-mono font-bold ${(w.hits_7d ?? 0) > 0 ? "text-accent" : ""}`}>
                           <Activity size={11} /> {w.hits_7d ?? 0} hits
                         </span>

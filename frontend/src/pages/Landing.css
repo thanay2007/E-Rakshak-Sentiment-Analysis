@@ -20,8 +20,8 @@
 .landing-emblem { position: relative; display: flex; justify-content: center; width: 88px; height: 88px; margin: 0 auto 32px; }
 .landing-emblem-halo { position: absolute; inset: -28px; z-index: -1; border-radius: 50%; background: rgba(var(--color-accent), 0.2); filter: blur(28px); }
 .landing-emblem-ring { position: absolute; inset: -12px; border: 1px dashed rgba(var(--color-accent), 0.3); border-radius: 50%; animation: landing-ring-spin 20s linear infinite; }
-.landing-eyebrow { color: rgb(var(--color-accent)); font-size: 10px; font-weight: 800; letter-spacing: 0.3em; }
-.landing-content h1 { margin: 14px 0 18px; padding-left: 0.2em; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: clamp(28px, 6vw, 60px); font-weight: 900; letter-spacing: 0.2em; line-height: 1.15; color: rgb(var(--color-white)); text-shadow: 0 0 30px rgba(var(--color-accent), 0.35); }
+.landing-eyebrow { color: rgb(var(--color-accent)); font-size: 11px; font-weight: 800; letter-spacing: 0.3em; }
+.landing-content h1 { margin: 14px 0 18px; padding-left: 0.2em; font-family: 'Inter', system-ui, sans-serif; font-size: clamp(28px, 6vw, 60px); font-weight: 900; letter-spacing: 0.2em; line-height: 1.15; color: rgb(var(--color-white)); text-shadow: 0 0 30px rgba(var(--color-accent), 0.35); }
 .landing-description { color: rgb(var(--color-slate-300)); font-size: 14px; line-height: 1.8; }
 
 .landing-primary {
@@ -48,7 +48,7 @@
 .landing-primary svg { flex-shrink: 0; }
 .landing-primary:hover { background: rgb(var(--color-accent-glow)); box-shadow: 0 0 32px rgba(var(--color-accent), 0.4); }
 .landing-primary:focus-visible { outline: 2px solid rgb(var(--color-accent)); outline-offset: 5px; }
-.landing-access-note { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 20px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: rgb(var(--color-slate-400)); }
+.landing-access-note { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 20px; font-family: 'Inter', system-ui, sans-serif; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: rgb(var(--color-slate-400)); }
 
 @keyframes landing-ring-spin { to { transform: rotate(360deg); } }
 

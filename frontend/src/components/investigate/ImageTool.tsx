@@ -127,7 +127,7 @@ export default function ImageTool() {
           >
             <ImageUp size={26} className="text-slate-500" />
             <div className="text-sm text-slate-400">Drop an image or video here or <span className="text-accent">browse</span></div>
-            <div className="text-[11px] text-slate-600">JPG / PNG / WEBP · MP4 / MOV — Check file details, editing, and image sources · max 25 MB</div>
+            <div className="text-[13px] text-slate-600">JPG / PNG / WEBP · MP4 / MOV — Check file details, editing, and image sources · max 25 MB</div>
             <input ref={inputRef} type="file" accept="image/*,video/*" className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) fromFile(f); }} />
           </div>
@@ -140,7 +140,7 @@ export default function ImageTool() {
                 placeholder="Paste a post, image or video URL (X / Reddit / news / direct .jpg / .mp4 / v.redd.it)" mono /></div>
               <RunButton onClick={fromUrl} disabled={loading || !url.trim()}><ScanSearch size={15} /> Fetch & analyze</RunButton>
             </div>
-            <p className="text-[11px] text-slate-600">The system reads the post's media — og:image preview, og:video stream, direct image/video links, or v.redd.it renditions. Login-gated posts can't be fetched.</p>
+            <p className="text-[13px] text-slate-600">The system reads the post's media — og:image preview, og:video stream, direct image/video links, or v.redd.it renditions. Login-gated posts can't be fetched.</p>
           </div>
         )}
 
@@ -151,7 +151,7 @@ export default function ImageTool() {
                 placeholder="Post ID (blank = latest flagged post carrying media)" mono /></div>
               <RunButton onClick={fromFeed} disabled={loading}><Radar size={15} /> Pull from feed</RunButton>
             </div>
-            <p className="text-[11px] text-slate-600">Takes the image attached to a monitored post automatically and traces its sources.</p>
+            <p className="text-[13px] text-slate-600">Takes the image attached to a monitored post automatically and traces its sources.</p>
           </div>
         )}
 
@@ -171,7 +171,7 @@ export default function ImageTool() {
           ) : (
             <span>Fetched from post URL</span>
           )}
-          <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-500">via {src.via}</span>
+          <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-xs uppercase tracking-wide text-slate-500">via {src.via}</span>
           {src.image_url && <a href={safeHref(src.image_url)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent hover:underline">source image <ExternalLink size={11} /></a>}
         </GlassCard>
       )}
@@ -252,7 +252,7 @@ export default function ImageTool() {
                             : outcome?.kind === "lead" ? "#F59E0B" : "#64748B";
                           return (
                             <div key={i} className="absolute border-2" style={{ borderColor: color, backgroundColor: `${color}33`, top: `${topPct}%`, left: `${leftPct}%`, width: `${widthPct}%`, height: `${heightPct}%` }}>
-                              <div className="absolute -top-5 left-[-2px] whitespace-nowrap px-1 text-[9px] font-bold text-[#0F1420]" style={{ backgroundColor: color }}>
+                              <div className="absolute -top-5 left-[-2px] whitespace-nowrap px-1 text-[13px] font-bold text-[#0F1420]" style={{ backgroundColor: color }}>
                                 {label}
                               </div>
                             </div>
@@ -284,7 +284,7 @@ export default function ImageTool() {
           <GlassCard className="space-y-3 p-4">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-200"><ScanSearch size={15} className="text-accent" /> Reverse-Source Trace</div>
             {a.media_type === "video" && (
-              <p className="rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-[11px] text-slate-500">
+              <p className="rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-[13px] text-slate-500">
                 Video traced by its poster frame (thumbnail). The frame is fingerprinted and matched
                 the same way as an image — the strongest signal for recycled/miscaptioned clips.
               </p>
@@ -325,7 +325,7 @@ export default function ImageTool() {
                   <div className="text-[12px] text-slate-500">Nearest reference: {rev.nearest_reference.subject} (distance {rev.nearest_reference.hamming_distance})</div>
                 )}
                 <div>
-                  <div className="mb-1.5 text-[11px] uppercase tracking-wide text-slate-500">Continue on external engines</div>
+                  <div className="mb-1.5 text-[13px] uppercase tracking-wide text-slate-500">Continue on external engines</div>
                   <div className="flex flex-wrap gap-2">
                     {rev?.external_engines.map((e) => (
                       <a key={e.name} href={safeHref(e.url)} target="_blank" rel="noreferrer"

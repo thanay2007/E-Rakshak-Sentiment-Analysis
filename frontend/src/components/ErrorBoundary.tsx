@@ -45,7 +45,7 @@ export default class ErrorBoundary extends Component<Props, State> {
           <p className="mt-1.5 text-xs leading-relaxed text-slate-500">
             The rest of the console is still live — switch views from the sidebar, or retry below.
           </p>
-          <pre className="mt-3 overflow-x-auto rounded-xl bg-black/30 p-3 text-left font-mono text-[11px] leading-relaxed text-threat-critical">
+          <pre className="mt-3 overflow-x-auto rounded-xl bg-black/30 p-3 text-left font-mono text-[13px] leading-relaxed text-threat-critical">
             {error.message}
           </pre>
           <div className="mt-4 flex items-center justify-center gap-2">

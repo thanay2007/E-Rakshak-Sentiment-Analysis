@@ -1,0 +1,43 @@
+{
+  "label": "Synthetic demo data — not a real criminal record",
+  "histories": {
+    "demo-milo-muffin": [
+      {
+        "case_id": "DEMO-2024-001",
+        "date": "2024-04-12",
+        "allegation": "Theft of the final muffin from the imaginary office snack cupboard",
+        "status": "Fictional conviction",
+        "outcome": "Ordered by the imaginary Biscuit Court to bake twelve replacement muffins",
+        "is_fictional": true
+      },
+      {
+        "case_id": "DEMO-2025-002",
+        "date": "2025-02-18",
+        "allegation": "Unauthorized midnight cookie tasting at the imaginary snack club",
+        "status": "Fictional dismissal",
+        "outcome": "Imaginary case dismissed after the cookies were found to be samples",
+        "is_fictional": true
+      }
+    ],
+    "demo-tessa-teacup": [
+      {
+        "case_id": "DEMO-2024-003",
+        "date": "2024-08-07",
+        "allegation": "Disturbing an imaginary meeting by loudly ranking biscuit crunchiness",
+        "status": "Fictional warning",
+        "outcome": "Issued an imaginary warning and asked to organize the next tea break",
+        "is_fictional": true
+      }
+    ],
+    "demo-otto-noodle": [
+      {
+        "case_id": "DEMO-2023-004",
+        "date": "2023-11-21",
+        "allegation": "Unlicensed spaghetti juggling in the imaginary town square",
+        "status": "Fictional conviction",
+        "outcome": "Assigned one imaginary pasta-safety workshop; completed",
+        "is_fictional": true
+      }
+    ]
+  }
+}

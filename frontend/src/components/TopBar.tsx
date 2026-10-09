@@ -66,17 +66,17 @@ export default function TopBar() {
             className="w-full rounded-xl border border-white/[0.1] bg-white/[0.05] py-2 pl-9 pr-8 text-xs text-slate-100 placeholder:text-slate-500 focus:border-accent/60 focus:bg-white/[0.07] focus:outline-none transition-all"
             aria-label="Global search"
           />
-          <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-white/10 bg-white/[0.06] px-1.5 py-0.5 font-mono text-[9px] text-slate-400">
+          <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-white/10 bg-white/[0.06] px-1.5 py-0.5 font-mono text-[13px] text-slate-400">
             /
           </kbd>
         </form>
 
         <div className="flex shrink-0 items-center gap-3 sm:gap-4">
-          <span className="hidden whitespace-nowrap font-mono text-[11px] text-slate-400 md:block">
+          <span className="hidden whitespace-nowrap font-mono text-[13px] text-slate-400 md:block">
             {clock.toLocaleTimeString("en-IN", { hour12: true, timeZone: "Asia/Kolkata" })} IST
           </span>
 
-          <span className="flex items-center gap-2 text-[11px] font-bold tracking-widest">
+          <span className="flex items-center gap-2 text-[13px] font-bold tracking-widest">
             <span
               className={`pulse-dot inline-block h-2 w-2 rounded-full ${
                 connected ? "bg-threat-neutral text-threat-neutral" : "bg-slate-500 text-slate-500"
@@ -117,7 +117,7 @@ export default function TopBar() {
           >
             <Bell size={15} />
             {unread > 0 && (
-              <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-threat-critical px-1 font-mono text-[9px] font-bold text-white shadow-md">
+              <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-threat-critical px-1 font-mono text-[13px] font-bold text-white shadow-md">
                 {unread}
               </span>
             )}
@@ -131,7 +131,7 @@ export default function TopBar() {
               <div className="text-xs font-semibold text-slate-200">
                 {user?.full_name || user?.username || "—"}
               </div>
-              <div className="font-mono text-[10px] uppercase text-slate-400">
+              <div className="font-mono text-xs uppercase text-slate-400">
                 {[user?.role, user?.badge_number || user?.unit].filter(Boolean).join(" · ") || "—"}
               </div>
             </div>

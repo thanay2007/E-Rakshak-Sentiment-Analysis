@@ -61,7 +61,7 @@ export default function StatTile({
 
         {delta !== undefined ? (
           <span
-            className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[10.5px] font-bold tracking-tight shadow-sm"
+            className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-xs font-bold tracking-tight shadow-sm"
             style={{
               color: good ? "#10B981" : "#EF4444",
               borderColor: good ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)",
@@ -84,7 +84,7 @@ export default function StatTile({
             <span ref={ref}>0</span>
             {suffix}
           </div>
-          <div className="mt-0.5 flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+          <div className="mt-0.5 flex items-center gap-1 text-[13px] font-bold uppercase tracking-wider text-slate-400">
             <span className="truncate">{label}</span>
             {tooltip && (
               <span title={tooltip} className="shrink-0 cursor-help text-slate-500 hover:text-slate-300">

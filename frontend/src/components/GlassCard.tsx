@@ -32,7 +32,7 @@ export function InfoHint({ text, label }: { text: string; label?: string }) {
       <span
         role="tooltip"
         className="pointer-events-none absolute left-0 top-full z-30 mt-2 w-60 rounded-xl border border-white/10
-                   bg-base-900/95 p-2.5 text-[11px] font-normal normal-case leading-relaxed tracking-normal
+                   bg-base-900/95 p-2.5 text-[13px] font-normal normal-case leading-relaxed tracking-normal
                    text-slate-300 opacity-0 shadow-xl shadow-black/40 backdrop-blur-md transition-opacity
                    duration-150 group-hover/hint:opacity-100"
       >

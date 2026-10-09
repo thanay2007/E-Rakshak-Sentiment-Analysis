@@ -143,7 +143,7 @@ function OfficersTab() {
           right={
             <button
               onClick={() => setShowCreate((s) => !s)}
-              className="flex items-center gap-1.5 rounded-xl border border-accent/40 bg-accent/10 px-3 py-1.5 text-[11px] font-semibold text-accent hover:bg-accent/20"
+              className="flex items-center gap-1.5 rounded-xl border border-accent/40 bg-accent/10 px-3 py-1.5 text-[13px] font-semibold text-accent hover:bg-accent/20"
             >
               <Plus size={13} />
               New officer
@@ -168,7 +168,7 @@ function OfficersTab() {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-left text-xs">
               <thead>
-                <tr className="border-b border-white/[0.06] text-[10px] uppercase tracking-wider text-slate-500">
+                <tr className="border-b border-white/[0.06] text-xs uppercase tracking-wider text-slate-500">
                   <th className="py-2 pr-3">Officer</th>
                   <th className="py-2 pr-3">Rank</th>
                   <th className="py-2 pr-3">Unit / badge</th>
@@ -186,7 +186,7 @@ function OfficersTab() {
                         <div className="font-medium text-slate-200">
                           {o.full_name || o.username}
                         </div>
-                        <div className="font-mono text-[10px] text-slate-600">
+                        <div className="font-mono text-xs text-slate-600">
                           {o.username}
                           {isSelf && " · you"}
                         </div>
@@ -201,7 +201,7 @@ function OfficersTab() {
                               api.updateOfficer(o.id, { role: e.target.value as Officer["role"] })
                             )
                           }
-                          className="rounded-lg border border-white/[0.08] bg-base-800 px-2 py-1 text-[11px] text-slate-300 disabled:opacity-40"
+                          className="rounded-lg border border-white/[0.08] bg-base-800 px-2 py-1 text-[13px] text-slate-300 disabled:opacity-40"
                         >
                           {Object.keys(ROLE_NOTE).map((r) => (
                             <option key={r} value={r}>
@@ -213,7 +213,7 @@ function OfficersTab() {
                       <td className="py-2.5 pr-3 text-slate-400">
                         {[o.unit, o.badge_number].filter(Boolean).join(" · ") || "—"}
                       </td>
-                      <td className="py-2.5 pr-3 font-mono text-[10px] text-slate-500">
+                      <td className="py-2.5 pr-3 font-mono text-xs text-slate-500">
                         {when(o.last_login_at)}
                       </td>
                       <td className="py-2.5 pr-3">
@@ -335,12 +335,12 @@ function CreateOfficer({
         <button
           type="submit"
           disabled={busy}
-          className="flex items-center gap-1.5 rounded-xl border border-accent/40 bg-accent/10 px-4 py-2 text-[11px] font-semibold text-accent hover:bg-accent/20 disabled:opacity-50"
+          className="flex items-center gap-1.5 rounded-xl border border-accent/40 bg-accent/10 px-4 py-2 text-[13px] font-semibold text-accent hover:bg-accent/20 disabled:opacity-50"
         >
           {busy && <Loader2 size={13} className="animate-spin" />}
           Create officer
         </button>
-        <p className="text-[10px] leading-relaxed text-slate-600">
+        <p className="text-xs leading-relaxed text-slate-600">
           The password you set here is temporary — the officer is forced to
           replace it before they can use anything, so you never know their
           working credential.
@@ -394,7 +394,7 @@ function ResetPassword({
   return (
     <form onSubmit={submit} className="flex items-center gap-1.5">
       <input
-        className="w-44 rounded-lg border border-white/[0.08] bg-white/[0.04] px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-accent/50"
+        className="w-44 rounded-lg border border-white/[0.08] bg-white/[0.04] px-2 py-1 text-[13px] text-slate-100 outline-none focus:border-accent/50"
         type="password"
         autoFocus
         required
@@ -406,7 +406,7 @@ function ResetPassword({
       <button
         type="submit"
         disabled={busy}
-        className="rounded-lg border border-accent/40 bg-accent/10 px-2 py-1 text-[10px] font-semibold text-accent disabled:opacity-50"
+        className="rounded-lg border border-accent/40 bg-accent/10 px-2 py-1 text-xs font-semibold text-accent disabled:opacity-50"
       >
         {busy ? "…" : "Set"}
       </button>
@@ -416,7 +416,7 @@ function ResetPassword({
           setOpen(false);
           setPw("");
         }}
-        className="rounded-lg border border-white/[0.08] px-2 py-1 text-[10px] text-slate-500"
+        className="rounded-lg border border-white/[0.08] px-2 py-1 text-xs text-slate-500"
       >
         Cancel
       </button>
@@ -468,7 +468,7 @@ function AuditTab() {
           right={
             <button
               onClick={() => void load()}
-              className="flex items-center gap-1.5 rounded-xl border border-white/[0.08] px-3 py-1.5 text-[11px] text-slate-400 hover:bg-white/[0.05]"
+              className="flex items-center gap-1.5 rounded-xl border border-white/[0.08] px-3 py-1.5 text-[13px] text-slate-400 hover:bg-white/[0.05]"
             >
               <RefreshCcw size={13} className={loading ? "animate-spin" : ""} />
               Refresh
@@ -516,7 +516,7 @@ function AuditTab() {
           <div className="max-h-[560px] overflow-auto">
             <table className="w-full min-w-[820px] text-left text-xs">
               <thead className="sticky top-0 bg-base-900/90 backdrop-blur">
-                <tr className="border-b border-white/[0.06] text-[10px] uppercase tracking-wider text-slate-500">
+                <tr className="border-b border-white/[0.06] text-xs uppercase tracking-wider text-slate-500">
                   <th className="py-2 pr-3">When</th>
                   <th className="py-2 pr-3">Action</th>
                   <th className="py-2 pr-3">Officer</th>
@@ -527,12 +527,12 @@ function AuditTab() {
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id} className="border-b border-white/[0.04] align-top">
-                    <td className="whitespace-nowrap py-2 pr-3 font-mono text-[10px] text-slate-500">
+                    <td className="whitespace-nowrap py-2 pr-3 font-mono text-xs text-slate-500">
                       {when(r.created_at)}
                     </td>
                     <td className="py-2 pr-3">
                       <span
-                        className={`rounded-md border px-1.5 py-0.5 font-mono text-[10px] ${
+                        className={`rounded-md border px-1.5 py-0.5 font-mono text-xs ${
                           r.action.includes("failed") || r.action.includes("refused")
                             ? "border-amber-500/25 bg-amber-500/10 text-amber-300"
                             : "border-white/10 bg-white/[0.04] text-slate-400"
@@ -544,13 +544,13 @@ function AuditTab() {
                     <td className="py-2 pr-3 text-slate-300">
                       {r.actor_username || <span className="text-slate-600">unauthenticated</span>}
                       {r.actor_role && (
-                        <span className="ml-1 text-[10px] text-slate-600">({r.actor_role})</span>
+                        <span className="ml-1 text-xs text-slate-600">({r.actor_role})</span>
                       )}
                     </td>
-                    <td className="py-2 pr-3 font-mono text-[10px] text-slate-500">
+                    <td className="py-2 pr-3 font-mono text-xs text-slate-500">
                       {r.ip || "—"}
                     </td>
-                    <td className="py-2 font-mono text-[10px] leading-relaxed text-slate-500">
+                    <td className="py-2 font-mono text-xs leading-relaxed text-slate-500">
                       {Object.keys(r.details || {}).length
                         ? JSON.stringify(r.details)
                         : r.target_id || "—"}
@@ -615,7 +615,7 @@ function PostureTab() {
           <Stat label="Total on record" value={data.accounts.total} />
         </div>
         {data.accounts.pending_password_change.length > 0 && (
-          <p className="mt-4 flex items-start gap-2 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-300">
+          <p className="mt-4 flex items-start gap-2 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[13px] text-amber-300">
             <Clock size={13} className="mt-px shrink-0" />
             <span>
               Password change outstanding:{" "}
@@ -625,7 +625,7 @@ function PostureTab() {
           </p>
         )}
         {data.accounts.locked_out.length > 0 && (
-          <p className="mt-2 flex items-start gap-2 rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-[11px] text-red-300">
+          <p className="mt-2 flex items-start gap-2 rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-[13px] text-red-300">
             <Lock size={13} className="mt-px shrink-0" />
             <span>
               Locked out after repeated failed sign-ins:{" "}
@@ -655,13 +655,13 @@ function PostureRow({ check }: { check: PostureCheck }) {
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold text-slate-200">{check.title}</span>
           {!check.ok && (
-            <span className="rounded-md border border-current px-1.5 py-px font-mono text-[9px] uppercase tracking-wider">
+            <span className="rounded-md border border-current px-1.5 py-px font-mono text-[13px] uppercase tracking-wider">
               {check.severity}
             </span>
           )}
         </div>
         <p
-          className={`mt-1 text-[11px] leading-relaxed ${
+          className={`mt-1 text-[13px] leading-relaxed ${
             check.ok ? "text-slate-500" : "opacity-90"
           }`}
         >
@@ -678,7 +678,7 @@ function Stat({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
       <div className="font-mono text-xl font-bold text-slate-100">{value}</div>
-      <div className="mt-0.5 text-[10px] uppercase tracking-wider text-slate-500">{label}</div>
+      <div className="mt-0.5 text-xs uppercase tracking-wider text-slate-500">{label}</div>
     </div>
   );
 }
@@ -690,7 +690,7 @@ function Pill({ tone, children }: { tone: "ok" | "warn" | "off"; children: React
     off: "border-white/10 bg-white/[0.04] text-slate-500",
   }[tone];
   return (
-    <span className={`rounded-md border px-1.5 py-0.5 text-[10px] ${cls}`}>{children}</span>
+    <span className={`rounded-md border px-1.5 py-0.5 text-xs ${cls}`}>{children}</span>
   );
 }
 
@@ -701,6 +701,6 @@ function Banner({ tone, children }: { tone: "error" | "ok"; children: React.Reac
       ? "border-red-500/30 bg-red-500/10 text-red-300"
       : "border-threat-neutral/30 bg-threat-neutral/10 text-threat-neutral";
   return (
-    <p className={`rounded-xl border px-3 py-2 text-[11px] ${cls}`}>{children}</p>
+    <p className={`rounded-xl border px-3 py-2 text-[13px] ${cls}`}>{children}</p>
   );
 }

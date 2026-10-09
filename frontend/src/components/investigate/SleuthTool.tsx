@@ -52,7 +52,7 @@ export default function SleuthTool() {
               </div>
               <Meter value={auth!.score} color={authColor} />
               <ul className="space-y-1">
-                {auth!.signals.map((s, i) => <li key={i} className="text-[11px] text-slate-500">· {s}</li>)}
+                {auth!.signals.map((s, i) => <li key={i} className="text-[13px] text-slate-500">· {s}</li>)}
               </ul>
             </GlassCard>
 
@@ -95,13 +95,13 @@ export default function SleuthTool() {
                       disabled={!p.id}
                       className="w-full rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-left transition-colors enabled:hover:border-accent/40 enabled:hover:bg-white/[0.05] disabled:cursor-default"
                     >
-                      <div className="flex items-center justify-between text-[11px]">
+                      <div className="flex items-center justify-between text-[13px]">
                         <span className="text-slate-500">{p.platform}</span>
                         <span style={{ color: sentimentColor(p.sentiment_label) }}>{p.sentiment_label} · {p.concern_score}</span>
                       </div>
                       <div className="mt-1 text-[13px] text-slate-300">{p.text}</div>
                       {p.id && (
-                        <span className="mt-1 block text-[10.5px] font-semibold text-accent">open full detail →</span>
+                        <span className="mt-1 block text-xs font-semibold text-accent">open full detail →</span>
                       )}
                     </button>
                   ))}

@@ -126,7 +126,7 @@ export default function NetworkPage() {
             >
               {p !== "All" && <PlatformIcon platform={p} size={15} />}
               <span>{p}</span>
-              <span className={`rounded-md px-1.5 py-0.2 font-mono text-[10px] font-bold ${active ? "bg-accent/25 text-accent" : "bg-white/[0.06] text-slate-400"}`}>
+              <span className={`rounded-md px-1.5 py-0.2 font-mono text-xs font-bold ${active ? "bg-accent/25 text-accent" : "bg-white/[0.06] text-slate-400"}`}>
                 {n}
               </span>
             </button>
@@ -138,9 +138,9 @@ export default function NetworkPage() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {stats.map(([label, value, sub]) => (
           <GlassCard key={label} className="p-3.5 border border-white/[0.08]">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</div>
+            <div className="text-xs font-bold uppercase tracking-wider text-slate-400">{label}</div>
             <div className="mt-1 font-mono text-2xl font-black text-slate-100">{value}</div>
-            <div className="mt-0.5 text-[11px] text-slate-500">{sub}</div>
+            <div className="mt-0.5 text-[13px] text-slate-500">{sub}</div>
           </GlassCard>
         ))}
       </div>
@@ -202,7 +202,7 @@ export default function NetworkPage() {
                     >
                       {v}
                     </div>
-                    <div className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400">{k}</div>
+                    <div className="text-[13px] font-bold uppercase tracking-wider text-slate-400">{k}</div>
                   </div>
                 ))}
               </div>
@@ -215,7 +215,7 @@ export default function NetworkPage() {
 
               {connections.length > 0 && (
                 <div className="mt-3.5">
-                  <div className="mb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-slate-400">
+                  <div className="mb-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">
                     Linked Graph Nodes ({connections.length})
                   </div>
                   <div className="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">
@@ -223,7 +223,7 @@ export default function NetworkPage() {
                       <button
                         key={c.id}
                         onClick={() => setSelected(c)}
-                        className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-0.5 font-mono text-[10.5px] text-slate-300 hover:border-accent/40 hover:bg-accent/10 hover:text-accent transition-all"
+                        className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-0.5 font-mono text-xs text-slate-300 hover:border-accent/40 hover:bg-accent/10 hover:text-accent transition-all"
                       >
                         @{c.id}
                       </button>
@@ -265,7 +265,7 @@ export default function NetworkPage() {
                     <span className="min-w-0 flex-1 truncate font-mono text-xs font-semibold text-slate-200">
                       @{n.id}
                     </span>
-                    {n.is_bot && <span className="font-mono text-[9.5px] font-bold text-threat-critical">BOT</span>}
+                    {n.is_bot && <span className="font-mono text-[13px] font-bold text-threat-critical">BOT</span>}
                     <span className="font-mono text-xs font-bold" style={{ color: concernColor(n.threat) }}>
                       {Math.round(n.threat)}
                     </span>
@@ -323,7 +323,7 @@ export default function NetworkPage() {
                     className="mt-2.5 block w-full rounded-xl border border-white/[0.06] bg-base-950/70 p-2.5 text-left text-xs italic text-slate-300 transition-colors hover:border-accent/40 hover:bg-white/[0.04]"
                   >
                     <span className="line-clamp-2">“{c.sample_text}”</span>
-                    <span className="mt-1 block not-italic text-[10.5px] font-semibold text-accent">
+                    <span className="mt-1 block not-italic text-xs font-semibold text-accent">
                       open this post →
                     </span>
                   </button>
@@ -334,12 +334,12 @@ export default function NetworkPage() {
                 )}
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {c.accounts.slice(0, 8).map((a) => (
-                    <span key={a} className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-0.5 font-mono text-[10.5px] text-slate-300">
+                    <span key={a} className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-0.5 font-mono text-xs text-slate-300">
                       @{a}
                     </span>
                   ))}
                   {c.accounts.length > 8 && (
-                    <span className="font-mono text-[10.5px] text-slate-500">+{c.accounts.length - 8} more</span>
+                    <span className="font-mono text-xs text-slate-500">+{c.accounts.length - 8} more</span>
                   )}
                 </div>
               </div>

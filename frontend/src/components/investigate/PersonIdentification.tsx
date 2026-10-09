@@ -100,7 +100,7 @@ function faceCropStyle(box: BoundingBox, mediaW: number, mediaH: number, preview
 function MiniStat({ icon: Icon, label, value }: { icon: typeof Cake; label: string; value: string }) {
   return (
     <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-2.5 py-1.5">
-      <div className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-slate-500"><Icon size={11} /> {label}</div>
+      <div className="flex items-center gap-1 text-xs uppercase tracking-wide text-slate-500"><Icon size={11} /> {label}</div>
       <div className="mt-0.5 text-[13px] font-medium leading-snug text-slate-200">{value}</div>
     </div>
   );
@@ -147,7 +147,7 @@ function ConfirmedCard({ identity, confidencePct, knownAs, box, mediaW, mediaH, 
             {identity.riskLevel && <Pill color={color}>{identity.riskLevel} risk</Pill>}
           </div>
           <div className="text-[12px] text-slate-500">{identity.occupation}</div>
-          <div className="text-[11px] text-slate-600">
+          <div className="text-[13px] text-slate-600">
             {confidencePct}% match confidence — confirmed against the suspect registry
             {knownAs && knownAs !== identity.name && (
               <> · reference gallery names this face <span className="text-slate-400">{knownAs}</span></>
@@ -168,7 +168,7 @@ function ConfirmedCard({ identity, confidencePct, knownAs, box, mediaW, mediaH, 
       </div>
 
       {(identity.caseRef || identity.aliases?.length || identity.lastSeen) && (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-slate-500">
           {identity.caseRef && <span>Case ref: <span className="font-mono text-slate-400">{identity.caseRef}</span></span>}
           {identity.aliases?.length ? <span>Aliases: <span className="text-slate-400">{identity.aliases.join(", ")}</span></span> : null}
           {identity.lastSeen && <span>Last seen: <span className="text-slate-400">{identity.lastSeen}</span></span>}
@@ -193,7 +193,7 @@ function KnownCard({ outcome, box, mediaW, mediaH, previewSrc }: {
             <Pill color={color}><BookUser size={11} /> Known person</Pill>
             <Pill color={CATEGORY_COLOR.no_record}><ShieldCheck size={11} /> No criminal record</Pill>
           </div>
-          <div className="text-[11px] text-slate-500">
+          <div className="text-[13px] text-slate-500">
             {outcome.confidencePct}% match against {outcome.referencePhotos} reference
             photo{outcome.referencePhotos === 1 ? "" : "s"} in the gallery
           </div>
@@ -225,7 +225,7 @@ function LeadCard({ outcome, box, mediaW, mediaH, previewSrc }: {
             <span className="truncate text-[14px] font-semibold text-slate-200">{outcome.name}</span>
             <Pill color={color}>possible lead</Pill>
           </div>
-          <div className="text-[11px] text-amber-400/90">{outcome.confidencePct}% resemblance — below the confirmation threshold</div>
+          <div className="text-[13px] text-amber-400/90">{outcome.confidencePct}% resemblance — below the confirmation threshold</div>
         </div>
       </div>
       <div className="rounded-lg border border-white/[0.06] bg-white/[0.015] px-3 py-2 text-[12px] leading-snug text-slate-400">
@@ -242,7 +242,7 @@ function UnresolvedCard({ outcome }: { outcome: Extract<FaceOutcome, { kind: "un
         <Avatar />
         <div className="min-w-0 flex-1 space-y-1.5">
           <div className="text-[14px] font-medium text-slate-400">Not identified</div>
-          <div className="text-[11px] text-slate-600">No confident match in the registry or the reference gallery</div>
+          <div className="text-[13px] text-slate-600">No confident match in the registry or the reference gallery</div>
         </div>
       </div>
       <div className="space-y-1.5 rounded-lg border border-white/[0.06] bg-white/[0.015] px-3 py-2 text-[12px] leading-snug text-slate-500">
@@ -278,7 +278,7 @@ export default function IdentifiedPersonsPanel({ outcomes, boxes, mediaW, mediaH
           {namedCount > 0 && `, ${namedCount} named`})
         </span>
       </div>
-      <p className="text-[11px] text-slate-600">
+      <p className="text-[13px] text-slate-600">
         Each detected face is searched twice by real biometric matching: against the suspect registry, and against the
         reference gallery of known people. A registry hit means this person is on record; a gallery hit only puts a name
         to the face. Anything below the confirmation threshold is reported exactly as the search found it, never as an

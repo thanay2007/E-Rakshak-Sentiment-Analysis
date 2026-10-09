@@ -1,0 +1,28 @@
+{
+  "sources": [
+    {
+      "id": "generated-milo-muffin",
+      "image_path": "images/milo-muffin.png",
+      "source": "AI-generated using the built-in image_gen tool",
+      "source_url": null,
+      "is_synthetic": true,
+      "prompt": "Use case: stylized-concept\nAsset type: standalone fictional directory profile portrait for testing image display\nPrimary request: a cheerful fictional adult man with curly dark hair, oversized round glasses and a bright yellow sweater, proudly holding a tiny muffin.\nStyle/medium: polished playful 3D cartoon illustration, unmistakably fictional, friendly humorous expression.\nComposition/framing: square head-and-shoulders portrait, one character, plain pastel studio backdrop, all hair and headwear within frame.\nConstraints: no real person resemblance, no police or prison imagery, no mugshot board, no identifying marks, no text, no watermark."
+    },
+    {
+      "id": "generated-tessa-teacup",
+      "image_path": "images/tessa-teacup.png",
+      "source": "AI-generated using the built-in image_gen tool",
+      "source_url": null,
+      "is_synthetic": true,
+      "prompt": "Use case: stylized-concept\nAsset type: standalone fictional directory profile portrait for testing image display\nPrimary request: a cheerful fictional adult woman with short purple hair, teal overalls, and a whimsical teacup-shaped brooch.\nStyle/medium: polished playful 3D cartoon illustration, unmistakably fictional, friendly humorous expression.\nComposition/framing: square head-and-shoulders portrait, one character, plain pastel studio backdrop, all hair and headwear within frame.\nConstraints: no real person resemblance, no police or prison imagery, no mugshot board, no identifying marks, no text, no watermark."
+    },
+    {
+      "id": "generated-otto-noodle",
+      "image_path": "images/otto-noodle.png",
+      "source": "AI-generated using the built-in image_gen tool",
+      "source_url": null,
+      "is_synthetic": true,
+      "prompt": "Use case: stylized-concept\nAsset type: standalone fictional directory profile portrait for testing image display\nPrimary request: a cheerful fictional older adult man with a curled silver moustache, orange bow tie, and a chef hat slightly too big.\nStyle/medium: polished playful 3D cartoon illustration, unmistakably fictional, friendly humorous expression.\nComposition/framing: square head-and-shoulders portrait, one character, plain pastel studio backdrop, all hair and headwear within frame.\nConstraints: no real person resemblance, no police or prison imagery, no mugshot board, no identifying marks, no text, no watermark."
+    }
+  ]
+}

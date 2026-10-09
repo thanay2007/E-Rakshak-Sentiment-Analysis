@@ -68,12 +68,12 @@ export default function Layout() {
           className="fixed left-1/2 top-4 z-50 flex -translate-x-1/2 items-center gap-3 rounded-xl border border-amber-500/40 bg-base-900/95 px-4 py-2.5 backdrop-blur-xl"
         >
           <Clock size={14} className="text-amber-400" />
-          <span className="text-[11px] text-amber-200">
+          <span className="text-[13px] text-amber-200">
             Signing out in {secondsLeft}s — this terminal has been idle.
           </span>
           <button
             onClick={staySignedIn}
-            className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-[10px] font-semibold text-amber-200 hover:bg-amber-500/20"
+            className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-200 hover:bg-amber-500/20"
           >
             I'm still here
           </button>

@@ -76,7 +76,7 @@ export default function GujaratMap({ regions }: { regions: Region[] }) {
           return (
             <g key={`la${la}`}>
               <line x1={0} y1={y} x2={W} y2={y} stroke="rgba(148,163,184,0.08)" strokeWidth="1" strokeDasharray="2 6" />
-              <text x={4} y={y - 3} fill="rgba(148,163,184,0.7)" fontSize="8" fontFamily="ui-monospace, monospace">
+              <text x={4} y={y - 3} fill="rgba(148,163,184,0.7)" fontSize="10" fontFamily="Inter, system-ui, sans-serif">
                 {la}°N
               </text>
             </g>
@@ -87,7 +87,7 @@ export default function GujaratMap({ regions }: { regions: Region[] }) {
           return (
             <g key={`lo${lo}`}>
               <line x1={x} y1={0} x2={x} y2={H} stroke="rgba(148,163,184,0.08)" strokeWidth="1" strokeDasharray="2 6" />
-              <text x={x + 3} y={H - 5} fill="rgba(148,163,184,0.7)" fontSize="8" fontFamily="ui-monospace, monospace">
+              <text x={x + 3} y={H - 5} fill="rgba(148,163,184,0.7)" fontSize="10" fontFamily="Inter, system-ui, sans-serif">
                 {lo}°E
               </text>
             </g>
@@ -157,7 +157,7 @@ export default function GujaratMap({ regions }: { regions: Region[] }) {
                   x={-(r.name.length * 3.6 + 20)} y={-10} width={r.name.length * 7.2 + 40} height={15}
                   rx={7.5} fill="rgba(10,15,30,0.92)" stroke={`${c}88`} strokeWidth="1"
                 />
-                <text textAnchor="middle" y={1.5} fill="#F1F5F9" fontSize="9" fontFamily="ui-monospace, monospace" fontWeight="600">
+                <text textAnchor="middle" y={1.5} fill="#F1F5F9" fontSize="11" fontFamily="Inter, system-ui, sans-serif" fontWeight="600">
                   {r.name} <tspan fill={c} fontWeight="800">· {r.avg_concern}</tspan>
                 </text>
               </g>
@@ -166,7 +166,7 @@ export default function GujaratMap({ regions }: { regions: Region[] }) {
         })}
 
         {/* console tag */}
-        <text x={W - 8} y={16} textAnchor="end" fill="rgba(94,234,212,0.8)" fontSize="8.5" fontFamily="ui-monospace, monospace" letterSpacing="2" fontWeight="600">
+        <text x={W - 8} y={16} textAnchor="end" fill="rgba(94,234,212,0.8)" fontSize="10.5" fontFamily="Inter, system-ui, sans-serif" letterSpacing="2" fontWeight="600">
           GEOINT · GUJARAT SECTOR
         </text>
       </svg>
@@ -184,7 +184,7 @@ export default function GujaratMap({ regions }: { regions: Region[] }) {
             </div>
             <div className="flex items-center gap-1.5">
               <span
-                className="rounded-md px-1.5 py-0.5 font-mono text-[9px] font-extrabold uppercase"
+                className="rounded-md px-1.5 py-0.5 font-mono text-[13px] font-extrabold uppercase"
                 style={{ backgroundColor: `${heat(active.avg_concern)}25`, color: heat(active.avg_concern) }}
               >
                 {heatLabel(active.avg_concern)}
@@ -207,12 +207,12 @@ export default function GujaratMap({ regions }: { regions: Region[] }) {
                 <div className="font-mono text-sm font-bold" style={{ color: isThreat ? heat(active.avg_concern) : "#F8FAFC" }}>
                   {value}
                 </div>
-                <div className="text-[8px] uppercase tracking-wider text-slate-400">{label}</div>
+                <div className="text-[10px] uppercase tracking-wider text-slate-400">{label}</div>
               </div>
             ))}
           </div>
 
-          <div className="mt-2.5 flex items-center justify-between border-t border-white/[0.06] pt-2 text-[10px]">
+          <div className="mt-2.5 flex items-center justify-between border-t border-white/[0.06] pt-2 text-xs">
             <span className="font-mono text-slate-400">
               {active.lat.toFixed(2)}°N {active.lon.toFixed(2)}°E
             </span>
@@ -227,7 +227,7 @@ export default function GujaratMap({ regions }: { regions: Region[] }) {
       )}
 
       {/* Map Legend */}
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-1.5 font-mono text-[10.5px] text-slate-400">
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-1.5 font-mono text-xs text-slate-400">
         <span>Click a district to pin its numbers</span>
         <div className="flex items-center gap-3">
           {[["Calm (<18)", "#10B981"], ["Elevated (18-29)", "#A855F7"], ["High (30-44)", "#F59E0B"], ["Critical (45+)", "#EF4444"]].map(([label, c]) => (

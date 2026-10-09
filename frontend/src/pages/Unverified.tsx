@@ -51,33 +51,33 @@ function Row({ it }: { it: EmergingItem }) {
           <span className="font-mono text-lg font-black leading-none" style={{ color }}>
             {Math.round(it.priority_score)}
           </span>
-          <span className="mt-0.5 text-[8.5px] uppercase tracking-wider text-slate-500">priority</span>
+          <span className="mt-0.5 text-[10px] uppercase tracking-wider text-slate-500">priority</span>
         </div>
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <PlatformIcon platform={it.platform} size={14} />
             <span className="font-mono text-[12px] font-semibold text-slate-200">@{it.author_handle}</span>
-            {it.author_verified && <span className="text-[10px] font-bold text-sky-400">✔</span>}
+            {it.author_verified && <span className="text-xs font-bold text-sky-400">✔</span>}
             <SentimentBadge label={it.sentiment_label} />
-            <span className="text-[11px] text-slate-500">
+            <span className="text-[13px] text-slate-500">
               {it.author_followers.toLocaleString()} followers
             </span>
-            {it.location && <span className="text-[11px] text-slate-500">· {it.location}</span>}
-            <span className="ml-auto text-[11px] text-slate-600">{timeAgo(it.created_at)}</span>
+            {it.location && <span className="text-[13px] text-slate-500">· {it.location}</span>}
+            <span className="ml-auto text-[13px] text-slate-600">{timeAgo(it.created_at)}</span>
           </div>
 
           <p className="mt-1.5 line-clamp-2 text-[13px] leading-snug text-slate-200">{it.text}</p>
 
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
             {it.reasons.map((r, i) => (
-              <span key={i} className="inline-flex items-start gap-1 text-[11px] text-amber-200/70">
+              <span key={i} className="inline-flex items-start gap-1 text-[13px] text-amber-200/70">
                 <span className="text-amber-400">▸</span>{r}
               </span>
             ))}
           </div>
 
-          <div className="mt-2 flex items-center gap-3 border-t border-white/[0.05] pt-2 text-[11px]">
+          <div className="mt-2 flex items-center gap-3 border-t border-white/[0.05] pt-2 text-[13px]">
             <span className="inline-flex items-center gap-1 font-mono text-slate-500">
               <Users size={11} /> {it.source_count} source
             </span>
@@ -189,7 +189,7 @@ export default function Unverified() {
           ["Posts scanned", data?.scanned ?? 0, "#64748B"],
         ].map(([label, n, color]) => (
           <GlassCard key={label as string} className="p-3.5">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</div>
+            <div className="text-xs font-bold uppercase tracking-wider text-slate-400">{label}</div>
             <div className="mt-1 font-mono text-2xl font-black" style={{ color: color as string }}>
               {(n as number).toLocaleString()}
             </div>
@@ -199,7 +199,7 @@ export default function Unverified() {
 
       <GlassCard className="p-3.5">
         <div className="flex flex-wrap items-center gap-2.5">
-          <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+          <span className="inline-flex items-center gap-1.5 text-[13px] font-bold uppercase tracking-wider text-slate-400">
             <Filter size={13} /> Filters
           </span>
 
@@ -223,7 +223,7 @@ export default function Unverified() {
             <option value="positive">Positive</option>
           </select>
 
-          <label className="flex items-center gap-2 text-[11px] text-slate-400">
+          <label className="flex items-center gap-2 text-[13px] text-slate-400">
             <TrendingUp size={12} /> min priority
             <input type="range" min={0} max={80} step={5} value={minPriority}
               onChange={(e) => setFilter("min_priority", Number(e.target.value))}
@@ -242,7 +242,7 @@ export default function Unverified() {
             </button>
           )}
 
-          <span className="ml-auto text-[11px] text-slate-500">
+          <span className="ml-auto text-[13px] text-slate-500">
             showing {data?.count ?? 0} of {total.toLocaleString()}
           </span>
         </div>
@@ -277,7 +277,7 @@ export default function Unverified() {
           {/* Why the queue is short. Without this, strict filtering is
               indistinguishable from a detector that silently stopped. */}
           {data && Boolean(data.dropped?.established || data.dropped?.low_concern) && (
-            <p className="px-1 pt-1 text-[11px] leading-relaxed text-slate-600">
+            <p className="px-1 pt-1 text-[13px] leading-relaxed text-slate-600">
               Of {data.scanned.toLocaleString()} posts scanned:{" "}
               {(data.dropped.established ?? 0).toLocaleString()} came from established channels
               (verified, 100k+ followers, or posting at news-desk volume — they corroborate claims
@@ -306,7 +306,7 @@ export default function Unverified() {
         </>
       )}
 
-      <p className="px-1 text-[11px] leading-relaxed text-slate-600">
+      <p className="px-1 text-[13px] leading-relaxed text-slate-600">
         “Unverified” means no second account in the window posted the same claim and no news index
         corroborated it — not that the claim is false. It is a queue to check, not a finding.
       </p>

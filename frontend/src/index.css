@@ -275,7 +275,7 @@ input[type="range"]::-moz-range-thumb {
 
 /* ── recharts theming ───────────────────────────────────────────────── */
 .recharts-cartesian-grid line { stroke: rgba(var(--color-white), 0.05); }
-.recharts-text { fill: rgb(var(--color-slate-500)); font-size: 11px; font-family: "JetBrains Mono", monospace; }
+.recharts-text { fill: rgb(var(--color-slate-500)); font-size: 12px; font-family: "Inter", system-ui, sans-serif; }
 .recharts-default-tooltip { border-radius: 12px !important; }
 .recharts-tooltip-item, .recharts-tooltip-label, .recharts-tooltip-item * { color: rgb(var(--color-slate-200)) !important; }
 

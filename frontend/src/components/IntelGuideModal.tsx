@@ -56,7 +56,7 @@ export default function IntelGuideModal({ open, onClose }: Props) {
               </span>
               <div>
                 <h2 className="text-base font-bold tracking-wide text-slate-100">
-                  E-RAKSHAK · User Guide
+                  SENTINEL · User Guide
                 </h2>
                 <p className="text-xs text-slate-400">
                   How to review posts, understand scores, and use investigation tools
@@ -102,8 +102,8 @@ export default function IntelGuideModal({ open, onClose }: Props) {
             {tab === "overview" && (
               <div className="space-y-6">
                 <div className="rounded-xl border border-accent/20 bg-accent/[0.06] p-4 text-xs leading-relaxed text-slate-200">
-                  <div className="font-bold text-accent">What is E-Rakshak?</div>
-                  E-Rakshak helps police review public social media posts on X, Reddit, Facebook, Instagram, Telegram, and YouTube. It shows the tone of posts, concern scores, and signs of accounts posting together. It supports Gujarati, Hindi, English, Hinglish, and Gujlish. Officers must check the evidence before taking action.
+                  <div className="font-bold text-accent">What is Sentinel?</div>
+                  Sentinel helps police review public social media posts on X, Reddit, Facebook, Instagram, Telegram, and YouTube. It shows the tone of posts, concern scores, and signs of accounts posting together. It supports Gujarati, Hindi, English, Hinglish, and Gujlish. Officers must check the evidence before taking action.
                 </div>
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -171,7 +171,7 @@ export default function IntelGuideModal({ open, onClose }: Props) {
                     ].map((x) => (
                       <div key={x.t} className={`rounded-xl border border-${x.c}-500/30 bg-${x.c}-500/10 p-3`}>
                         <div className={`font-bold text-${x.c}-300`}>{x.t}</div>
-                        <p className="mt-1 text-[11px] leading-relaxed text-slate-300">{x.d}</p>
+                        <p className="mt-1 text-[13px] leading-relaxed text-slate-300">{x.d}</p>
                       </div>
                     ))}
                   </div>
@@ -195,7 +195,7 @@ export default function IntelGuideModal({ open, onClose }: Props) {
                       <div key={b.t} className={`rounded-xl border border-${b.c}-500/30 bg-${b.c}-500/10 p-3`}>
                         <div className="flex items-center justify-between">
                           <span className={`font-bold text-${b.c}-300`}>{b.t}</span>
-                          <span className={`rounded-md border border-${b.c}-500/40 bg-${b.c}-500/20 px-2 py-0.5 font-mono text-[11px] font-bold text-${b.c}-200`}>
+                          <span className={`rounded-md border border-${b.c}-500/40 bg-${b.c}-500/20 px-2 py-0.5 font-mono text-[13px] font-bold text-${b.c}-200`}>
                             {b.r}
                           </span>
                         </div>
@@ -251,7 +251,7 @@ export default function IntelGuideModal({ open, onClose }: Props) {
             {tab === "nlp" && (
               <div className="space-y-4">
                 <p className="text-xs text-slate-400">
-                  E-Rakshak checks posts in local languages, including Hindi and Gujarati written in English letters:
+                  Sentinel checks posts in local languages, including Hindi and Gujarati written in English letters:
                 </p>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -316,11 +316,11 @@ export default function IntelGuideModal({ open, onClose }: Props) {
                   <div className="mt-3 space-y-2">
                     <div className="flex items-center justify-between border-b border-white/[0.05] pb-2">
                       <span className="text-slate-300">Search Posts & Apply Filters</span>
-                      <kbd className="rounded border border-white/20 bg-base-800 px-2 py-0.5 font-mono text-[11px] text-accent">/</kbd>
+                      <kbd className="rounded border border-white/20 bg-base-800 px-2 py-0.5 font-mono text-[13px] text-accent">/</kbd>
                     </div>
                     <div className="flex items-center justify-between border-b border-white/[0.05] pb-2">
                       <span className="text-slate-300">Close Pop-Up Windows</span>
-                      <kbd className="rounded border border-white/20 bg-base-800 px-2 py-0.5 font-mono text-[11px] text-slate-300">Esc</kbd>
+                      <kbd className="rounded border border-white/20 bg-base-800 px-2 py-0.5 font-mono text-[13px] text-slate-300">Esc</kbd>
                     </div>
                     <div className="flex items-center justify-between border-b border-white/[0.05] pb-2">
                       <span className="text-slate-300">Open Voice Assistant</span>
@@ -338,8 +338,8 @@ export default function IntelGuideModal({ open, onClose }: Props) {
 
           {/* Footer */}
           <div className="flex items-center justify-between border-t border-white/[0.08] bg-base-950/60 px-6 py-3.5">
-            <span className="font-mono text-[11px] text-slate-400">
-              E-RAKSHAK SOCIAL MEDIA MONITORING · CONFIDENTIAL
+            <span className="font-mono text-[13px] text-slate-400">
+              SENTINEL SOCIAL MEDIA MONITORING · CONFIDENTIAL
             </span>
             <button
               onClick={onClose}

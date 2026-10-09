@@ -44,17 +44,17 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span
-              className="text-[10px] font-bold uppercase tracking-widest"
+              className="text-xs font-bold uppercase tracking-widest"
               style={{ color }}
             >
               {toast.severity} alert
             </span>
-            <span className="font-mono text-[10px] text-slate-500">
+            <span className="font-mono text-xs text-slate-500">
               score {Math.round(toast.concern_score)}
             </span>
           </div>
           <p className="mt-0.5 truncate text-[12.5px] font-semibold text-slate-200">{toast.title}</p>
-          <p className="mt-0.5 line-clamp-2 text-[11px] text-slate-400">{toast.summary}</p>
+          <p className="mt-0.5 line-clamp-2 text-[13px] text-slate-400">{toast.summary}</p>
         </div>
         <button
           onClick={(e) => {

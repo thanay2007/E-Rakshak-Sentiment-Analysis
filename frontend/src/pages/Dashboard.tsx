@@ -46,7 +46,7 @@ const TOOLTIP_STYLE = {
   border: "1px solid rgba(255, 255, 255, 0.18)",
   borderRadius: 14,
   fontSize: 12,
-  fontFamily: "'JetBrains Mono', monospace",
+  fontFamily: "'Inter', system-ui, sans-serif",
   color: "#F8FAFC",
   padding: "10px 14px",
   boxShadow: "0 15px 35px -5px rgba(0, 0, 0, 0.7)",
@@ -142,7 +142,7 @@ export default function Dashboard() {
             <h1 className="text-sm font-black tracking-wide text-white uppercase sm:text-base">
               State Cyber Monitoring Dashboard
             </h1>
-            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
+            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-xs font-bold text-emerald-400">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> LIVE UPDATES
             </span>
           </div>
@@ -258,7 +258,7 @@ export default function Dashboard() {
                   Live Social Media Posts
                 </h2>
               </div>
-              <p className="text-[11px] text-slate-400 mt-0.5">
+              <p className="text-[13px] text-slate-400 mt-0.5">
                 Latest posts from social media, with tone and concern scores
               </p>
             </div>
@@ -285,7 +285,7 @@ export default function Dashboard() {
                   >
                     <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />
                     <span>{label}</span>
-                    <span className={`font-mono text-[10px] ${isSelected ? "text-accent font-bold" : "text-slate-500"}`}>
+                    <span className={`font-mono text-xs ${isSelected ? "text-accent font-bold" : "text-slate-500"}`}>
                       {count}
                     </span>
                   </button>
@@ -353,7 +353,7 @@ export default function Dashboard() {
                     <span className="font-mono text-base font-black text-white leading-none">
                       {totalDist.toLocaleString()}
                     </span>
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mt-0.5">
+                    <span className="text-[13px] font-bold uppercase tracking-wider text-slate-400 mt-0.5">
                       Posts
                     </span>
                   </div>
@@ -375,12 +375,12 @@ export default function Dashboard() {
                             className="h-2 w-2 rounded-full shrink-0 shadow-sm"
                             style={{ backgroundColor: sentimentColor(d.name) }}
                           />
-                          <span className="truncate font-semibold text-slate-200 group-hover:text-white text-[11px]">
+                          <span className="truncate font-semibold text-slate-200 group-hover:text-white text-[13px]">
                             {SENTIMENT_TEXT[d.name] ?? d.name}
                           </span>
                         </div>
                         <span
-                          className="rounded px-1.5 py-0.5 font-mono text-[10px] font-black shrink-0"
+                          className="rounded px-1.5 py-0.5 font-mono text-xs font-black shrink-0"
                           style={{
                             backgroundColor: `${sentimentColor(d.name)}22`,
                             color: sentimentColor(d.name),
@@ -415,22 +415,22 @@ export default function Dashboard() {
                     title="Click to search posts containing this hashtag"
                   >
                     <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <span className="font-mono text-[10px] text-slate-500 font-bold">#{i + 1}</span>
+                      <span className="font-mono text-xs text-slate-500 font-bold">#{i + 1}</span>
                       <span className="truncate font-bold text-accent hover:underline text-[11.5px]">
                         #{h.term}
                       </span>
                     </div>
                     <Sparkline data={h.series} color={h.spiking ? "#EF4444" : ACCENT} width={50} height={16} />
                     <div className="flex items-center gap-1.5 shrink-0">
-                      <span className="font-mono text-[10.5px] text-slate-300">
+                      <span className="font-mono text-xs text-slate-300">
                         {h.count.toLocaleString()}
                       </span>
                       {h.spiking ? (
-                        <span className="inline-flex items-center gap-0.5 rounded border border-threat-critical/40 bg-threat-critical/20 px-1 py-0.2 font-mono text-[9.5px] font-black text-threat-critical">
+                        <span className="inline-flex items-center gap-0.5 rounded border border-threat-critical/40 bg-threat-critical/20 px-1 py-0.2 font-mono text-[13px] font-black text-threat-critical">
                           <TrendIcon size={9} /> {h.spike_z}σ
                         </span>
                       ) : (
-                        <span className={`font-mono text-[9.5px] font-bold ${h.change_pct >= 0 ? "text-emerald-400" : "text-slate-400"}`}>
+                        <span className={`font-mono text-[13px] font-bold ${h.change_pct >= 0 ? "text-emerald-400" : "text-slate-400"}`}>
                           {h.change_pct >= 0 ? "+" : ""}{h.change_pct}%
                         </span>
                       )}
@@ -525,7 +525,7 @@ export default function Dashboard() {
               <span className="text-xs font-bold uppercase tracking-wide text-white">
                 Posts Collected by Platform
               </span>
-              <div className="flex items-center gap-2.5 text-[10px]">
+              <div className="flex items-center gap-2.5 text-xs">
                 <span className="inline-flex items-center gap-1 font-semibold text-slate-300">
                   <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: ACCENT }} /> Posts
                 </span>
@@ -586,7 +586,7 @@ export default function Dashboard() {
                   <span className="font-mono text-sm font-black text-emerald-400">
                     {stats.accuracy.overall}%
                   </span>
-                  <span className="inline-flex items-center gap-0.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.2 text-[9px] font-bold text-emerald-300">
+                  <span className="inline-flex items-center gap-0.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.2 text-[13px] font-bold text-emerald-300">
                     <CheckCircle2 size={9} /> VALIDATED
                   </span>
                 </div>
@@ -594,7 +594,7 @@ export default function Dashboard() {
 
               <div className="space-y-1.5 pt-1">
                 {Object.entries(stats.accuracy.per_class).map(([label, pct]) => (
-                  <div key={label} className="flex items-center gap-2 text-[11px]">
+                  <div key={label} className="flex items-center gap-2 text-[13px]">
                     <span className="w-24 truncate font-medium text-slate-300">{SENTIMENT_TEXT[label] ?? label}</span>
                     <div className="h-1.5 flex-1 rounded-full bg-white/[0.08]">
                       <div
@@ -602,7 +602,7 @@ export default function Dashboard() {
                         style={{ width: `${pct}%`, backgroundColor: sentimentColor(label) }}
                       />
                     </div>
-                    <span className="w-8 text-right font-mono text-[10px] font-bold text-slate-200">
+                    <span className="w-8 text-right font-mono text-xs font-bold text-slate-200">
                       {pct}%
                     </span>
                   </div>

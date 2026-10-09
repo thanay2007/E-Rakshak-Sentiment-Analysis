@@ -118,7 +118,7 @@ export default function Sidebar({
           }`}
         >
           <div className="font-mono text-sm font-black tracking-[0.18em] text-white flex items-center gap-1.5 whitespace-nowrap">
-            <span>E-RAKSHAK</span>
+            <span>SENTINEL</span>
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400 animate-pulse" />
           </div>
         </div>
@@ -139,7 +139,7 @@ export default function Sidebar({
                     : "max-h-6 opacity-100 px-3 pb-1 translate-x-0"
                 }`}
               >
-                <div className="text-[10px] font-extrabold uppercase tracking-widest text-slate-500 whitespace-nowrap">
+                <div className="text-xs font-extrabold uppercase tracking-widest text-slate-500 whitespace-nowrap">
                   {group.name}
                 </div>
               </div>
@@ -167,7 +167,7 @@ export default function Sidebar({
                   >
                     <span className="truncate">{label}</span>
                     {badge && (
-                      <span className={`ml-2 rounded-md border px-1.5 py-0.2 font-mono text-[9px] font-black uppercase shrink-0 ${badgeColor ?? "bg-accent/20 text-accent border-accent/40"}`}>
+                      <span className={`ml-2 rounded-md border px-1.5 py-0.2 font-mono text-[13px] font-black uppercase shrink-0 ${badgeColor ?? "bg-accent/20 text-accent border-accent/40"}`}>
                         {badge}
                       </span>
                     )}

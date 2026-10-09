@@ -39,7 +39,7 @@ function TermRow({ t }: { t: TermStat }) {
       <div className="flex items-center gap-2 shrink-0">
         <span className="font-mono text-xs font-bold text-slate-300">{t.count} posts</span>
         {t.spiking ? (
-          <span className="inline-flex animate-pulse items-center gap-1 rounded-md border border-threat-critical/40 bg-threat-critical/20 px-2 py-0.5 font-mono text-[10px] font-black text-threat-critical">
+          <span className="inline-flex animate-pulse items-center gap-1 rounded-md border border-threat-critical/40 bg-threat-critical/20 px-2 py-0.5 font-mono text-xs font-black text-threat-critical">
             <Flame size={10} /> SPIKE {t.spike_z}σ
           </span>
         ) : (
@@ -153,9 +153,9 @@ export default function Trends() {
                     <div className="text-xs font-bold text-slate-100">{r.name}</div>
                     <div className="mt-1 font-mono text-xl font-black" style={{ color: heat(r.avg_concern) }}>
                       {r.avg_concern}
-                      <span className="ml-1 text-[10px] font-normal text-slate-400">/100</span>
+                      <span className="ml-1 text-xs font-normal text-slate-400">/100</span>
                     </div>
-                    <div className="mt-0.5 font-mono text-[10.5px] text-slate-400">
+                    <div className="mt-0.5 font-mono text-xs text-slate-400">
                       {r.count} posts · {r.threats} threats
                     </div>
                     <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
@@ -194,7 +194,7 @@ export default function Trends() {
                   </div>
                 </div>
               ))}
-              <div className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-2.5 text-[11px] leading-relaxed text-slate-400">
+              <div className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-2.5 text-[13px] leading-relaxed text-slate-400">
                 <strong className="text-accent">Multilingual AI:</strong> The system checks mixed-language posts, such as Hindi or Gujarati written in English letters, when calculating concern scores.
               </div>
             </div>

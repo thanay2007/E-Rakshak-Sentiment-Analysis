@@ -16,7 +16,7 @@ function SentimentBar({ b }: { b: CommentReport["sentiment_breakdown"] }) {
           <div key={s.k} style={{ width: `${s.v}%`, backgroundColor: SENT_COLORS[s.k] }} title={`${s.k} ${s.v}%`} />
         ))}
       </div>
-      <div className="mt-1.5 flex justify-between text-[11px]">
+      <div className="mt-1.5 flex justify-between text-[13px]">
         {segs.map((s) => <span key={s.k} style={{ color: SENT_COLORS[s.k] }}>{s.k} {s.v}%</span>)}
       </div>
     </div>
@@ -57,9 +57,9 @@ export default function CommentsTool() {
         <>
           {data.post && (
             <GlassCard className="p-4">
-              <div className="text-[11px] uppercase tracking-wide text-slate-500">{data.post.platform} · @{data.post.author_handle} · {data.post.sentiment_label}</div>
+              <div className="text-[13px] uppercase tracking-wide text-slate-500">{data.post.platform} · @{data.post.author_handle} · {data.post.sentiment_label}</div>
               <div className="mt-1 text-sm text-slate-200">{data.post.text}</div>
-              {data.synthetic && <div className="mt-2 text-[11px] text-slate-600">Comment thread reconstructed for demo (live deployments read comments from the platform API).</div>}
+              {data.synthetic && <div className="mt-2 text-[13px] text-slate-600">Comment thread reconstructed for demo (live deployments read comments from the platform API).</div>}
             </GlassCard>
           )}
 
@@ -73,9 +73,9 @@ export default function CommentsTool() {
             <GlassCard className="space-y-3 p-4">
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-200"><Bot size={15} className="text-accent" /> Automation signals</div>
               <div className="grid grid-cols-3 gap-2 text-center">
-                <div><div className="font-mono text-xl font-semibold text-red-400">{ba!.likely_bots}</div><div className="text-[10px] uppercase text-slate-500">likely bots</div></div>
-                <div><div className="font-mono text-xl font-semibold text-amber-400">{ba!.suspicious}</div><div className="text-[10px] uppercase text-slate-500">suspicious</div></div>
-                <div><div className="font-mono text-xl font-semibold text-slate-200">{ba!.suspected_pct}%</div><div className="text-[10px] uppercase text-slate-500">suspected</div></div>
+                <div><div className="font-mono text-xl font-semibold text-red-400">{ba!.likely_bots}</div><div className="text-xs uppercase text-slate-500">likely bots</div></div>
+                <div><div className="font-mono text-xl font-semibold text-amber-400">{ba!.suspicious}</div><div className="text-xs uppercase text-slate-500">suspicious</div></div>
+                <div><div className="font-mono text-xl font-semibold text-slate-200">{ba!.suspected_pct}%</div><div className="text-xs uppercase text-slate-500">suspected</div></div>
               </div>
               {ba!.coordinated && <Pill color="#EF4444">⚠ Coordinated comment activity detected</Pill>}
             </GlassCard>
@@ -98,13 +98,13 @@ export default function CommentsTool() {
                     <div className="flex items-center justify-between gap-2">
                       <span className="truncate font-mono text-[12px] text-slate-400">@{c.author_handle}</span>
                       <div className="flex shrink-0 items-center gap-1.5">
-                        <span className="text-[11px]" style={{ color: SENT_COLORS[c.sentiment_label] }}>{c.sentiment_label}</span>
-                        <span className="rounded-full border px-1.5 py-0.5 text-[10px] font-mono" style={{ color, borderColor: `${color}55`, backgroundColor: `${color}14` }}>bot {c.bot_score}</span>
+                        <span className="text-[13px]" style={{ color: SENT_COLORS[c.sentiment_label] }}>{c.sentiment_label}</span>
+                        <span className="rounded-full border px-1.5 py-0.5 text-xs font-mono" style={{ color, borderColor: `${color}55`, backgroundColor: `${color}14` }}>bot {c.bot_score}</span>
                       </div>
                     </div>
                     <div className="mt-1 text-[13px] text-slate-300">{c.text}</div>
                     {c.bot_verdict !== "authentic" && c.bot_signals[0] && (
-                      <div className="mt-1 text-[11px] text-slate-600">{c.bot_signals.slice(0, 2).join(" · ")}</div>
+                      <div className="mt-1 text-[13px] text-slate-600">{c.bot_signals.slice(0, 2).join(" · ")}</div>
                     )}
                   </div>
                 );

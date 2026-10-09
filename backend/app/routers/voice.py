@@ -112,10 +112,8 @@ async def voice_channel(ws: WebSocket) -> None:
         return
 
     if len(_sessions) >= settings.VOICE_MAX_CONCURRENT_SESSIONS:
-        await ws.send_json({"type": "error",
-                            "message": "Too many voice sessions are open on "
-                                       "this server. Try again shortly."})
-        await ws.close(code=status.WS_1013_TRY_AGAIN_LATER)
+        await _refuse(ws, "Too many voice sessions are open on this server. "
+                          "Try again shortly.", status.WS_1013_TRY_AGAIN_LATER)
         return
 
     # The database session lives for the whole call: the assistant queries
@@ -211,11 +209,9 @@ async def voice_channel(ws: WebSocket) -> None:
         if session is None and settings.VOICE_REALTIME_REQUIRED:
             log.error("voice session refused for %s: realtime required but "
                       "unavailable (%s)", user.username, failure)
-            await ws.send_json({
-                "type": "error",
-                "message": ("The realtime voice engine could not start and the "
-                            "fallback is switched off. " + failure)})
-            await ws.close(code=status.WS_1011_INTERNAL_ERROR)
+            await _refuse(ws, "The realtime voice engine could not start and "
+                              "the fallback is switched off. " + failure,
+                          status.WS_1011_INTERNAL_ERROR)
             return
 
         if session is None:
@@ -236,6 +232,20 @@ async def voice_channel(ws: WebSocket) -> None:
         finally:
             _sessions.pop(id(ws), None)
             await session.close("disconnected")
+
+
+async def _refuse(ws: WebSocket, message: str, code: int) -> None:
+    """Tell the client why the session is not starting, then close.
+
+    The browser may already be gone by now: a realtime handshake that times out
+    takes long enough that the client has usually given up and hung up. Sending
+    to a closed socket raises, and that is not an error worth a traceback.
+    """
+    try:
+        await ws.send_json({"type": "error", "message": message})
+        await ws.close(code=code)
+    except (WebSocketDisconnect, RuntimeError):
+        pass
 
 
 async def _talk(ws: WebSocket, session: VoiceSession) -> None:

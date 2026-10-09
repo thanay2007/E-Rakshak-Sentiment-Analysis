@@ -30,9 +30,9 @@ export function SentimentBadge({
   const color = sentimentColor(tag);
   const Icon = SENTIMENT_ICON[tag];
   const sizeClasses =
-    size === "sm" ? "px-2 py-0.5 text-[10px]"
+    size === "sm" ? "px-2 py-0.5 text-xs"
       : size === "lg" ? "px-3 py-1 text-xs"
-        : "px-2.5 py-0.5 text-[11px]";
+        : "px-2.5 py-0.5 text-[13px]";
 
   return (
     <span
@@ -46,7 +46,7 @@ export function SentimentBadge({
       <span>{SENTIMENT_TEXT[tag]}</span>
       {score !== undefined && (
         <span
-          className="rounded px-1 font-mono text-[10px] font-bold"
+          className="rounded px-1 font-mono text-xs font-bold"
           style={{ backgroundColor: `${concernColor(score)}28`, color: concernColor(score) }}
         >
           {Math.round(score)}
@@ -62,7 +62,7 @@ export function ConcernChip({ score, size = "md" }: { score: number; size?: "sm"
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full border font-mono font-bold tracking-wide ${
-        size === "sm" ? "px-1.5 py-0.5 text-[10px]" : "px-2 py-0.5 text-[11px]"
+        size === "sm" ? "px-1.5 py-0.5 text-xs" : "px-2 py-0.5 text-[13px]"
       }`}
       style={{ color, borderColor: `${color}55`, backgroundColor: `${color}15` }}
       title={`Concern score ${Math.round(score)}/100 — ${concernBand(score)}`}
@@ -76,13 +76,13 @@ export function ConcernChip({ score, size = "md" }: { score: number; size?: "sm"
 export function LanguageChip({ language, mixed }: { language: string; mixed?: boolean }) {
   return (
     <span
-      className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[11px] font-medium text-slate-300"
+      className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[13px] font-medium text-slate-300"
       title={mixed ? `${language} (Mixed Hindi/English or Gujarati/English)` : language}
     >
       <Languages size={11} className="text-slate-400" />
       {language}
       {mixed && (
-        <span className="rounded bg-accent/20 px-1 py-px font-mono text-[9px] font-bold text-accent">
+        <span className="rounded bg-accent/20 px-1 py-px font-mono text-[13px] font-bold text-accent">
           MIXED
         </span>
       )}
@@ -94,7 +94,7 @@ export function SeverityChip({ severity }: { severity: string }) {
   const color = SEVERITY_COLORS[severity] ?? "#64748B";
   return (
     <span
-      className="inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider shadow-sm"
+      className="inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider shadow-sm"
       style={{ color, borderColor: `${color}60`, backgroundColor: `${color}18` }}
     >
       <ShieldAlert size={11} />
@@ -105,7 +105,7 @@ export function SeverityChip({ severity }: { severity: string }) {
 
 export function BotChip() {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-threat-critical/50 bg-threat-critical/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-threat-critical shadow-sm">
+    <span className="inline-flex items-center gap-1 rounded-full border border-threat-critical/50 bg-threat-critical/15 px-2 py-0.5 text-xs font-bold uppercase tracking-wider text-threat-critical shadow-sm">
       <Bot size={11} /> bot-like
     </span>
   );

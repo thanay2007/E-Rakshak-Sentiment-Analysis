@@ -20,9 +20,10 @@ from sqlmodel import select
 from app.database import init_db, session_scope
 from app.models import WatchlistItem
 from app.routers import (
-    admin, alerts, assistant, auth, faces, feed, investigate, media, network,
+    admin, alerts, assistant, auth, demo_directory, faces, feed, investigate, media, network,
     reports, stats, trends, voice, watchlist, ws,
 )
+from app.data.directory_seed import seed_demo_directory
 from app.data.suspect_seed import seed_suspects_if_empty
 from app.security.bootstrap import ensure_admin_exists
 from app.security.deps import password_not_expired, require_admin
@@ -91,6 +92,8 @@ def _seed_watchlist() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    with session_scope() as session:
+        seed_demo_directory(session)
     # After init_db, because these are views over tables Alembic owns. They are
     # the assistant's read-only window — see services/assistant/sandbox.py for
     # why the projection is part of the security boundary rather than a
@@ -214,6 +217,7 @@ app.include_router(alerts.router, prefix="/api", tags=["alerts"], dependencies=_
 app.include_router(reports.router, prefix="/api", tags=["reports"], dependencies=_PROTECTED)
 app.include_router(watchlist.router, prefix="/api", tags=["watchlist"], dependencies=_PROTECTED)
 app.include_router(investigate.router, prefix="/api", tags=["investigate"], dependencies=_PROTECTED)
+app.include_router(demo_directory.router, prefix="/api", tags=["demo-directory"], dependencies=_PROTECTED)
 app.include_router(faces.router, prefix="/api", tags=["faces"], dependencies=_PROTECTED)
 # Post media, fetched server-side so the browser never talks to a platform CDN
 # (and the CDN never learns which post an officer opened) — see routers/media.py.

@@ -285,11 +285,11 @@ export default function Sentinel() {
       >
         {pending ? (
           <>
-            <div className="text-[10px] font-bold uppercase tracking-widest text-accent">
+            <div className="text-xs font-bold uppercase tracking-widest text-accent">
               Confirm this change?
             </div>
             <p className="mt-1 leading-relaxed">{pending.summary}</p>
-            <p className="mt-1 text-[10.5px] text-slate-500">
+            <p className="mt-1 text-xs text-slate-500">
               Say yes / haan / હા, or use the buttons. Nothing has changed yet.
             </p>
             <div className="mt-2 flex gap-2">

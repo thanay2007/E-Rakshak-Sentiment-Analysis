@@ -85,8 +85,8 @@ export default function Login() {
               <Logo size={28} />
             </div>
             <div>
-              <h1 className="text-base font-black tracking-wide text-white">E-RAKSHAK · AUTH</h1>
-              <p className="text-[11px] font-semibold text-accent uppercase">State Cyber Monitoring</p>
+              <h1 className="text-base font-black tracking-wide text-white">SENTINEL · AUTH</h1>
+              <p className="text-[13px] font-semibold text-accent uppercase">State Cyber Monitoring</p>
             </div>
           </div>
           <button
@@ -199,7 +199,7 @@ export default function Login() {
           </form>
         )}
 
-        <div className="mt-6 border-t border-white/[0.08] pt-4 text-center text-[10.5px] leading-relaxed text-slate-500">
+        <div className="mt-6 border-t border-white/[0.08] pt-4 text-center text-xs leading-relaxed text-slate-500">
           State of Gujarat Cyber Security Cell · All terminal sessions are auditable for chain-of-custody.
         </div>
       </motion.div>

@@ -13,7 +13,7 @@ import type { ReactNode } from "react";
 
 import { setUnauthorizedHandler } from "../services/api";
 import {
-  atLeast, clearSession, getUser, login as doLogin, logout as doLogout,
+  atLeast, clearSession, getToken, getUser, login as doLogin, logout as doLogout,
   onAuthChange,
 } from "../services/auth";
 import type { CurrentUser } from "../services/auth";
@@ -42,6 +42,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
+      // No token held means we already signed out on purpose: this 401 is a
+      // request that was in flight when the server revoked the token, not a
+      // session that ended on the officer unexpectedly.
+      if (!getToken()) return;
       clearSession();
       liveSocket.stop();
       setReason("Your session ended. Please sign in again.");
@@ -57,8 +61,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     liveSocket.stop();
-    await doLogout();
     setReason(null);
+    await doLogout();
   }, []);
 
   const can = useCallback(

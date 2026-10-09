@@ -37,7 +37,7 @@ function AlertRow({ alert, onAction, onOpenPost }: {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
           <SeverityChip severity={alert.severity} />
-          <span className={`rounded-md border px-2 py-0.5 font-mono text-[9.5px] font-extrabold tracking-wider ${STATUS_META[alert.status].cls}`}>
+          <span className={`rounded-md border px-2 py-0.5 font-mono text-[13px] font-extrabold tracking-wider ${STATUS_META[alert.status].cls}`}>
             {STATUS_META[alert.status].label}
           </span>
           <span className="truncate text-sm font-bold text-slate-100">{alert.title}</span>
@@ -80,7 +80,7 @@ function AlertRow({ alert, onAction, onOpenPost }: {
 
           {esc?.recommended_actions && (
             <div>
-              <div className="mb-1.5 flex items-center gap-1 text-[10.5px] font-bold uppercase tracking-widest text-slate-400">
+              <div className="mb-1.5 flex items-center gap-1 text-xs font-bold uppercase tracking-widest text-slate-400">
                 <AlertOctagon size={12} className="text-threat-inflammatory" />
                 <span>Automatic Action Report ({esc.priority})</span>
               </div>
