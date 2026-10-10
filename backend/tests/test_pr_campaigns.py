@@ -56,6 +56,7 @@ class FakePost:
         self.hashtags = []
         self.location = location
         self.is_amplified = amplified
+        self.url = f"https://x.com/{handle}/status/{abs(hash(text)) % 10**9}"
         self.created_at = now - timedelta(minutes=minutes_ago)
 
 

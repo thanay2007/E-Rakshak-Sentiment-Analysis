@@ -169,7 +169,14 @@ $backendReqs = @("backend\requirements.txt", "backend\requirements-ml.txt",
 if (-not $SkipInstall) {
     $want = Get-FilesHash $backendReqs
     if ($want -ne (Read-Stamp $stamp)) {
-        Write-Step "installing backend dependencies (the ML stack is ~2.5 GB the first time)"
+        # A changed requirements file on an existing venv only fetches what is
+        # new - pip skips everything already satisfied - so the 2.5 GB warning
+        # is for a fresh venv only.
+        if (Test-Path $stamp) {
+            Write-Step "a requirements file changed - installing only new or updated packages"
+        } else {
+            Write-Step "installing backend dependencies (the ML stack is ~2.5 GB the first time)"
+        }
         $pip = @("-m", "pip", "install", "--disable-pip-version-check", "-q")
         Invoke-Checked "pip install (requirements.txt)" {
             & $python @pip -r (Join-Path $root "backend\requirements.txt") }

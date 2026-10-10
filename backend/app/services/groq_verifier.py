@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 from app.config import SENTIMENT_LABELS, settings
 from app.ml import ensemble
@@ -205,13 +206,85 @@ _TRANSLATE_SYSTEM = (
     "You translate social-media posts to English for police analysts. Posts "
     "are usually Hindi, Gujarati, or romanized Hinglish/Gujlish, but may be "
     "ANY language (e.g. Tagalog, Bengali, Marathi) — detect the language "
-    "yourself and translate faithfully. Preserve tone: a rude post must read as "
-    "rude in English, since the translation is what an analyst who does not "
-    "read the original will judge. Keep hashtags/handles/URLs as-is. "
-    "Reply ONLY with JSON: "
+    "yourself and translate faithfully. Many posts MIX English with romanized "
+    "Hindi/Gujarati: translate every non-English word into English, INCLUDING "
+    "phrases inside quotation marks (\"tame kya jao cho\" → \"where are you going\") — "
+    "keep the quote marks, translate what is inside them. The output must "
+    "contain no Hindi or Gujarati words, romanized or not, except people's and "
+    "places' names. Preserve tone: a rude post must read as rude in English, "
+    "and abuse or slurs are rendered with their closest English equivalent, "
+    "not left untranslated or censored — the translation is what an analyst "
+    "who does not read the original will judge. Keep hashtags/handles/URLs "
+    "as-is. Reply ONLY with JSON: "
     '{"translations": [{"id": <post id>, "en": "<English translation>"}, ...]} '
     "— one entry per post, same ids as given."
 )
+
+_TAG_RE = re.compile(r"(?:https?://\S+|[#@]\w+)")
+_QUOTED_RE = re.compile(r"[\"“”']([^\"“”']{3,})[\"“”']")
+
+_RETRY_NOTE = (
+    " Each post also has `previous_translation` — an earlier attempt that left "
+    "Hindi/Gujarati in it — and `left_untranslated`, the phrases it left. "
+    "Translate those phrases into English as well; your answer must not contain "
+    "any of them, or any other romanized Hindi/Gujarati."
+)
+
+
+def untranslated_spans(source: str, translation: str) -> list[str]:
+    """The phrases of a would-be translation that are still Hindi/Gujarati:
+    quoted spans first (where models copy speech through), else the sentences."""
+    def foreign(t: str) -> bool:
+        t = _TAG_RE.sub(" ", t)
+        return has_indic_content(t) or _copied_foreign_run(source, t)
+    spans = [q for q in _QUOTED_RE.findall(translation or "") if foreign(q)]
+    if spans:
+        return spans[:8]
+    parts = re.split(r"(?<=[.!?,;])\s+", translation or "")
+    return [p for p in parts if foreign(p)][:8]
+
+
+def translation_incomplete(text: str, translation: str) -> bool:
+    """Is this "translation" not actually English?
+
+    A model told to translate mixed English/Gujlish will sometimes tidy the
+    English and copy the romanized Gujarati through verbatim — especially
+    inside quotes — so the result looks translated and reads as the original.
+    Caught here by the same loose detector that decides a post needs a
+    translation at all: if the output still trips it (hashtags, handles and
+    URLs aside, which are kept on purpose), the job is not done.
+    """
+    if not translation or not translation.strip():
+        return True
+    norm = lambda t: re.sub(r"\W+", "", t.lower())  # noqa: E731
+    if norm(translation) == norm(text):
+        return True
+    cleaned = _TAG_RE.sub(" ", translation)
+    return has_indic_content(cleaned) or _copied_foreign_run(text, cleaned)
+
+
+def _copied_foreign_run(source: str, translation: str) -> bool:
+    """Two or more non-English words, copied verbatim from the source, within
+    five words of each other in the translation.
+
+    The marker list behind `has_indic_content` knows common words only, so a
+    copied-through quote like "maru banai dejo ne bija loko nu pachi" passes it.
+    English word frequency catches what the list cannot: "banai", "dejo",
+    "pachi" are near-absent from English text while even rare English words
+    ("overconfident") are not. Capitalised words are skipped (names), and the
+    word must appear in the source, so a rare English word the model chose is
+    never counted.
+    """
+    try:
+        from wordfreq import zipf_frequency
+    except ImportError:          # optional: the marker check still runs
+        return False
+    src_words = {w.lower() for w in re.findall(r"[A-Za-z]+", source)}
+    flags = []
+    for w in re.findall(r"[A-Za-z]+", translation):
+        flags.append(len(w) >= 3 and w.islower() and w in src_words
+                     and zipf_frequency(w, "en") < 2.0)
+    return any(sum(flags[i:i + 5]) >= 2 for i in range(len(flags)))
 
 TRANSLATE_MAX_PER_TICK = 40
 
@@ -251,32 +324,63 @@ async def translate_enriched(texts: list[str], enriched: list[dict],
         return 0
     from app.services.groq_client import chat_json
 
-    try:
-        # translation is high-volume background work — the fast model does it
-        # fine and keeps the big model's daily budget for analyst actions
-        data, _ = await chat_json([
-            {"role": "system", "content": _TRANSLATE_SYSTEM},
-            {"role": "user", "content": json.dumps(
-                {"posts": [{"id": i, "text": texts[i][:600]} for i in candidates]},
-                ensure_ascii=False)},
-        ], model=settings.GROQ_MODEL_FAST)
-    except Exception as exc:
-        log.warning("Groq translate errored (%s) — batch stays untranslated", exc)
-        return 0
-    if data is None:
-        log.warning("Groq translate failed on every model — batch stays untranslated")
-        return 0
-    n = 0
-    for r in data.get("translations", []):
+    async def run(ids: list[int], model: str,
+                  previous: dict[int, str] | None = None) -> dict[int, str]:
+        system = _TRANSLATE_SYSTEM
+        posts = [{"id": i, "text": texts[i][:600]} for i in ids]
+        if previous:
+            # A second pass told only "translate" makes the same choice again;
+            # shown its own output and the phrases it left alone, it fixes them.
+            system += _RETRY_NOTE
+            for post in posts:
+                prev = previous.get(post["id"], "")
+                post["previous_translation"] = prev
+                post["left_untranslated"] = untranslated_spans(texts[post["id"]],
+                                                               prev or texts[post["id"]])
         try:
-            i, en = int(r.get("id")), str(r.get("en", "")).strip()
-        except (TypeError, ValueError):
+            data, _ = await chat_json([
+                {"role": "system", "content": system},
+                {"role": "user", "content": json.dumps({"posts": posts}, ensure_ascii=False)},
+            ], model=model)
+        except Exception as exc:
+            log.warning("Groq translate errored (%s) — batch stays untranslated", exc)
+            return {}
+        if data is None:
+            log.warning("Groq translate failed on every model — batch stays untranslated")
+            return {}
+        got: dict[int, str] = {}
+        for r in data.get("translations", []):
+            try:
+                i, en = int(r.get("id")), str(r.get("en", "")).strip()
+            except (TypeError, ValueError):
+                continue
+            if i in ids and en:
+                got[i] = en
+        return got
+
+    # translation is high-volume background work — the fast model does it
+    # fine and keeps the big model's daily budget for analyst actions…
+    got = await run(candidates, settings.GROQ_MODEL_FAST)
+    # …except where it left the post untranslated, which on mixed Gujlish it
+    # does often enough to matter. Those get one pass on the larger model.
+    redo = [i for i in candidates
+            if i not in got or translation_incomplete(texts[i], got[i])]
+    if redo:
+        better = await run(redo, settings.GROQ_TRANSLATE_RETRY_MODEL, previous=got)
+        for i, en in better.items():
+            if i not in got or not translation_incomplete(texts[i], en):
+                got[i] = en
+    n = 0
+    for i, en in got.items():
+        # A copy of the original is not a translation; storing it would mark
+        # the post done and hide the original's language from the reader.
+        if re.sub(r"\W+", "", en.lower()) == re.sub(r"\W+", "", texts[i].lower()):
             continue
-        if i in candidates and en:
-            enriched[i]["translation"] = en
-            n += 1
+        enriched[i]["translation"] = en
+        n += 1
     if n:
-        log.info("Groq translated %d non-English posts", n)
+        log.info("Groq translated %d non-English posts (%d retried on %s)",
+                 n, len(redo), settings.GROQ_TRANSLATE_RETRY_MODEL)
     return n
 
 

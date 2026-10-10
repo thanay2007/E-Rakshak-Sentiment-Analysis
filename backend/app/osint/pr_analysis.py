@@ -315,7 +315,7 @@ def detect_pr_campaigns(hours: int = 48, min_accounts: int = 3) -> dict:
                    Post.author_followers, Post.author_account_age_days,
                    Post.author_verified, Post.text, Post.translation,
                    Post.sentiment_label, Post.concern_score, Post.engagement,
-                   Post.hashtags, Post.location, Post.is_amplified,
+                   Post.hashtags, Post.location, Post.is_amplified, Post.url,
                    Post.created_at)
             .where(Post.created_at >= since)
             .order_by(Post.created_at.desc()).limit(MAX_SCAN)
@@ -480,14 +480,17 @@ def detect_pr_campaigns(hours: int = 48, min_accounts: int = 3) -> dict:
             "last_seen": max(times).isoformat() + "Z",
             "spread_minutes": int(spread // 60),
             "avg_concern": round(mean(p.concern_score for p in group), 1),
-            # Enough posts to open the actual evidence from the UI, not the
-            # whole cluster — a 200-post campaign should not ship 200 bodies.
+            # Every post up to a cap, so the card can list each account with
+            # what it posted — but a 200-post campaign should not ship 200
+            # bodies; `posts` still carries the true total.
             "sample_posts": [
                 {"id": p.id, "platform": p.platform, "author_handle": p.author_handle,
                  "text": (p.translation or p.text)[:180],
                  "concern_score": p.concern_score,
+                 "sentiment_label": p.sentiment_label,
+                 "url": p.url or "",
                  "created_at": p.created_at.isoformat() + "Z"}
-                for p in sorted(group, key=lambda q: -q.concern_score)[:6]
+                for p in sorted(group, key=lambda q: -q.concern_score)[:50]
             ],
         })
 
