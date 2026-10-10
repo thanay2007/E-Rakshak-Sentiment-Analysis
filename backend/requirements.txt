@@ -21,6 +21,9 @@ reportlab>=4.1
 # bearing for report generation itself.
 openpyxl>=3.1
 feedparser>=6.0
+# English word frequencies: groq_verifier spots romanized Gujarati/Hindi a
+# translation copied through instead of translating (pure Python + data).
+wordfreq>=3.1
 python-multipart>=0.0.9
 Pillow>=10.0
 pydantic-settings>=2.0.0

@@ -1,10 +1,13 @@
-import { useEffect, useState } from "react";
-import { Megaphone, MapPin } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ChevronDown, ChevronUp, ExternalLink, Megaphone, MapPin } from "lucide-react";
 import GlassCard, { SectionTitle } from "../GlassCard";
 import { api } from "../../services/api";
 import type { PrCampaign, PrReport } from "../../services/api";
 import { sentimentColor } from "../../data/constants";
 import { EmptyHint, Pill, Spinner } from "./shared";
+import { PlatformIcon } from "../Badges";
+import { usePostDetail } from "../PostDetailProvider";
+import { safeHref } from "../../lib/safeUrl";
 
 const TYPE_COLORS: Record<string, string> = {
   manufactured_outrage: "#EF4444",
@@ -14,8 +17,73 @@ const TYPE_COLORS: Record<string, string> = {
 };
 const WINDOWS = [24, 48, 72, 168];
 
+/** Every account in the campaign with the posts it made — what an officer
+ *  needs to act on a flag, rather than a count and one quote. */
+function CampaignAccounts({ c }: { c: PrCampaign }) {
+  const { openPostId } = usePostDetail();
+  const established = new Set(c.established_accounts ?? []);
+  const byAccount = useMemo(() => {
+    const m = new Map<string, PrCampaign["sample_posts"]>();
+    for (const h of c.accounts) m.set(h, []);
+    for (const p of c.sample_posts) {
+      const list = m.get(p.author_handle) ?? [];
+      list.push(p);
+      m.set(p.author_handle, list);
+    }
+    return [...m.entries()].sort((a, b) => b[1].length - a[1].length);
+  }, [c]);
+  const hidden = c.posts - c.sample_posts.length;
+
+  return (
+    <div className="space-y-2 border-t border-white/[0.06] pt-3">
+      {byAccount.map(([handle, posts]) => (
+        <div key={handle} className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-2.5">
+          <div className="flex items-center gap-2 text-[13px]">
+            {posts[0] && <PlatformIcon platform={posts[0].platform} size={13} />}
+            <span className="font-mono font-semibold text-slate-200">@{handle}</span>
+            <span className="text-slate-500">{posts.length} post{posts.length === 1 ? "" : "s"} shown</span>
+            {established.has(handle) && (
+              <span className="text-[12px] text-sky-400" title="Established public voice — discounted when counting independent accounts">
+                established
+              </span>
+            )}
+          </div>
+          {posts.length > 0 && (
+            <div className="mt-1.5 space-y-1">
+              {posts.map((p) => (
+                <div key={p.id} className="flex items-start gap-2">
+                  <button onClick={() => openPostId(p.id)}
+                    className="min-w-0 flex-1 rounded-md px-2 py-1 text-left hover:bg-white/[0.04]">
+                    <div className="line-clamp-2 text-[12.5px] text-slate-300">{p.text}</div>
+                    <div className="mt-0.5 text-[11.5px] text-slate-500">
+                      {new Date(p.created_at).toLocaleString()} · concern {Math.round(p.concern_score)}
+                      {p.sentiment_label ? ` · ${p.sentiment_label}` : ""}
+                    </div>
+                  </button>
+                  {p.url && (
+                    <a href={safeHref(p.url)} target="_blank" rel="noreferrer" title="Open on the platform"
+                      className="mt-1 shrink-0 text-slate-500 hover:text-accent">
+                      <ExternalLink size={13} />
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+      {hidden > 0 && (
+        <p className="text-[12px] text-slate-500">
+          Showing the {c.sample_posts.length} most concerning of {c.posts} posts.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function CampaignCard({ c }: { c: PrCampaign }) {
   const color = TYPE_COLORS[c.type] ?? "#14B8C4";
+  const [open, setOpen] = useState(false);
   return (
     <GlassCard className="space-y-3 p-4">
       <div className="flex items-start justify-between gap-3">
@@ -52,6 +120,13 @@ function CampaignCard({ c }: { c: PrCampaign }) {
         {c.locations.length > 0 && <span className="inline-flex items-center gap-1"><MapPin size={11} />{c.locations.join(", ")}</span>}
         {c.top_hashtags.length > 0 && <span className="text-accent">{c.top_hashtags.map((t) => `#${t}`).join(" ")}</span>}
       </div>
+
+      <button onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.1] px-3 py-1.5 text-[13px] font-medium text-slate-300 hover:border-accent/40 hover:text-accent">
+        {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        {open ? "Hide" : "Show"} accounts & posts ({c.accounts.length} accounts · {c.posts} posts)
+      </button>
+      {open && <CampaignAccounts c={c} />}
     </GlassCard>
   );
 }

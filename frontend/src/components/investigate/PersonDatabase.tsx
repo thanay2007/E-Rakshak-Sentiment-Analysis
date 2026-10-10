@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, ImagePlus, Loader2, Trash2, UserPlus, X } from "lucide-react";
+import { ChevronDown, ChevronUp, ExternalLink, ImagePlus, Loader2, Trash2, UserPlus, X } from "lucide-react";
 import GlassCard from "../GlassCard";
 import { api } from "../../services/api";
-import type { FaceEngine, PersonEnrolFields, Suspect } from "../../services/api";
+import type { FaceEngine, IdentityDossier, PersonEnrolFields, Suspect } from "../../services/api";
+import { safeHref } from "../../lib/safeUrl";
+import { usePostDetail } from "../PostDetailProvider";
 import { categoryForRecordType, CATEGORY_COLOR, CATEGORY_LABEL } from "../../data/dummyIdentities";
 import { Pill, RunButton } from "./shared";
 
@@ -36,6 +38,205 @@ const EMPTY: PersonEnrolFields = {
 
 type Duplicate = { suspect_id: string; full_name: string; message: string };
 
+const label = (v: string) => v.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+
+function Row({ k, v }: { k: string; v?: React.ReactNode }) {
+  if (v === undefined || v === null || v === "" || v === 0) return null;
+  return (
+    <div className="flex gap-3 border-b border-white/[0.05] py-1.5 last:border-0">
+      <span className="w-36 shrink-0 text-[12px] uppercase tracking-wide text-slate-500">{k}</span>
+      <span className="min-w-0 text-[13px] text-slate-200">{v}</span>
+    </div>
+  );
+}
+
+/** The full record for one enrolled person: every reference photo, every
+ *  description field, their handles, and what they have posted in the feed. */
+function PersonProfile({ person, onClose, onChanged }: {
+  person: Suspect; onClose: () => void; onChanged: () => void;
+}) {
+  const { openPostId } = usePostDetail();
+  const [dossier, setDossier] = useState<IdentityDossier | null>(null);
+  const [dossierErr, setDossierErr] = useState<string | null>(null);
+  const [photoErr, setPhotoErr] = useState<string | null>(null);
+  const [handleText, setHandleText] = useState("");
+  const [handleBusy, setHandleBusy] = useState(false);
+  const cat = categoryForRecordType(person.record_type);
+
+  /** "Instagram:ramesh_p, X:rp_surat" → appended to the record's handles. */
+  async function addHandles() {
+    const added = handleText.split(",").map((raw) => raw.trim()).filter(Boolean).map((raw) => {
+      const i = raw.lastIndexOf(":");
+      return { platform: i > 0 ? raw.slice(0, i).trim() : "", handle: raw.slice(i + 1).trim().replace(/^@/, ""),
+               url: "", note: "" };
+    }).filter((h) => h.handle);
+    if (!added.length) return;
+    setHandleBusy(true); setPhotoErr(null);
+    try {
+      await api.updatePerson(person.id, { social_handles: [...person.social_handles, ...added] });
+      setHandleText("");
+      onChanged();
+    } catch (e) { setPhotoErr((e as Error).message); }
+    finally { setHandleBusy(false); }
+  }
+
+  useEffect(() => {
+    let alive = true;
+    setDossier(null); setDossierErr(null);
+    api.personDossier(person.id)
+      .then((d) => { if (alive) setDossier(d); })
+      .catch((e) => { if (alive) setDossierErr((e as Error).message); });
+    return () => { alive = false; };
+  }, [person.id, person.enrolled_faces, person.social_handles.length]);
+
+  async function removePhoto(templateId: string) {
+    if (person.face_templates.length <= 1) {
+      setPhotoErr("This is the only reference photo — add another before removing it, or delete the person.");
+      return;
+    }
+    if (!window.confirm("Remove this reference photo?")) return;
+    setPhotoErr(null);
+    try { await api.deletePersonPhoto(person.id, templateId); onChanged(); }
+    catch (e) { setPhotoErr((e as Error).message); }
+  }
+
+  const posts = dossier?.monitored_posts;
+  const alerts = dossier?.linked_alerts ?? [];
+
+  return (
+    <div className="col-span-full rounded-xl border border-accent/25 bg-accent/[0.03] p-4">
+      <div className="flex items-start gap-4">
+        {person.photo_thumb
+          ? <img src={person.photo_thumb} alt="" className="h-24 w-24 shrink-0 rounded-xl object-cover" />
+          : <div className="h-24 w-24 shrink-0 rounded-xl bg-white/[0.05]" />}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <div className="text-base font-bold text-slate-100">{person.full_name}</div>
+              {person.aliases.length > 0 && (
+                <div className="text-[13px] text-slate-400">also known as {person.aliases.join(", ")}</div>
+              )}
+            </div>
+            <button onClick={onClose} aria-label="Close profile"
+              className="rounded-lg p-1.5 text-slate-400 hover:bg-white/[0.06] hover:text-slate-200">
+              <X size={16} />
+            </button>
+          </div>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            <Pill color={CATEGORY_COLOR[cat]}>{CATEGORY_LABEL[cat]}</Pill>
+            <Pill color="#F59E0B">{label(person.risk_level)} risk</Pill>
+            <Pill color="#64748B">{label(person.status)}</Pill>
+          </div>
+          {person.notes && <p className="mt-2 whitespace-pre-wrap text-[13px] leading-relaxed text-slate-300">{person.notes}</p>}
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <div>
+          <div className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-slate-400">Details</div>
+          <Row k="Last known location" v={person.last_known_location} />
+          <Row k="Gender" v={person.gender} />
+          <Row k="Age" v={person.age || undefined} />
+          <Row k="Height" v={person.height_cm ? `${person.height_cm} cm` : undefined} />
+          <Row k="Occupation" v={person.occupation} />
+          <Row k="Nationality" v={person.nationality} />
+          <Row k="Identifying marks" v={person.identifying_marks} />
+          <Row k="Jurisdiction" v={person.jurisdiction} />
+          <Row k="Case IDs" v={person.case_ids.join(", ")} />
+          <Row k="Wanted since" v={person.wanted_since} />
+          <Row k="Charges" v={person.charges.length ? person.charges.map((c) => `${c.section}${c.description ? ` — ${c.description}` : ""}`).join("; ") : undefined} />
+          <Row k="Added" v={new Date(person.created_at).toLocaleString()} />
+          <div className="mt-3">
+            <div className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-slate-400">Social accounts</div>
+            <div className="mb-2 flex gap-2">
+              <input value={handleText} onChange={(e) => setHandleText(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") void addHandles(); }}
+                placeholder="Add: Instagram:ramesh_p, X:rp_surat"
+                className="min-w-0 flex-1 rounded-lg border border-white/[0.08] bg-white/[0.04] px-2.5 py-1.5 font-mono text-[12px] text-slate-200 placeholder-slate-600 outline-none focus:border-accent/50" />
+              <button onClick={() => void addHandles()} disabled={handleBusy || !handleText.trim()}
+                className="rounded-lg border border-accent/30 bg-accent/10 px-2.5 text-[12px] font-semibold text-accent disabled:opacity-40">
+                {handleBusy ? "…" : "Add"}
+              </button>
+            </div>
+          </div>
+          {person.social_handles.length > 0 && (
+            <div>
+              <div className="flex flex-wrap gap-1.5">
+                {person.social_handles.map((h) => {
+                  const chip = (
+                    <span className="inline-flex items-center gap-1 rounded-lg border border-white/[0.08] px-2 py-1 font-mono text-[12px] text-slate-300">
+                      {h.platform && <span className="text-slate-500">{h.platform}</span>} @{h.handle}
+                      {h.url && <ExternalLink size={11} />}
+                    </span>
+                  );
+                  return h.url
+                    ? <a key={h.platform + h.handle} href={safeHref(h.url)} target="_blank" rel="noreferrer">{chip}</a>
+                    : <span key={h.platform + h.handle}>{chip}</span>;
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div>
+          <div className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-slate-400">
+            Reference photos ({person.face_templates.length})
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {person.face_templates.map((t) => (
+              <div key={t.id} className="group relative">
+                {t.thumb
+                  ? <img src={t.thumb} alt={t.source} title={t.source} className="h-20 w-20 rounded-lg border border-white/10 object-cover" />
+                  : <div className="h-20 w-20 rounded-lg bg-white/[0.05]" />}
+                <span className="absolute bottom-1 left-1 rounded bg-black/70 px-1 font-mono text-[10px] text-slate-200"
+                  title="Face quality score (0-100)">
+                  q{t.quality?.score ?? "?"}
+                </span>
+                <button onClick={() => removePhoto(t.id)} aria-label="Remove this photo"
+                  className="absolute -right-1.5 -top-1.5 hidden rounded-full bg-slate-900 p-0.5 text-slate-300 hover:text-red-400 group-hover:block">
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+          {photoErr && <p className="mt-1.5 text-[12px] text-red-400">{photoErr}</p>}
+        </div>
+      </div>
+
+      <div className="mt-4 border-t border-white/[0.06] pt-3">
+        <div className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-slate-400">Activity in the monitored feed</div>
+        {dossierErr ? <p className="text-[13px] text-red-400">{dossierErr}</p>
+          : !dossier ? <p className="inline-flex items-center gap-2 text-[13px] text-slate-500"><Loader2 size={13} className="animate-spin" /> Loading…</p>
+          : !person.social_handles.length ? (
+            <p className="text-[13px] text-slate-500">No social accounts on this record yet, so no posts can be linked to it. Add their handles under Social accounts above.</p>
+          ) : !posts?.total ? (
+            <p className="text-[13px] text-slate-500">None of their accounts has posted in the monitored feed.</p>
+          ) : (
+            <>
+              <p className="mb-2 text-[13px] text-slate-400">
+                {posts.total} post{posts.total === 1 ? "" : "s"} · {alerts.length} alert{alerts.length === 1 ? "" : "s"} raised
+              </p>
+              <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
+                {posts.items.map((p) => (
+                  <button key={p.id} onClick={() => openPostId(p.id)}
+                    className="block w-full rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-left hover:border-accent/40">
+                    <div className="flex items-center gap-2 text-[12px] text-slate-500">
+                      <span className="font-semibold text-slate-300">{p.platform}</span>
+                      <span className="font-mono">@{p.author_handle}</span>
+                      <span>· {p.sentiment_label} · concern {Math.round(p.concern_score)}</span>
+                      <span className="ml-auto">{new Date(p.created_at).toLocaleDateString()}</span>
+                    </div>
+                    <div className="mt-0.5 line-clamp-2 text-[13px] text-slate-300">{p.text}</div>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+      </div>
+    </div>
+  );
+}
+
 function Field({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
   return (
     <label className={`block space-y-1 ${wide ? "sm:col-span-2" : ""}`}>
@@ -60,6 +261,7 @@ export default function PersonDatabase() {
   const [msg, setMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [duplicate, setDuplicate] = useState<Duplicate | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const photoInput = useRef<HTMLInputElement>(null);
   const addInput = useRef<HTMLInputElement>(null);
   const addTarget = useRef<string | null>(null);
@@ -311,8 +513,13 @@ export default function PersonDatabase() {
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
               {people.map((p) => {
                 const cat = categoryForRecordType(p.record_type);
+                if (expanded === p.id) {
+                  return <PersonProfile key={p.id} person={p} onClose={() => setExpanded(null)} onChanged={() => void refresh()} />;
+                }
                 return (
-                  <div key={p.id} className="flex items-center gap-3 rounded-lg border border-white/[0.07] bg-white/[0.02] p-2.5">
+                  <div key={p.id} className="flex items-center gap-3 rounded-lg border border-white/[0.07] bg-white/[0.02] p-2.5 transition-colors hover:border-accent/30">
+                    <button onClick={() => setExpanded(p.id)} aria-label={`Open ${p.full_name}'s profile`}
+                      className="flex min-w-0 flex-1 items-center gap-3 text-left">
                     {p.photo_thumb
                       ? <img src={p.photo_thumb} alt="" className="h-12 w-12 shrink-0 rounded-lg object-cover" />
                       : <div className="h-12 w-12 shrink-0 rounded-lg bg-white/[0.05]" />}
@@ -324,6 +531,7 @@ export default function PersonDatabase() {
                       </div>
                       {p.notes && <div className="mt-0.5 truncate text-[12px] text-slate-500" title={p.notes}>{p.notes}</div>}
                     </div>
+                    </button>
                     {busyId === p.id ? <Loader2 size={15} className="animate-spin text-slate-400" /> : (
                       <div className="flex shrink-0 gap-1">
                         <button title="Add more photos" aria-label={`Add photos to ${p.full_name}`}

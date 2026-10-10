@@ -452,6 +452,10 @@ class Settings(BaseSettings):
     GROQ_MODEL_FAST: str = "openai/gpt-oss-20b"
     # Groq rate limits are PER MODEL — when one model's daily budget drains,
     # the next in this chain still has quota. Every LLM call walks this list.
+    #: Second pass for translations the fast model left half in Gujlish. Named
+    #: on its own because GROQ_MODEL may be unavailable to the account, and the
+    #: fallback chain would then land back on the same fast model that failed.
+    GROQ_TRANSLATE_RETRY_MODEL: str = "openai/gpt-oss-120b"
     GROQ_FALLBACK_MODELS: list[str] = [
         "openai/gpt-oss-20b",
         "openai/gpt-oss-120b",

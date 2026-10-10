@@ -16,7 +16,7 @@ from sqlmodel import col, select
 from app.database import session_scope
 from app.models import Post
 from app.services.groq_verifier import (TRANSLATE_MAX_PER_TICK, needs_translation,
-                                        translate_enriched)
+                                        translate_enriched, translation_incomplete)
 
 log = logging.getLogger("sentinel.translation")
 
@@ -24,6 +24,11 @@ log = logging.getLogger("sentinel.translation")
 #: Candidacy is decided by `needs_translation` on the text, which SQL cannot
 #: express — so rows are scanned newest-first and filtered here.
 BACKFILL_SCAN = 2000
+
+#: Posts whose stored translation was found incomplete and re-translated in
+#: this process. One attempt each: if the model still cannot do better, the
+#: stored (partial) English is served rather than re-billing every page view.
+_redone: set[str] = set()
 
 
 async def _translate_rows(rows: list) -> dict[str, str]:
@@ -47,7 +52,10 @@ def _store(translations: dict[str, str]) -> None:
     with session_scope() as s:
         for pid, text in translations.items():
             post = s.get(Post, pid)
-            if post and not post.translation:
+            # Replace an existing translation only when it is one of the
+            # incomplete ones — never a good one, whatever arrives later.
+            if post and (not post.translation
+                         or translation_incomplete(post.text, post.translation)):
                 post.translation = text
                 s.add(post)
         s.commit()
@@ -68,8 +76,13 @@ async def translate_posts(ids: Iterable[str]) -> dict[str, str]:
 
     rows = await asyncio.to_thread(_load)
     out = {r.id: r.translation for r in rows if r.translation}
+    # Stored translations that are not really English (romanized Gujarati
+    # copied through) are redone once, alongside the posts that have none.
+    stale = [r for r in rows if r.translation and r.id not in _redone
+             and translation_incomplete(r.text, r.translation)]
+    _redone.update(r.id for r in stale)
     todo = [r for r in rows if not r.translation and r.text
-            and needs_translation(r.text, {"language": r.language})]
+            and needs_translation(r.text, {"language": r.language})] + stale
     if todo:
         out.update(await _translate_rows(todo))
     return out

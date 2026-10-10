@@ -3,6 +3,7 @@ from datetime import datetime
 
 from app.models import Alert, Post
 from app.services.fact_check import revalidate
+from app.services.groq_verifier import translation_incomplete
 
 
 def iso(dt: datetime | None) -> str:
@@ -18,7 +19,10 @@ def post_to_dict(p: Post, full: bool = False) -> dict:
         "author_followers": p.author_followers,
         "author_verified": p.author_verified,
         "text": p.text,
-        "translation": p.translation,
+        # An incomplete stored translation is withheld, so the UI asks for one
+        # and translation.translate_posts redoes it (once) on that request.
+        "translation": ("" if p.translation and translation_incomplete(p.text, p.translation)
+                        else p.translation),
         "language": p.language,
         "code_mixed": p.code_mixed,
         "sentiment_label": p.sentiment_label,

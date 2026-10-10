@@ -717,7 +717,11 @@ export interface PrCampaign {
   reach_estimate: number; top_hashtags: string[]; why: string[]; sample_text: string;
   locations: string[]; first_seen: string;
   last_seen: string; spread_minutes: number; avg_concern: number; platforms: string[];
-  sample_posts: { id: string; platform: string; author_handle: string; text: string; concern_score: number; created_at: string }[];
+  /** The campaign's posts, worst first, capped at 50 (`posts` is the true total). */
+  sample_posts: {
+    id: string; platform: string; author_handle: string; text: string; concern_score: number;
+    created_at: string; sentiment_label?: string; url?: string;
+  }[];
 }
 /** LLM commentary on a report. `available: false` is normal — no key, rate
  *  limits, or a report shape with no explainer — and `reason` says which. */
@@ -1201,6 +1205,16 @@ export const api = {
     return upload<{ ok: boolean; templates: number; quality: FaceQuality; suspect: Suspect }>(
       `/api/faces/suspects/${encodeURIComponent(suspectId)}/photo`, fd);
   },
+  /** Everything on file for one enrolled person, plus their monitored posts and
+   *  alerts. `deep=false` skips the slow live cross-platform username probes. */
+  personDossier: (suspectId: string) =>
+    http<IdentityDossier>(`/api/faces/suspects/${encodeURIComponent(suspectId)}/dossier?deep=false`),
+  deletePersonPhoto: (suspectId: string, templateId: string) =>
+    http<void>(`/api/faces/suspects/${encodeURIComponent(suspectId)}/photo/${encodeURIComponent(templateId)}`,
+      { method: "DELETE" }),
+  updatePerson: (suspectId: string, patch: Partial<Pick<Suspect, "social_handles" | "notes">>) =>
+    http<Suspect>(`/api/faces/suspects/${encodeURIComponent(suspectId)}`,
+      { method: "PATCH", body: JSON.stringify(patch) }),
   deletePerson: (suspectId: string) =>
     http<void>(`/api/faces/suspects/${encodeURIComponent(suspectId)}`, { method: "DELETE" }),
   /** Recent feed posts that carry real media — the live-feed picker. */
